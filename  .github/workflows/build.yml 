@@ -1,1 +1,227 @@
+name: Build APK
 
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Create project
+        run: |
+          mkdir -p calc/src/main/java/com/saeed/calc
+          cd calc
+          cat > settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "Calc"
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.5.2' }
+          android {
+              namespace 'com.saeed.calc'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'com.saeed.calc'
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+          }
+          EOF
+          cat > src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application android:label="ماشین حساب"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > src/main/java/com/saeed/calc/MainActivity.java <<'EOF'
+          package com.saeed.calc;
+
+          import android.app.Activity;
+          import android.graphics.Color;
+          import android.os.Bundle;
+          import android.view.Gravity;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+
+          public class MainActivity extends Activity {
+              TextView display;
+              String cur = "";
+              String op = "";
+              double acc = 0;
+              boolean done = false;
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setBackgroundColor(Color.parseColor("#1C1C1E"));
+                  root.setPadding(24, 48, 24, 24);
+
+                  display = new TextView(this);
+                  display.setText("0");
+                  display.setTextSize(52);
+                  display.setTextColor(Color.WHITE);
+                  display.setGravity(Gravity.END | Gravity.BOTTOM);
+                  display.setPadding(16, 16, 16, 32);
+                  root.addView(display, new LinearLayout.LayoutParams(-1, 0, 1.4f));
+
+                  String[][] rows = {
+                      {"C", "⌫", "%", "÷"},
+                      {"7", "8", "9", "×"},
+                      {"4", "5", "6", "-"},
+                      {"1", "2", "3", "+"},
+                      {"0", ".", "="}
+                  };
+                  for (String[] r : rows) {
+                      LinearLayout row = new LinearLayout(this);
+                      for (final String k : r) {
+                          Button bt = new Button(this);
+                          bt.setText(k);
+                          bt.setTextSize(26);
+                          bt.setAllCaps(false);
+                          if ("÷×-+=".contains(k)) {
+                              bt.setBackgroundColor(Color.parseColor("#FF9F0A"));
+                              bt.setTextColor(Color.WHITE);
+                          } else if ("C⌫%".contains(k)) {
+                              bt.setBackgroundColor(Color.parseColor("#A5A5A5"));
+                              bt.setTextColor(Color.BLACK);
+                          } else {
+                              bt.setBackgroundColor(Color.parseColor("#333333"));
+                              bt.setTextColor(Color.WHITE);
+                          }
+                          bt.setOnClickListener(v -> press(k));
+                          LinearLayout.LayoutParams lp =
+                              new LinearLayout.LayoutParams(0, -1, k.equals("0") ? 2f : 1f);
+                          lp.setMargins(6, 6, 6, 6);
+                          row.addView(bt, lp);
+                      }
+                      root.addView(row, new LinearLayout.LayoutParams(-1, 0, 1f));
+                  }
+                  setContentView(root);
+              }
+
+              void press(String k) {
+                  switch (k) {
+                      case "C":
+                          cur = ""; op = ""; acc = 0; done = false;
+                          show("0");
+                          return;
+                      case "⌫":
+                          if (done) { cur = ""; done = false; }
+                          if (cur.length() > 0) cur = cur.substring(0, cur.length() - 1);
+                          show(cur.isEmpty() ? "0" : cur);
+                          return;
+                      case "%":
+                          if (!cur.isEmpty()) { cur = fmt(Double.parseDouble(cur) / 100); show(cur); }
+                          return;
+                      case "+": case "-": case "×": case "÷":
+                          if (!cur.isEmpty()) {
+                              double x = Double.parseDouble(cur);
+                              acc = op.isEmpty() ? x : calc(acc, x, op);
+                              if (bad(acc)) return;
+                              cur = "";
+                              show(fmt(acc));
+                          }
+                          op = k;
+                          done = false;
+                          return;
+                      case "=":
+                          if (!op.isEmpty() && !cur.isEmpty()) {
+                              acc = calc(acc, Double.parseDouble(cur), op);
+                              if (bad(acc)) return;
+                              cur = fmt(acc);
+                              op = "";
+                              done = true;
+                              show(cur);
+                          }
+                          return;
+                      case ".":
+                          if (done) { cur = ""; done = false; }
+                          if (cur.contains(".")) return;
+                          if (cur.isEmpty()) cur = "0";
+                          cur += ".";
+                          show(cur);
+                          return;
+                      default:
+                          if (done) { cur = ""; done = false; }
+                          if (cur.equals("0")) cur = "";
+                          if (cur.length() < 15) cur += k;
+                          show(cur);
+                  }
+              }
+
+              double calc(double a, double b, String o) {
+                  switch (o) {
+                      case "+": return a + b;
+                      case "-": return a - b;
+                      case "×": return a * b;
+                      case "÷": return a / b;
+                  }
+                  return b;
+              }
+
+              boolean bad(double d) {
+                  if (Double.isNaN(d) || Double.isInfinite(d)) {
+                      cur = ""; op = ""; acc = 0; done = false;
+                      show("خطا");
+                      return true;
+                  }
+                  return false;
+              }
+
+              String fmt(double d) {
+                  if (d == Math.rint(d) && Math.abs(d) < 1e15) return String.valueOf((long) d);
+                  String s = String.valueOf(Math.round(d * 1e10) / 1e10);
+                  return s;
+              }
+
+              void show(String s) { display.setText(s); }
+          }
+          EOF
+
+      - name: Build
+        working-directory: calc
+        run: gradle assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: cp calc/build/outputs/apk/debug/*.apk calculator.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: calculator-apk
+          path: calculator.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Calculator v${{ github.run_number }}
+          files: calculator.apk
