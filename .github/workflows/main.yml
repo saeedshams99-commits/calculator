@@ -60,8 +60,8 @@ jobs:
                   applicationId 'com.saeed.bet'
                   minSdk 21
                   targetSdk 34
-                  versionCode 2
-                  versionName '2.0'
+                  versionCode 3
+                  versionName '3.0'
               }
               buildTypes {
                   debug { signingConfig signingConfigs.fixed }
@@ -75,6 +75,7 @@ jobs:
           cat > src/main/AndroidManifest.xml <<'EOF_X'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <application android:label="فوتبال بت"
                   android:theme="@android:style/Theme.Material.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true">
@@ -83,6 +84,7 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
+                  <receiver android:name=".AlarmReceiver" android:exported="false" />
               </application>
           </manifest>
           EOF_X
@@ -90,7 +92,12 @@ jobs:
           package com.saeed.bet;
 
           import android.app.Activity;
+          import android.app.AlarmManager;
+          import android.app.PendingIntent;
+          import android.content.Intent;
           import android.content.SharedPreferences;
+          import android.content.pm.PackageManager;
+          import android.os.Build;
           import android.os.Bundle;
           import android.webkit.JavascriptInterface;
           import android.webkit.WebChromeClient;
@@ -121,6 +128,20 @@ jobs:
                   web.addJavascriptInterface(new Bridge(), "Android");
                   web.loadUrl("file:///android_asset/index.html");
                   setContentView(web);
+                  if (Build.VERSION.SDK_INT >= 33
+                          && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                      requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+                  }
+              }
+
+              PendingIntent alarmIntent(String id, String title, String text) {
+                  Intent i = new Intent(this, AlarmReceiver.class);
+                  i.putExtra("title", title);
+                  i.putExtra("text", text);
+                  i.putExtra("nid", id.hashCode());
+                  int fl = PendingIntent.FLAG_UPDATE_CURRENT;
+                  if (Build.VERSION.SDK_INT >= 23) fl |= PendingIntent.FLAG_IMMUTABLE;
+                  return PendingIntent.getBroadcast(this, id.hashCode(), i, fl);
               }
 
               static String read(InputStream in) throws Exception {
@@ -142,6 +163,28 @@ jobs:
                   @JavascriptInterface
                   public void save(String k, String v) {
                       prefs.edit().putString(k, v).apply();
+                  }
+
+                  @JavascriptInterface
+                  public void alarm(String id, String when, String title, String text) {
+                      try {
+                          long t = Long.parseLong(when);
+                          if (t < System.currentTimeMillis()) return;
+                          AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+                          PendingIntent pi = alarmIntent(id, title, text);
+                          if (Build.VERSION.SDK_INT >= 23) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, t, pi);
+                          else am.set(AlarmManager.RTC_WAKEUP, t, pi);
+                      } catch (Exception e) {
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public void cancelAlarm(String id) {
+                      try {
+                          AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+                          am.cancel(alarmIntent(id, "", ""));
+                      } catch (Exception e) {
+                      }
                   }
 
                   @JavascriptInterface
@@ -174,6 +217,49 @@ jobs:
                           }
                       }).start();
                   }
+              }
+          }
+          EOF_X
+          cat > src/main/java/com/saeed/bet/AlarmReceiver.java <<'EOF_X'
+          package com.saeed.bet;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.os.Build;
+
+          public class AlarmReceiver extends BroadcastReceiver {
+              @Override
+              public void onReceive(Context ctx, Intent in) {
+                  String title = in.getStringExtra("title");
+                  String text = in.getStringExtra("text");
+                  int nid = in.getIntExtra("nid", 1);
+                  NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+                  if (nm == null) return;
+                  Notification.Builder b;
+                  if (Build.VERSION.SDK_INT >= 26) {
+                      NotificationChannel ch = new NotificationChannel("matches", "یادآور بازی‌ها", NotificationManager.IMPORTANCE_HIGH);
+                      nm.createNotificationChannel(ch);
+                      b = new Notification.Builder(ctx, "matches");
+                  } else {
+                      b = new Notification.Builder(ctx);
+                      b.setPriority(Notification.PRIORITY_HIGH);
+                      b.setDefaults(Notification.DEFAULT_ALL);
+                  }
+                  Intent open = new Intent(ctx, MainActivity.class);
+                  int fl = PendingIntent.FLAG_UPDATE_CURRENT;
+                  if (Build.VERSION.SDK_INT >= 23) fl |= PendingIntent.FLAG_IMMUTABLE;
+                  PendingIntent pi = PendingIntent.getActivity(ctx, nid, open, fl);
+                  b.setSmallIcon(android.R.drawable.ic_dialog_info);
+                  b.setContentTitle(title);
+                  b.setContentText(text);
+                  b.setAutoCancel(true);
+                  b.setContentIntent(pi);
+                  nm.notify(nid, b.build());
               }
           }
           EOF_X
@@ -232,6 +318,7 @@ jobs:
           .chip.sm{padding:5px 11px;font-size:12px}
           .lbl{color:var(--mut);font-size:12px;margin:8px 0 4px}
           .leagues:empty{display:none}
+          .bell{margin-right:6px;font-size:15px}
           </style>
           </head>
           <body>
@@ -278,6 +365,8 @@ jobs:
           function rem(r) { if (r.remaining && r.remaining != 'null') sv('remaining', r.remaining); }
           function fmt(n) { return Math.round(n).toLocaleString('fa-IR'); }
           function fa(n) { return n.toLocaleString('fa-IR'); }
+          function r2(n) { return Math.round(n * 100) / 100; }
+          function fc(n) { return r2(n).toLocaleString('fa-IR', { maximumFractionDigits: 2 }); }
           function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
           function L(t, o, m, loc) {
             var d = new Date(t);
@@ -295,7 +384,7 @@ jobs:
           var BETS = ld('bets', []);
           var slip = ld('slip', []);
           function saveAll() { sv('wallet', W); sv('bets', BETS); renderBal(); }
-          function renderBal() { $('bal').textContent = '🪙 ' + fmt(W.coins); }
+          function renderBal() { $('bal').textContent = '🪙 ' + fc(W.coins); }
           function updateCnt() { $('cnt').innerHTML = slip.length ? '<span class="badge">' + fmt(slip.length) + '</span>' : ''; }
 
           function go(p) {
@@ -505,7 +594,7 @@ jobs:
             return '<div class="lbl">' + t + '</div><div class="odds two">' + ob(m, a[0], a[1]) + ob(m, b[0], b[1]) + '</div>';
           }
           function card(m) {
-            var h = '<div class="match"><div class="mt"><span>🕒 ' + hm(m.time) + '</span><span>' + lname(m.lg) + '</span></div>' +
+            var h = '<div class="match"><div class="mt"><span>🕒 ' + hm(m.time) + ' <span class="bell" onclick="bell(\'' + m.id + '\')">' + (REM[m.id] ? '🔔' : '🔕') + '</span></span><span>' + lname(m.lg) + '</span></div>' +
               '<div class="teams">' + esc(m.home) + '<br>' + esc(m.away) + '</div>' +
               '<div class="odds">' + ob(m, '1', '۱ میزبان') + ob(m, 'X', 'مساوی') + ob(m, '2', '۲ مهمان') + '</div>';
             if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'O25', 'بیشتر از ۲.۵ گل') + ob(m, 'U25', 'کمتر از ۲.۵ گل') + '</div>';
@@ -576,24 +665,26 @@ jobs:
                 '<div class="row"><span>' + esc(pl(x)) + '</span><b class="gold">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div></div>';
             });
             h += '<div class="row"><span>ضریب کل</span><b class="gold ltr">' + totalOdd().toFixed(2) + '</b></div>';
-            h += '<input id="stake" type="number" inputmode="numeric" placeholder="مبلغ شرط (سکه)" oninput="calc()">';
+            h += '<input id="stake" type="number" step="0.01" inputmode="decimal" placeholder="مبلغ شرط (سکه)" oninput="calc()">';
             h += '<div class="quick"><button onclick="qs(50)">۵۰</button><button onclick="qs(100)">۱۰۰</button><button onclick="qs(500)">۵۰۰</button><button onclick="qs(-1)">همه</button></div>';
             h += '<div class="row"><span>برد احتمالی</span><b id="win" style="color:var(--green)">۰</b></div>';
             h += '<button class="btn" onclick="place()">✅ ثبت شرط</button></div>';
             el.innerHTML = h;
           }
-          function qs(v) { $('stake').value = v < 0 ? Math.floor(W.coins) : v; calc(); }
-          function calc() { var s = +$('stake').value || 0; $('win').textContent = fmt(s * totalOdd()); }
+          function qs(v) { $('stake').value = v < 0 ? r2(W.coins) : v; calc(); }
+          function calc() { var s = r2(+$('stake').value || 0); $('win').textContent = fc(s * totalOdd()); }
           function place() {
-            var s = Math.floor(+$('stake').value || 0), now = Date.now();
-            if (s < 1) { toast('مبلغ شرط رو وارد کن'); return; }
-            if (s > W.coins) { toast('سکه کافی نداری'); return; }
+            var s = r2(+$('stake').value || 0), now = Date.now();
+            if (s <= 0) { toast('مبلغ شرط رو وارد کن'); return; }
+            if (s > r2(W.coins)) { toast('سکه کافی نداری'); return; }
             for (var i = 0; i < slip.length; i++) if (new Date(slip[i].time).getTime() <= now) { toast('بازی ' + slip[i].home + ' شروع شده، از بلیط حذفش کن'); return; }
             BETS.unshift({
               id: 'b' + now, t: now, stake: s, odd: Math.round(totalOdd() * 100) / 100, st: 'p', win: 0,
               sel: slip.map(function (x) { var y = JSON.parse(JSON.stringify(x)); y.res = 'p'; return y; })
             });
-            W.coins -= s; slip = []; sv('slip', slip); saveAll(); updateCnt();
+            W.coins = r2(W.coins - s);
+            slip.forEach(function (x) { if (!REM[x.id]) setRem(x, true, true); });
+            slip = []; sv('slip', slip); saveAll(); updateCnt();
             toast('شرطت ثبت شد ✅'); go('bets');
           }
 
@@ -648,10 +739,10 @@ jobs:
               if (b.sel.some(function (x) { return x.res == 'l'; })) { b.st = 'l'; return; }
               if (b.sel.every(function (x) { return x.res != 'p'; })) {
                 var o = b.sel.reduce(function (a, x) { return a * (x.res == 'w' ? x.odd : 1); }, 1);
-                b.win = Math.floor(b.stake * o);
+                b.win = r2(b.stake * o);
                 b.st = b.sel.every(function (x) { return x.res == 'v'; }) ? 'v' : 'w';
-                W.coins += b.win;
-                if (b.st == 'w') toast('🎉 بردی! ' + fmt(b.win) + ' سکه');
+                W.coins = r2(W.coins + b.win);
+                if (b.st == 'w') toast('🎉 بردی! ' + fc(b.win) + ' سکه');
               }
             });
             saveAll();
@@ -668,8 +759,8 @@ jobs:
                 h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + (x.score ? ' (' + x.score + ')' : '') + '</span><span>' + ic + '</span></div>' +
                   '<div class="row"><span>' + esc(pl(x)) + '</span><b class="ltr">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div></div>';
               });
-              var amt = b.st == 'l' ? '۰' : (b.st == 'p' ? fmt(b.stake * b.odd) : '+' + fmt(b.win));
-              h += '<div class="row"><span class="mut">مبلغ ' + fmt(b.stake) + ' | ضریب ' + b.odd.toFixed(2) + '</span><b style="color:' + (b.st == 'l' ? 'var(--red)' : 'var(--green)') + '">' + amt + '</b></div></div>';
+              var amt = b.st == 'l' ? '۰' : (b.st == 'p' ? fc(b.stake * b.odd) : '+' + fc(b.win));
+              h += '<div class="row"><span class="mut">مبلغ ' + fc(b.stake) + ' | ضریب ' + b.odd.toFixed(2) + '</span><b style="color:' + (b.st == 'l' ? 'var(--red)' : 'var(--green)') + '">' + amt + '</b></div></div>';
             });
             el.innerHTML = h;
           }
@@ -680,6 +771,9 @@ jobs:
             $('set').innerHTML =
               '<div class="box"><b>🔑 کلید API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">ذخیره کلید</button>' +
               (r ? '<div class="mut" style="margin-top:8px">اعتبار باقی‌مونده این ماه: ' + esc(r) + '</div>' : '') + '</div>' +
+              '<div class="box"><b>🪙 مدیریت سکه</b><div class="mut">موجودی فعلی: ' + fc(W.coins) + '</div><input id="coin" type="number" step="0.01" inputmode="decimal" placeholder="تعداد سکه">' +
+              '<div class="quick"><button onclick="coins(1)">➕ اضافه کن</button><button onclick="coins(0)">✏️ تنظیم موجودی</button></div></div>' +
+              '<div class="box"><b>🔔 یادآور بازی</b><div class="mut">یک ساعت قبل از بازی‌هایی که روشون شرط می‌بندی (یا زنگوله‌شون رو روشن می‌کنی) نوتیفیکیشن میاد.</div></div>' +
               '<div class="box"><b>🎁 جایزه روزانه</b><div class="mut">هر ۲۴ ساعت ' + fmt(BONUS) + ' سکه رایگان</div><button class="btn" onclick="bonus()">دریافت جایزه</button></div>' +
               '<div class="box"><b>♻️ شروع دوباره</b><div class="mut">سکه‌ها ' + fmt(START) + ' میشه و تاریخچه پاک میشه</div><button class="btn sec" onclick="resetAll()">ریست</button></div>' +
               '<div class="box mut">این اپ فقط برای سرگرمیه و با سکه مجازی کار می‌کنه، پول واقعی در کار نیست.<br>مصرف اعتبار: باز کردن هر لیگ ۲، بازارهای بیشتر هر بازی ۲، چک نتایج هر لیگ ۲.</div>';
@@ -688,17 +782,50 @@ jobs:
             sv('key', $('k').value.trim()); sv('sports', null); toast('کلید ذخیره شد'); renderSet();
             loadSports(function () { renderLeagues(); if (reg != 'all') loadOdds(true); });
           }
+          function coins(add) {
+            var v = r2(+$('coin').value || 0);
+            if (v < 0 || (add && v == 0)) { toast('یه عدد درست وارد کن'); return; }
+            W.coins = add ? r2(W.coins + v) : v; saveAll(); renderSet();
+            toast(add ? fc(v) + ' سکه اضافه شد' : 'موجودی شد ' + fc(v));
+          }
+
+          /* ---------- reminders ---------- */
+          var REM = ld('rem', {});
+          function setRem(m, on, silent) {
+            var at = new Date(m.time).getTime() - 3600000;
+            if (on) {
+              if (at <= Date.now()) { if (!silent) toast('کمتر از یک ساعت به بازی مونده'); return; }
+              REM[m.id] = { t: at, title: '⚽ یک ساعت دیگه بازی شروع میشه', text: m.home + ' - ' + m.away + ' | ساعت ' + hm(m.time) };
+              try { Android.alarm(m.id, String(at), REM[m.id].title, REM[m.id].text); } catch (e) {}
+              if (!silent) toast('🔔 یک ساعت قبل از بازی خبرت می‌کنم');
+            } else {
+              delete REM[m.id];
+              try { Android.cancelAlarm(m.id); } catch (e) {}
+              if (!silent) toast('🔕 یادآور خاموش شد');
+            }
+            sv('rem', REM);
+          }
+          function bell(id) { var m = MATCHES[id]; if (!m) return; setRem(m, !REM[id], false); rerender(); }
+          function syncRem() {
+            var now = Date.now();
+            Object.keys(REM).forEach(function (id) {
+              var r = REM[id];
+              if (r.t <= now) delete REM[id];
+              else { try { Android.alarm(id, String(r.t), r.title, r.text); } catch (e) {} }
+            });
+            sv('rem', REM);
+          }
           function bonus() {
             var n = Date.now();
             if (n - (W.last || 0) < 86400000) { toast(fmt(Math.ceil((86400000 - (n - W.last)) / 3600000)) + ' ساعت دیگه دوباره بیا'); return; }
-            W.last = n; W.coins += BONUS; saveAll(); toast('🎁 ' + fmt(BONUS) + ' سکه گرفتی');
+            W.last = n; W.coins = r2(W.coins + BONUS); saveAll(); toast('🎁 ' + fmt(BONUS) + ' سکه گرفتی');
           }
           function resetAll() {
             if (!confirm('مطمئنی؟ همه شرط‌ها پاک میشن')) return;
             W = { coins: START, last: 0 }; BETS = []; slip = []; sv('slip', slip); saveAll(); updateCnt(); renderSet(); toast('ریست شد');
           }
 
-          renderBal(); updateCnt();
+          renderBal(); updateCnt(); syncRem();
           loadSports(function () { renderLeagues(); loadOdds(false); });
           setTimeout(function () { checkResults(false); }, 1500);
           </script>
