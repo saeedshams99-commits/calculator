@@ -22,20 +22,20 @@ jobs:
 
       - name: Create project
         run: |
-          mkdir -p calc/src/main/java/com/saeed/calc
-          cd calc
-          cat > settings.gradle <<'EOF'
+          mkdir -p app/src/main/java/com/saeed/bet app/src/main/assets
+          cd app
+          cat > settings.gradle <<'EOF_X'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositories { google(); mavenCentral() } }
-          rootProject.name = "Calc"
-          EOF
-          cat > build.gradle <<'EOF'
+          rootProject.name = "FootballBet"
+          EOF_X
+          cat > build.gradle <<'EOF_X'
           plugins { id 'com.android.application' version '8.5.2' }
           android {
-              namespace 'com.saeed.calc'
+              namespace 'com.saeed.bet'
               compileSdk 34
               defaultConfig {
-                  applicationId 'com.saeed.calc'
+                  applicationId 'com.saeed.bet'
                   minSdk 21
                   targetSdk 34
                   versionCode 1
@@ -46,10 +46,11 @@ jobs:
                   targetCompatibility JavaVersion.VERSION_1_8
               }
           }
-          EOF
-          cat > src/main/AndroidManifest.xml <<'EOF'
+          EOF_X
+          cat > src/main/AndroidManifest.xml <<'EOF_X'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <application android:label="ماشین حساب"
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application android:label="فوتبال بت"
                   android:theme="@android:style/Theme.Material.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
@@ -59,169 +60,453 @@ jobs:
                   </activity>
               </application>
           </manifest>
-          EOF
-          cat > src/main/java/com/saeed/calc/MainActivity.java <<'EOF'
-          package com.saeed.calc;
+          EOF_X
+          cat > src/main/java/com/saeed/bet/MainActivity.java <<'EOF_X'
+          package com.saeed.bet;
 
           import android.app.Activity;
-          import android.graphics.Color;
+          import android.content.SharedPreferences;
           import android.os.Bundle;
-          import android.view.Gravity;
-          import android.widget.Button;
-          import android.widget.LinearLayout;
-          import android.widget.TextView;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import java.io.ByteArrayOutputStream;
+          import java.io.InputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import org.json.JSONObject;
 
           public class MainActivity extends Activity {
-              TextView display;
-              String cur = "";
-              String op = "";
-              double acc = 0;
-              boolean done = false;
+              WebView web;
+              SharedPreferences prefs;
 
               @Override
               protected void onCreate(Bundle b) {
                   super.onCreate(b);
-                  LinearLayout root = new LinearLayout(this);
-                  root.setOrientation(LinearLayout.VERTICAL);
-                  root.setBackgroundColor(Color.parseColor("#1C1C1E"));
-                  root.setPadding(24, 48, 24, 24);
+                  prefs = getSharedPreferences("bet", MODE_PRIVATE);
+                  web = new WebView(this);
+                  WebSettings s = web.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  web.setWebViewClient(new WebViewClient());
+                  web.setWebChromeClient(new WebChromeClient());
+                  web.setBackgroundColor(0xFF0B1A2E);
+                  web.addJavascriptInterface(new Bridge(), "Android");
+                  web.loadUrl("file:///android_asset/index.html");
+                  setContentView(web);
+              }
 
-                  display = new TextView(this);
-                  display.setText("0");
-                  display.setTextSize(52);
-                  display.setTextColor(Color.WHITE);
-                  display.setGravity(Gravity.END | Gravity.BOTTOM);
-                  display.setPadding(16, 16, 16, 32);
-                  root.addView(display, new LinearLayout.LayoutParams(-1, 0, 1.4f));
+              static String read(InputStream in) throws Exception {
+                  if (in == null) return "";
+                  ByteArrayOutputStream out = new ByteArrayOutputStream();
+                  byte[] buf = new byte[8192];
+                  int n;
+                  while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                  in.close();
+                  return new String(out.toByteArray(), "UTF-8");
+              }
 
-                  String[][] rows = {
-                      {"C", "⌫", "%", "÷"},
-                      {"7", "8", "9", "×"},
-                      {"4", "5", "6", "-"},
-                      {"1", "2", "3", "+"},
-                      {"0", ".", "="}
-                  };
-                  for (String[] r : rows) {
-                      LinearLayout row = new LinearLayout(this);
-                      for (final String k : r) {
-                          Button bt = new Button(this);
-                          bt.setText(k);
-                          bt.setTextSize(26);
-                          bt.setAllCaps(false);
-                          if ("÷×-+=".contains(k)) {
-                              bt.setBackgroundColor(Color.parseColor("#FF9F0A"));
-                              bt.setTextColor(Color.WHITE);
-                          } else if ("C⌫%".contains(k)) {
-                              bt.setBackgroundColor(Color.parseColor("#A5A5A5"));
-                              bt.setTextColor(Color.BLACK);
-                          } else {
-                              bt.setBackgroundColor(Color.parseColor("#333333"));
-                              bt.setTextColor(Color.WHITE);
+              class Bridge {
+                  @JavascriptInterface
+                  public String load(String k) {
+                      return prefs.getString(k, "");
+                  }
+
+                  @JavascriptInterface
+                  public void save(String k, String v) {
+                      prefs.edit().putString(k, v).apply();
+                  }
+
+                  @JavascriptInterface
+                  public void get(final String url, final String cb) {
+                      new Thread(new Runnable() {
+                          public void run() {
+                              JSONObject r = new JSONObject();
+                              try {
+                                  HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                                  c.setConnectTimeout(15000);
+                                  c.setReadTimeout(25000);
+                                  int code = c.getResponseCode();
+                                  InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+                                  r.put("status", code);
+                                  r.put("body", read(in));
+                                  r.put("remaining", String.valueOf(c.getHeaderField("x-requests-remaining")));
+                              } catch (Exception e) {
+                                  try {
+                                      r.put("status", 0);
+                                      r.put("body", String.valueOf(e.getMessage()));
+                                  } catch (Exception ignored) {
+                                  }
+                              }
+                              final String js = "window.__cb(" + JSONObject.quote(cb) + "," + JSONObject.quote(r.toString()) + ")";
+                              runOnUiThread(new Runnable() {
+                                  public void run() {
+                                      web.evaluateJavascript(js, null);
+                                  }
+                              });
                           }
-                          bt.setOnClickListener(v -> press(k));
-                          LinearLayout.LayoutParams lp =
-                              new LinearLayout.LayoutParams(0, -1, k.equals("0") ? 2f : 1f);
-                          lp.setMargins(6, 6, 6, 6);
-                          row.addView(bt, lp);
-                      }
-                      root.addView(row, new LinearLayout.LayoutParams(-1, 0, 1f));
-                  }
-                  setContentView(root);
-              }
-
-              void press(String k) {
-                  switch (k) {
-                      case "C":
-                          cur = ""; op = ""; acc = 0; done = false;
-                          show("0");
-                          return;
-                      case "⌫":
-                          if (done) { cur = ""; done = false; }
-                          if (cur.length() > 0) cur = cur.substring(0, cur.length() - 1);
-                          show(cur.isEmpty() ? "0" : cur);
-                          return;
-                      case "%":
-                          if (!cur.isEmpty()) { cur = fmt(Double.parseDouble(cur) / 100); show(cur); }
-                          return;
-                      case "+": case "-": case "×": case "÷":
-                          if (!cur.isEmpty()) {
-                              double x = Double.parseDouble(cur);
-                              acc = op.isEmpty() ? x : calc(acc, x, op);
-                              if (bad(acc)) return;
-                              cur = "";
-                              show(fmt(acc));
-                          }
-                          op = k;
-                          done = false;
-                          return;
-                      case "=":
-                          if (!op.isEmpty() && !cur.isEmpty()) {
-                              acc = calc(acc, Double.parseDouble(cur), op);
-                              if (bad(acc)) return;
-                              cur = fmt(acc);
-                              op = "";
-                              done = true;
-                              show(cur);
-                          }
-                          return;
-                      case ".":
-                          if (done) { cur = ""; done = false; }
-                          if (cur.contains(".")) return;
-                          if (cur.isEmpty()) cur = "0";
-                          cur += ".";
-                          show(cur);
-                          return;
-                      default:
-                          if (done) { cur = ""; done = false; }
-                          if (cur.equals("0")) cur = "";
-                          if (cur.length() < 15) cur += k;
-                          show(cur);
+                      }).start();
                   }
               }
-
-              double calc(double a, double b, String o) {
-                  switch (o) {
-                      case "+": return a + b;
-                      case "-": return a - b;
-                      case "×": return a * b;
-                      case "÷": return a / b;
-                  }
-                  return b;
-              }
-
-              boolean bad(double d) {
-                  if (Double.isNaN(d) || Double.isInfinite(d)) {
-                      cur = ""; op = ""; acc = 0; done = false;
-                      show("خطا");
-                      return true;
-                  }
-                  return false;
-              }
-
-              String fmt(double d) {
-                  if (d == Math.rint(d) && Math.abs(d) < 1e15) return String.valueOf((long) d);
-                  String s = String.valueOf(Math.round(d * 1e10) / 1e10);
-                  return s;
-              }
-
-              void show(String s) { display.setText(s); }
           }
-          EOF
+          EOF_X
+          cat > src/main/assets/index.html <<'EOF_X'
+          <!DOCTYPE html>
+          <html lang="fa" dir="rtl">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+          <title>فوتبال بت</title>
+          <style>
+          :root{--bg:#0b1a2e;--card:#13263f;--card2:#1b3352;--acc:#1e88e5;--gold:#ffc107;--green:#2ecc71;--red:#e74c3c;--txt:#e8eef6;--mut:#8aa0b8}
+          *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+          body{background:var(--bg);color:var(--txt);font-family:Tahoma,sans-serif;font-size:14px;padding-bottom:70px}
+          header{position:sticky;top:0;z-index:5;background:#0a2a4f;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px #0006}
+          .logo{font-weight:bold;font-size:17px}
+          .bal{background:#0006;border-radius:20px;padding:6px 12px;color:var(--gold);font-weight:bold}
+          .leagues{display:flex;gap:8px;overflow-x:auto;padding:10px 12px;white-space:nowrap}
+          .chip{background:var(--card);border:1px solid #234;border-radius:18px;padding:7px 13px;color:var(--mut);display:inline-block}
+          .chip.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+          .match{background:var(--card);margin:8px 12px;border-radius:12px;padding:12px}
+          .mt{display:flex;justify-content:space-between;color:var(--mut);font-size:12px;margin-bottom:8px}
+          .teams{font-weight:bold;margin-bottom:10px;line-height:1.7;direction:ltr;text-align:left}
+          .odds{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:6px}
+          .odds.two{grid-template-columns:repeat(2,1fr)}
+          .ob{background:var(--card2);border-radius:8px;padding:8px 4px;text-align:center;border:1px solid transparent}
+          .ob small{display:block;color:var(--mut);font-size:11px;margin-bottom:2px}
+          .ob b{color:var(--gold)}
+          .ob.sel{background:var(--acc);border-color:#fff3}
+          .ob.sel b,.ob.sel small{color:#fff}
+          .ob.dis{opacity:.35}
+          nav{position:fixed;bottom:0;left:0;right:0;background:#0a2a4f;display:flex;box-shadow:0 -2px 8px #0006}
+          nav button{flex:1;background:none;border:0;border-top:3px solid transparent;color:var(--mut);padding:10px 0;font-family:inherit;font-size:13px}
+          nav button.on{color:#fff;border-top-color:var(--acc)}
+          .badge{background:var(--red);color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-right:4px}
+          .page{display:none}.page.on{display:block}
+          .box{background:var(--card);margin:10px 12px;border-radius:12px;padding:14px}
+          .row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;gap:8px}
+          .sl{border-bottom:1px solid #234;padding:8px 0}
+          .x{color:var(--red);padding:0 6px}
+          input{width:100%;background:var(--card2);border:1px solid #2a4a70;color:var(--txt);border-radius:8px;padding:10px;font-size:15px;font-family:inherit;margin:6px 0}
+          .btn{width:100%;background:var(--green);color:#fff;border:0;border-radius:10px;padding:12px;font-size:15px;font-weight:bold;font-family:inherit;margin-top:8px}
+          .btn.sec{background:var(--card2)}
+          .btn.blue{background:var(--acc)}
+          .quick{display:flex;gap:6px}.quick button{flex:1;background:var(--card2);color:var(--txt);border:0;border-radius:8px;padding:8px;font-family:inherit}
+          .st{border-radius:6px;padding:2px 8px;font-size:12px}
+          .st.p{background:#ffc10733;color:var(--gold)}.st.w{background:#2ecc7133;color:var(--green)}.st.l{background:#e74c3c33;color:var(--red)}
+          .mut{color:var(--mut);font-size:12px}
+          .ltr{direction:ltr;unicode-bidi:embed}
+          .gold{color:var(--gold)}
+          .empty{text-align:center;color:var(--mut);padding:40px 20px;line-height:2}
+          .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#000d;color:#fff;padding:10px 16px;border-radius:20px;display:none;z-index:9;max-width:90%;text-align:center}
+          .spin{text-align:center;padding:30px;color:var(--mut)}
+          </style>
+          </head>
+          <body>
+          <header><div class="logo">⚽ فوتبال بت</div><div class="bal" id="bal">0</div></header>
+          <div id="p-matches" class="page on"><div class="leagues" id="leagues"></div><div id="list"></div></div>
+          <div id="p-slip" class="page"><div id="slip"></div></div>
+          <div id="p-bets" class="page"><div class="box"><button class="btn blue" onclick="checkResults(true)">🔄 بروزرسانی نتایج</button></div><div id="bets"></div></div>
+          <div id="p-set" class="page"><div id="set"></div></div>
+          <nav>
+          <button id="n-matches" class="on" onclick="go('matches')">⚽ بازی‌ها</button>
+          <button id="n-slip" onclick="go('slip')">🎫 بلیط<span id="cnt"></span></button>
+          <button id="n-bets" onclick="go('bets')">📋 شرط‌های من</button>
+          <button id="n-set" onclick="go('set')">⚙️ تنظیمات</button>
+          </nav>
+          <div class="toast" id="toast"></div>
+          <script>
+          var API = 'https://api.the-odds-api.com/v4/sports/';
+          var LEAGUES = [
+            ['soccer_epl', 'انگلیس'],
+            ['soccer_spain_la_liga', 'اسپانیا'],
+            ['soccer_italy_serie_a', 'ایتالیا'],
+            ['soccer_germany_bundesliga', 'آلمان'],
+            ['soccer_france_ligue_one', 'فرانسه'],
+            ['soccer_uefa_champs_league', 'لیگ قهرمانان'],
+            ['soccer_uefa_europa_league', 'لیگ اروپا']
+          ];
+          var ODDS_TTL = 30 * 60000, SCORE_TTL = 10 * 60000, START = 1000, BONUS = 100;
+          var cur = LEAGUES[0][0], CUR = null, MATCHES = {}, cbs = {}, cbn = 0;
+
+          function $(id) { return document.getElementById(id); }
+          function ld(k, d) { try { var v = Android.load(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+          function sv(k, v) { Android.save(k, JSON.stringify(v)); }
+          window.__cb = function (id, res) { var f = cbs[id]; delete cbs[id]; if (f) f(JSON.parse(res)); };
+          function http(url, f) { var id = 'c' + (cbn++); cbs[id] = f; Android.get(url, id); }
+          function key() { return ld('key', ''); }
+          function fmt(n) { return Math.round(n).toLocaleString('fa-IR'); }
+          function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+          function tm(t) {
+            try { return new Date(t).toLocaleString('fa-IR', { timeZone: 'Asia/Tehran', weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+            catch (e) { return String(t); }
+          }
+          function lname(k) { for (var i = 0; i < LEAGUES.length; i++) if (LEAGUES[i][0] == k) return LEAGUES[i][1]; return ''; }
+          function toast(t) { var e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(e._t); e._t = setTimeout(function () { e.style.display = 'none'; }, 2500); }
+
+          var W = ld('wallet', null); if (!W) { W = { coins: START, last: 0 }; sv('wallet', W); }
+          var BETS = ld('bets', []);
+          var slip = ld('slip', []);
+          function saveAll() { sv('wallet', W); sv('bets', BETS); renderBal(); }
+          function renderBal() { $('bal').textContent = '🪙 ' + fmt(W.coins); }
+          function updateCnt() { $('cnt').innerHTML = slip.length ? '<span class="badge">' + fmt(slip.length) + '</span>' : ''; }
+
+          function go(p) {
+            ['matches', 'slip', 'bets', 'set'].forEach(function (x) {
+              $('p-' + x).classList.toggle('on', x == p);
+              $('n-' + x).classList.toggle('on', x == p);
+            });
+            if (p == 'slip') renderSlip();
+            if (p == 'bets') { renderBets(); checkResults(false); }
+            if (p == 'set') renderSet();
+            if (p == 'matches' && CUR) renderMatches(CUR);
+            window.scrollTo(0, 0);
+          }
+
+          /* ---------- matches ---------- */
+          function renderLeagues() {
+            var h = '';
+            LEAGUES.forEach(function (l) { h += '<span class="chip' + (l[0] == cur ? ' on' : '') + '" onclick="pickLeague(\'' + l[0] + '\')">' + l[1] + '</span>'; });
+            $('leagues').innerHTML = h;
+          }
+          function pickLeague(k) { cur = k; renderLeagues(); loadOdds(false); }
+
+          function mkt(b, k) { if (!b || !b.markets) return null; for (var i = 0; i < b.markets.length; i++) if (b.markets[i].key == k) return b.markets[i]; return null; }
+          function books(e) {
+            var pref = ['onexbet', 'pinnacle', 'williamhill', 'unibet_eu', 'betfair_ex_eu'], bs = e.bookmakers || [], out = [];
+            pref.forEach(function (p) { bs.forEach(function (b) { if (b.key == p) out.push(b); }); });
+            bs.forEach(function (b) { if (out.indexOf(b) < 0) out.push(b); });
+            return out;
+          }
+          function compact(d, lg) {
+            return d.map(function (e) {
+              var o = { id: e.id, lg: lg, home: e.home_team, away: e.away_team, time: e.commence_time, h: null, d: null, a: null, ov: null, un: null };
+              var bs = books(e), i;
+              for (i = 0; i < bs.length; i++) {
+                var m = mkt(bs[i], 'h2h');
+                if (m) { m.outcomes.forEach(function (x) { if (x.name == e.home_team) o.h = x.price; else if (x.name == e.away_team) o.a = x.price; else o.d = x.price; }); break; }
+              }
+              for (i = 0; i < bs.length; i++) {
+                var t = mkt(bs[i], 'totals'), ov = null, un = null;
+                if (t) t.outcomes.forEach(function (x) { if (x.point == 2.5) { if (x.name == 'Over') ov = x.price; else un = x.price; } });
+                if (ov && un) { o.ov = ov; o.un = un; break; }
+              }
+              return o;
+            }).filter(function (o) { return o.h && o.a; });
+          }
+
+          function loadOdds(force) {
+            var list = $('list'), lg = cur;
+            if (!key()) { list.innerHTML = '<div class="empty">اول از بخش ⚙️ تنظیمات کلید API رو وارد کن</div>'; return; }
+            var c = ld('odds_' + lg, null);
+            if (c && !force && Date.now() - c.t < ODDS_TTL) { renderMatches(c.d); return; }
+            list.innerHTML = '<div class="spin">در حال دریافت بازی‌ها...</div>';
+            http(API + lg + '/odds/?apiKey=' + encodeURIComponent(key()) + '&regions=eu&markets=h2h,totals&oddsFormat=decimal', function (r) {
+              if (r.remaining && r.remaining != 'null') sv('remaining', r.remaining);
+              if (lg != cur) return;
+              if (r.status == 200) {
+                var d = [];
+                try { d = compact(JSON.parse(r.body), lg); } catch (e) {}
+                sv('odds_' + lg, { t: Date.now(), d: d });
+                renderMatches(d);
+              } else if (c) { renderMatches(c.d); toast('خطا در اتصال، اطلاعات قبلی نمایش داده شد'); }
+              else list.innerHTML = '<div class="empty">خطا در دریافت اطلاعات (' + r.status + ')<br><span class="ltr">' + esc(r.body).slice(0, 200) + '</span><br><br>اینترنت، VPN و کلید API رو چک کن<br><span class="chip" onclick="loadOdds(true)">تلاش دوباره</span></div>';
+            });
+          }
+
+          function ob(m, mt, pick, label, odd) {
+            if (!odd) return '<div class="ob dis"><small>' + label + '</small><b>-</b></div>';
+            var s = slip.some(function (x) { return x.id == m.id && x.mt == mt && x.pick == pick; });
+            return '<div class="ob' + (s ? ' sel' : '') + '" onclick="tog(\'' + m.id + '\',\'' + mt + '\',\'' + pick + '\')"><small>' + label + '</small><b>' + odd.toFixed(2) + '</b></div>';
+          }
+          function renderMatches(d) {
+            CUR = d;
+            var now = Date.now(), list = $('list');
+            var ms = d.filter(function (m) { return new Date(m.time).getTime() > now; }).sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
+            var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(ms.length) + ' بازی</span><span class="chip" onclick="loadOdds(true)">🔄 بروزرسانی</span></div>';
+            if (!ms.length) { list.innerHTML = h + '<div class="empty">فعلاً بازی‌ای برای این لیگ نیست</div>'; return; }
+            ms.forEach(function (m) {
+              MATCHES[m.id] = m;
+              h += '<div class="match"><div class="mt"><span>' + tm(m.time) + '</span><span>' + lname(m.lg) + '</span></div>' +
+                '<div class="teams">' + esc(m.home) + '<br>' + esc(m.away) + '</div>' +
+                '<div class="odds">' + ob(m, 'h2h', '1', '۱ میزبان', m.h) + ob(m, 'h2h', 'X', 'مساوی', m.d) + ob(m, 'h2h', '2', '۲ مهمان', m.a) + '</div>';
+              if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'tot', 'O', 'بیشتر از ۲.۵ گل', m.ov) + ob(m, 'tot', 'U', 'کمتر از ۲.۵ گل', m.un) + '</div>';
+              h += '</div>';
+            });
+            list.innerHTML = h;
+          }
+
+          /* ---------- bet slip ---------- */
+          function pl(x) {
+            return { '1': 'برد ' + x.home, 'X': 'مساوی', '2': 'برد ' + x.away, 'O': 'بیشتر از ۲.۵ گل', 'U': 'کمتر از ۲.۵ گل' }[x.pick];
+          }
+          function tog(id, mt, pick) {
+            var m = MATCHES[id]; if (!m) return;
+            var i = -1;
+            slip.forEach(function (x, j) { if (x.id == id && x.mt == mt && x.pick == pick) i = j; });
+            if (i >= 0) slip.splice(i, 1);
+            else {
+              slip = slip.filter(function (x) { return x.id != id; });
+              if (slip.length >= 15) { toast('حداکثر ۱۵ بازی تو یه میکس'); return; }
+              var odd = { '1': m.h, 'X': m.d, '2': m.a, 'O': m.ov, 'U': m.un }[pick];
+              if (!odd) return;
+              slip.push({ id: id, lg: m.lg, home: m.home, away: m.away, time: m.time, mt: mt, pick: pick, odd: odd });
+              toast(slip.length > 1 ? 'اضافه شد، میکس ' + fmt(slip.length) + ' تایی' : 'به بلیط اضافه شد');
+            }
+            sv('slip', slip); updateCnt(); if (CUR) renderMatches(CUR);
+          }
+          function totalOdd() { return slip.reduce(function (a, x) { return a * x.odd; }, 1); }
+          function rm(i) { slip.splice(i, 1); sv('slip', slip); updateCnt(); renderSlip(); }
+          function clearSlip() { slip = []; sv('slip', slip); updateCnt(); renderSlip(); }
+          function renderSlip() {
+            var el = $('slip');
+            if (!slip.length) { el.innerHTML = '<div class="empty">بلیطت خالیه 🎫<br>از بخش بازی‌ها روی ضریب‌ها بزن.<br>اگه چند بازی انتخاب کنی، شرطت میکس میشه.</div>'; return; }
+            var h = '<div class="box"><div class="row"><b>' + (slip.length > 1 ? 'میکس ' + fmt(slip.length) + ' تایی' : 'شرط تکی') + '</b><span class="x" onclick="clearSlip()">پاک کردن همه</span></div>';
+            slip.forEach(function (x, i) {
+              h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + '</span><span class="x" onclick="rm(' + i + ')">✕</span></div>' +
+                '<div class="row"><span>' + esc(pl(x)) + '</span><b class="gold">' + x.odd.toFixed(2) + '</b></div></div>';
+            });
+            h += '<div class="row"><span>ضریب کل</span><b class="gold ltr">' + totalOdd().toFixed(2) + '</b></div>';
+            h += '<input id="stake" type="number" inputmode="numeric" placeholder="مبلغ شرط (سکه)" oninput="calc()">';
+            h += '<div class="quick"><button onclick="qs(50)">۵۰</button><button onclick="qs(100)">۱۰۰</button><button onclick="qs(500)">۵۰۰</button><button onclick="qs(-1)">همه</button></div>';
+            h += '<div class="row"><span>برد احتمالی</span><b id="win" style="color:var(--green)">۰</b></div>';
+            h += '<button class="btn" onclick="place()">✅ ثبت شرط</button></div>';
+            el.innerHTML = h;
+          }
+          function qs(v) { $('stake').value = v < 0 ? Math.floor(W.coins) : v; calc(); }
+          function calc() { var s = +$('stake').value || 0; $('win').textContent = fmt(s * totalOdd()); }
+          function place() {
+            var s = Math.floor(+$('stake').value || 0), now = Date.now();
+            if (s < 1) { toast('مبلغ شرط رو وارد کن'); return; }
+            if (s > W.coins) { toast('سکه کافی نداری'); return; }
+            for (var i = 0; i < slip.length; i++) if (new Date(slip[i].time).getTime() <= now) { toast('بازی ' + slip[i].home + ' شروع شده، از بلیط حذفش کن'); return; }
+            BETS.unshift({
+              id: 'b' + now, t: now, stake: s, odd: Math.round(totalOdd() * 100) / 100, st: 'p', win: 0,
+              sel: slip.map(function (x) { var y = JSON.parse(JSON.stringify(x)); y.res = 'p'; return y; })
+            });
+            W.coins -= s; slip = []; sv('slip', slip); saveAll(); updateCnt();
+            toast('شرطت ثبت شد ✅'); go('bets');
+          }
+
+          /* ---------- results ---------- */
+          function checkResults(manual) {
+            var now = Date.now(), lgs = {};
+            var pend = BETS.filter(function (b) { return b.st == 'p'; });
+            if (!pend.length) { if (manual) toast('شرط باز نداری'); return; }
+            if (!key()) return;
+            pend.forEach(function (b) { b.sel.forEach(function (x) { if (x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now) lgs[x.lg] = 1; }); });
+            var ks = Object.keys(lgs);
+            if (!ks.length) { settle(); renderBets(); if (manual) toast('هنوز بازی‌ای تموم نشده'); return; }
+            if (!manual && now - ld('lastScore', 0) < SCORE_TTL) return;
+            sv('lastScore', now);
+            if (manual) toast('در حال بررسی نتایج...');
+            var left = ks.length;
+            ks.forEach(function (lg) {
+              http(API + lg + '/scores/?apiKey=' + encodeURIComponent(key()) + '&daysFrom=3', function (r) {
+                if (r.remaining && r.remaining != 'null') sv('remaining', r.remaining);
+                if (r.status == 200) { try { applyScores(JSON.parse(r.body)); } catch (e) {} }
+                else if (manual) toast('خطا در دریافت نتایج (' + r.status + ')');
+                if (--left == 0) { settle(); renderBets(); if (manual && r.status == 200) toast('نتایج بروز شد'); }
+              });
+            });
+          }
+          function applyScores(arr) {
+            var map = {};
+            arr.forEach(function (e) { map[e.id] = e; });
+            BETS.forEach(function (b) {
+              if (b.st != 'p') return;
+              b.sel.forEach(function (x) {
+                if (x.res != 'p') return;
+                var e = map[x.id];
+                if (!e || !e.completed || !e.scores) return;
+                var hs = null, as = null;
+                e.scores.forEach(function (s) { if (s.name == e.home_team) hs = parseInt(s.score, 10); else if (s.name == e.away_team) as = parseInt(s.score, 10); });
+                if (hs === null || as === null || isNaN(hs) || isNaN(as)) return;
+                var g = hs + as, w;
+                x.score = hs + '-' + as;
+                if (x.pick == '1') w = hs > as; else if (x.pick == '2') w = as > hs; else if (x.pick == 'X') w = hs == as; else if (x.pick == 'O') w = g > 2.5; else w = g < 2.5;
+                x.res = w ? 'w' : 'l';
+              });
+            });
+          }
+          function settle() {
+            var now = Date.now();
+            BETS.forEach(function (b) {
+              if (b.st != 'p') return;
+              b.sel.forEach(function (x) { if (x.res == 'p' && now - new Date(x.time).getTime() > 84 * 3600000) x.res = 'v'; });
+              if (b.sel.some(function (x) { return x.res == 'l'; })) { b.st = 'l'; return; }
+              if (b.sel.every(function (x) { return x.res != 'p'; })) {
+                var o = b.sel.reduce(function (a, x) { return a * (x.res == 'w' ? x.odd : 1); }, 1);
+                b.win = Math.floor(b.stake * o);
+                b.st = b.sel.every(function (x) { return x.res == 'v'; }) ? 'v' : 'w';
+                W.coins += b.win;
+                if (b.st == 'w') toast('🎉 بردی! ' + fmt(b.win) + ' سکه');
+              }
+            });
+            saveAll();
+          }
+          function renderBets() {
+            var el = $('bets');
+            if (!BETS.length) { el.innerHTML = '<div class="empty">هنوز شرطی نبستی</div>'; return; }
+            var h = '';
+            BETS.forEach(function (b) {
+              var st = { p: ['p', 'در انتظار'], w: ['w', 'برنده 🎉'], l: ['l', 'بازنده'], v: ['p', 'لغو شد'] }[b.st];
+              h += '<div class="box"><div class="row"><b>' + (b.sel.length > 1 ? 'میکس ' + fmt(b.sel.length) + ' تایی' : 'تکی') + '</b><span class="st ' + st[0] + '">' + st[1] + '</span></div>';
+              b.sel.forEach(function (x) {
+                var ic = { p: '⏳', w: '✅', l: '❌', v: '↩️' }[x.res];
+                h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + (x.score ? ' (' + x.score + ')' : '') + '</span><span>' + ic + '</span></div>' +
+                  '<div class="row"><span>' + esc(pl(x)) + '</span><b class="ltr">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div></div>';
+              });
+              var amt = b.st == 'l' ? '۰' : (b.st == 'p' ? fmt(b.stake * b.odd) : '+' + fmt(b.win));
+              h += '<div class="row"><span class="mut">مبلغ ' + fmt(b.stake) + ' | ضریب ' + b.odd.toFixed(2) + '</span><b style="color:' + (b.st == 'l' ? 'var(--red)' : 'var(--green)') + '">' + amt + '</b></div></div>';
+            });
+            el.innerHTML = h;
+          }
+
+          /* ---------- settings ---------- */
+          function renderSet() {
+            var rem = ld('remaining', '');
+            $('set').innerHTML =
+              '<div class="box"><b>🔑 کلید API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">ذخیره کلید</button>' +
+              (rem ? '<div class="mut" style="margin-top:8px">اعتبار باقی‌مونده این ماه: ' + esc(rem) + '</div>' : '') + '</div>' +
+              '<div class="box"><b>🎁 جایزه روزانه</b><div class="mut">هر ۲۴ ساعت ' + fmt(BONUS) + ' سکه رایگان</div><button class="btn" onclick="bonus()">دریافت جایزه</button></div>' +
+              '<div class="box"><b>♻️ شروع دوباره</b><div class="mut">سکه‌ها ' + fmt(START) + ' میشه و تاریخچه پاک میشه</div><button class="btn sec" onclick="resetAll()">ریست</button></div>' +
+              '<div class="box mut">این اپ فقط برای سرگرمیه و با سکه مجازی کار می‌کنه، پول واقعی در کار نیست.</div>';
+          }
+          function saveKey() { sv('key', $('k').value.trim()); toast('کلید ذخیره شد'); renderSet(); loadOdds(true); }
+          function bonus() {
+            var n = Date.now();
+            if (n - (W.last || 0) < 86400000) { toast(fmt(Math.ceil((86400000 - (n - W.last)) / 3600000)) + ' ساعت دیگه دوباره بیا'); return; }
+            W.last = n; W.coins += BONUS; saveAll(); toast('🎁 ' + fmt(BONUS) + ' سکه گرفتی');
+          }
+          function resetAll() {
+            if (!confirm('مطمئنی؟ همه شرط‌ها پاک میشن')) return;
+            W = { coins: START, last: 0 }; BETS = []; slip = []; sv('slip', slip); saveAll(); updateCnt(); renderSet(); toast('ریست شد');
+          }
+
+          renderBal(); renderLeagues(); updateCnt(); loadOdds(false);
+          setTimeout(function () { checkResults(false); }, 1500);
+          </script>
+          </body>
+          </html>
+          EOF_X
 
       - name: Build
-        working-directory: calc
+        working-directory: app
         run: gradle assembleDebug --no-daemon
 
       - name: Rename APK
-        run: cp calc/build/outputs/apk/debug/*.apk calculator.apk
+        run: cp app/build/outputs/apk/debug/*.apk footballbet.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: calculator-apk
-          path: calculator.apk
+          name: footballbet-apk
+          path: footballbet.apk
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
-          name: Calculator v${{ github.run_number }}
-          files: calculator.apk
+          name: Football Bet v${{ github.run_number }}
+          files: footballbet.apk
