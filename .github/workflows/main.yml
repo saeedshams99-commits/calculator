@@ -11,6 +11,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -20,9 +22,21 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Signing key
+        run: |
+          if [ ! -f fb.keystore ]; then
+            keytool -genkeypair -keystore fb.keystore -storetype PKCS12 -storepass android -keypass android -alias fbkey -keyalg RSA -keysize 2048 -validity 20000 -dname "CN=Saeed, O=FootballBet, C=IR"
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            git add fb.keystore
+            git commit -m "Add signing key"
+            git push
+          fi
+
       - name: Create project
         run: |
           mkdir -p app/src/main/java/com/saeed/bet app/src/main/assets
+          cp fb.keystore app/fb.keystore
           cd app
           cat > settings.gradle <<'EOF_X'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
@@ -34,12 +48,23 @@ jobs:
           android {
               namespace 'com.saeed.bet'
               compileSdk 34
+              signingConfigs {
+                  fixed {
+                      storeFile file('fb.keystore')
+                      storePassword 'android'
+                      keyAlias 'fbkey'
+                      keyPassword 'android'
+                  }
+              }
               defaultConfig {
                   applicationId 'com.saeed.bet'
                   minSdk 21
                   targetSdk 34
-                  versionCode 1
-                  versionName '1.0'
+                  versionCode 2
+                  versionName '2.0'
+              }
+              buildTypes {
+                  debug { signingConfig signingConfigs.fixed }
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_1_8
@@ -202,11 +227,16 @@ jobs:
           .empty{text-align:center;color:var(--mut);padding:40px 20px;line-height:2}
           .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#000d;color:#fff;padding:10px 16px;border-radius:20px;display:none;z-index:9;max-width:90%;text-align:center}
           .spin{text-align:center;padding:30px;color:var(--mut)}
+          .day{padding:12px 14px 2px;color:var(--gold);font-weight:bold;font-size:13px}
+          .more{text-align:center;color:#64b5f6;padding:8px 0 2px;font-size:13px}
+          .chip.sm{padding:5px 11px;font-size:12px}
+          .lbl{color:var(--mut);font-size:12px;margin:8px 0 4px}
+          .leagues:empty{display:none}
           </style>
           </head>
           <body>
           <header><div class="logo">⚽ فوتبال بت</div><div class="bal" id="bal">0</div></header>
-          <div id="p-matches" class="page on"><div class="leagues" id="leagues"></div><div id="list"></div></div>
+          <div id="p-matches" class="page on"><div id="leagues"></div><div id="list"></div></div>
           <div id="p-slip" class="page"><div id="slip"></div></div>
           <div id="p-bets" class="page"><div class="box"><button class="btn blue" onclick="checkResults(true)">🔄 بروزرسانی نتایج</button></div><div id="bets"></div></div>
           <div id="p-set" class="page"><div id="set"></div></div>
@@ -219,32 +249,47 @@ jobs:
           <div class="toast" id="toast"></div>
           <script>
           var API = 'https://api.the-odds-api.com/v4/sports/';
-          var LEAGUES = [
-            ['soccer_epl', 'انگلیس'],
-            ['soccer_spain_la_liga', 'اسپانیا'],
-            ['soccer_italy_serie_a', 'ایتالیا'],
-            ['soccer_germany_bundesliga', 'آلمان'],
-            ['soccer_france_ligue_one', 'فرانسه'],
-            ['soccer_uefa_champs_league', 'لیگ قهرمانان'],
-            ['soccer_uefa_europa_league', 'لیگ اروپا']
-          ];
-          var ODDS_TTL = 30 * 60000, SCORE_TTL = 10 * 60000, START = 1000, BONUS = 100;
-          var cur = LEAGUES[0][0], CUR = null, MATCHES = {}, cbs = {}, cbn = 0;
+          var POP = ['soccer_epl', 'soccer_spain_la_liga', 'soccer_italy_serie_a', 'soccer_germany_bundesliga', 'soccer_france_ligue_one', 'soccer_uefa_champs_league', 'soccer_uefa_europa_league'];
+          var FA = {
+            soccer_epl: '🏴 لیگ برتر انگلیس', soccer_efl_champ: '🏴 چمپیونشیپ انگلیس', soccer_england_league1: '🏴 لیگ یک انگلیس',
+            soccer_fa_cup: '🏴 جام حذفی انگلیس', soccer_spain_la_liga: '🇪🇸 لالیگا اسپانیا', soccer_spain_segunda_division: '🇪🇸 لالیگا ۲',
+            soccer_italy_serie_a: '🇮🇹 سری آ ایتالیا', soccer_italy_serie_b: '🇮🇹 سری بی ایتالیا', soccer_germany_bundesliga: '🇩🇪 بوندسلیگا آلمان',
+            soccer_germany_bundesliga2: '🇩🇪 بوندسلیگا ۲', soccer_france_ligue_one: '🇫🇷 لوشامپیونه فرانسه', soccer_france_ligue_two: '🇫🇷 لیگ ۲ فرانسه',
+            soccer_uefa_champs_league: '🏆 لیگ قهرمانان اروپا', soccer_uefa_europa_league: '🏆 لیگ اروپا', soccer_uefa_europa_conference_league: '🏆 لیگ کنفرانس اروپا',
+            soccer_netherlands_eredivisie: '🇳🇱 اردیویسی هلند', soccer_portugal_primeira_liga: '🇵🇹 لیگ برتر پرتغال', soccer_turkey_super_league: '🇹🇷 سوپرلیگ ترکیه',
+            soccer_belgium_first_div: '🇧🇪 لیگ بلژیک', soccer_spl: '🏴 لیگ اسکاتلند', soccer_greece_super_league: '🇬🇷 سوپرلیگ یونان',
+            soccer_japan_j_league: '🇯🇵 جی‌لیگ ژاپن', soccer_china_superleague: '🇨🇳 سوپرلیگ چین', soccer_korea_kleague1: '🇰🇷 کی‌لیگ کره',
+            soccer_australia_aleague: '🇦🇺 ای‌لیگ استرالیا', soccer_mexico_ligamx: '🇲🇽 لیگا MX مکزیک', soccer_brazil_campeonato: '🇧🇷 سری آ برزیل',
+            soccer_argentina_primera_division: '🇦🇷 لیگ آرژانتین', soccer_usa_mls: '🇺🇸 MLS آمریکا', soccer_chile_campeonato: '🇨🇱 لیگ شیلی',
+            soccer_conmebol_copa_libertadores: '🏆 کوپا لیبرتادورس', soccer_conmebol_copa_sudamericana: '🏆 کوپا سودامریکانا',
+            soccer_fifa_world_cup: '🌍 جام جهانی', soccer_uefa_nations_league: '🇪🇺 لیگ ملت‌های اروپا'
+          };
+          var REG = [['pop', '⭐ محبوب'], ['all', '⏰ همه به ترتیب ساعت'], ['eu', '🌍 اروپا'], ['asia', '🌏 آسیا'], ['am', '🌎 آمریکا'], ['nat', '🏳️ ملی'], ['other', '🌐 سایر']];
+          var DFS = [['all', 'همه روزها'], ['today', 'امروز'], ['tom', 'فردا'], ['week', '۷ روز آینده']];
+          var ODDS_TTL = 60 * 60000, SCORE_TTL = 10 * 60000, EX_TTL = 60 * 60000, SPORTS_TTL = 12 * 3600000, START = 1000, BONUS = 100;
+          var reg = 'pop', cur = POP[0], DF = 'all', CUR = null, CURM = false, NL = 0, MATCHES = {}, OPEN = {}, EX = {}, SPORTS = [], cbs = {}, cbn = 0;
 
           function $(id) { return document.getElementById(id); }
-          function ld(k, d) { try { var v = Android.load(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+          function ld(k, d) { try { var v = Android.load(k); var r = v ? JSON.parse(v) : d; return r === null ? d : r; } catch (e) { return d; } }
           function sv(k, v) { Android.save(k, JSON.stringify(v)); }
           window.__cb = function (id, res) { var f = cbs[id]; delete cbs[id]; if (f) f(JSON.parse(res)); };
           function http(url, f) { var id = 'c' + (cbn++); cbs[id] = f; Android.get(url, id); }
           function key() { return ld('key', ''); }
+          function rem(r) { if (r.remaining && r.remaining != 'null') sv('remaining', r.remaining); }
           function fmt(n) { return Math.round(n).toLocaleString('fa-IR'); }
+          function fa(n) { return n.toLocaleString('fa-IR'); }
           function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-          function tm(t) {
-            try { return new Date(t).toLocaleString('fa-IR', { timeZone: 'Asia/Tehran', weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
-            catch (e) { return String(t); }
+          function L(t, o, m, loc) {
+            var d = new Date(t);
+            try { var oo = JSON.parse(JSON.stringify(o)); oo.timeZone = 'Asia/Tehran'; return d[m](loc || 'fa-IR', oo); }
+            catch (e) { return d[m](loc || 'fa-IR', o); }
           }
-          function lname(k) { for (var i = 0; i < LEAGUES.length; i++) if (LEAGUES[i][0] == k) return LEAGUES[i][1]; return ''; }
+          function tm(t) { return L(t, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }, 'toLocaleString'); }
+          function hm(t) { return L(t, { hour: '2-digit', minute: '2-digit' }, 'toLocaleTimeString'); }
+          function dl(t) { return L(t, { weekday: 'long', day: 'numeric', month: 'long' }, 'toLocaleDateString'); }
+          function dk(t) { return L(t, { year: 'numeric', month: '2-digit', day: '2-digit' }, 'toLocaleDateString', 'en-CA'); }
           function toast(t) { var e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(e._t); e._t = setTimeout(function () { e.style.display = 'none'; }, 2500); }
+          function chip(t, on, act, cls) { return '<span class="chip' + (on ? ' on' : '') + (cls ? ' ' + cls : '') + '" onclick="' + act + '">' + t + '</span>'; }
 
           var W = ld('wallet', null); if (!W) { W = { coins: START, last: 0 }; sv('wallet', W); }
           var BETS = ld('bets', []);
@@ -261,18 +306,72 @@ jobs:
             if (p == 'slip') renderSlip();
             if (p == 'bets') { renderBets(); checkResults(false); }
             if (p == 'set') renderSet();
-            if (p == 'matches' && CUR) renderMatches(CUR);
+            if (p == 'matches') rerender();
             window.scrollTo(0, 0);
           }
 
-          /* ---------- matches ---------- */
+          /* ---------- leagues ---------- */
+          function loadSports(done) {
+            var c = ld('sports', null);
+            if (c && Date.now() - c.t < SPORTS_TTL && c.d.length) { SPORTS = c.d; done(); return; }
+            var fb = function () { SPORTS = (c && c.d && c.d.length) ? c.d : POP.map(function (k) { return { key: k, title: k }; }); done(); };
+            if (!key()) { fb(); return; }
+            http(API + '?apiKey=' + encodeURIComponent(key()), function (r) {
+              if (r.status == 200) {
+                try {
+                  var s = JSON.parse(r.body).filter(function (s) { return s.group && s.group.indexOf('Soccer') == 0 && s.active && !s.has_outrights && !/_winner$/.test(s.key); })
+                    .map(function (s) { return { key: s.key, title: s.title }; });
+                  if (s.length) { SPORTS = s; sv('sports', { t: Date.now(), d: s }); done(); return; }
+                } catch (e) {}
+              }
+              fb();
+            });
+          }
+          function lname(k) {
+            if (FA[k]) return FA[k];
+            for (var i = 0; i < SPORTS.length; i++) if (SPORTS[i].key == k) return '⚽ ' + esc(SPORTS[i].title);
+            return k;
+          }
+          function regionOf(k) {
+            if (/fifa|uefa_nations|uefa_european_championship|euro_qual|copa_america|gold_cup|asian_cup|africa_cup_of_nations|world_cup|friendl|international/.test(k)) return 'nat';
+            if (/japan|china|korea|saudi|australia|iran|india|thailand|afc|qatar|uae|indonesia|vietnam/.test(k)) return 'asia';
+            if (/mexico|brazil|argentina|usa|mls|chile|colombia|peru|conmebol|concacaf|libertadores|sudamericana|ecuador|uruguay|paraguay|bolivia|venezuela|canada|costa_rica/.test(k)) return 'am';
+            if (/africa|egypt|morocco|tunisia|algeria|nigeria/.test(k)) return 'other';
+            return 'eu';
+          }
+          function leaguesFor(g) {
+            if (g == 'pop') {
+              var have = {}; SPORTS.forEach(function (s) { have[s.key] = 1; });
+              var p = POP.filter(function (k) { return have[k]; });
+              return (p.length ? p : POP).map(function (k) { return { key: k }; });
+            }
+            return SPORTS.filter(function (s) { return regionOf(s.key) == g; }).sort(function (a, b) { return (FA[b.key] ? 1 : 0) - (FA[a.key] ? 1 : 0); });
+          }
           function renderLeagues() {
-            var h = '';
-            LEAGUES.forEach(function (l) { h += '<span class="chip' + (l[0] == cur ? ' on' : '') + '" onclick="pickLeague(\'' + l[0] + '\')">' + l[1] + '</span>'; });
-            $('leagues').innerHTML = h;
+            var h = '<div class="leagues">';
+            REG.forEach(function (g) { if (g[0] == 'pop' || g[0] == 'all' || leaguesFor(g[0]).length) h += chip(g[1], reg == g[0], "pickReg('" + g[0] + "')"); });
+            h += '</div>';
+            if (reg != 'all') {
+              h += '<div class="leagues">';
+              leaguesFor(reg).forEach(function (s) { h += chip(lname(s.key), s.key == cur, "pickLeague('" + s.key + "')", 'sm'); });
+              h += '</div>';
+            }
+            h += '<div class="leagues">';
+            DFS.forEach(function (d) { h += chip(d[1], DF == d[0], "pickDF('" + d[0] + "')", 'sm'); });
+            $('leagues').innerHTML = h + '</div>';
+          }
+          function pickReg(g) {
+            reg = g;
+            if (g == 'all') { renderLeagues(); renderAll(); return; }
+            var ls = leaguesFor(g);
+            if (ls.length && !ls.some(function (s) { return s.key == cur; })) cur = ls[0].key;
+            renderLeagues(); loadOdds(false);
           }
           function pickLeague(k) { cur = k; renderLeagues(); loadOdds(false); }
+          function pickDF(d) { DF = d; renderLeagues(); rerender(); }
+          function rerender() { if (reg == 'all') renderAll(); else if (CUR) renderMatches(CUR, false); }
 
+          /* ---------- odds ---------- */
           function mkt(b, k) { if (!b || !b.markets) return null; for (var i = 0; i < b.markets.length; i++) if (b.markets[i].key == k) return b.markets[i]; return null; }
           function books(e) {
             var pref = ['onexbet', 'pinnacle', 'williamhill', 'unibet_eu', 'betfair_ex_eu'], bs = e.bookmakers || [], out = [];
@@ -280,82 +379,190 @@ jobs:
             bs.forEach(function (b) { if (out.indexOf(b) < 0) out.push(b); });
             return out;
           }
+          function totals(bs, mk, pt) {
+            for (var i = 0; i < bs.length; i++) {
+              var t = mkt(bs[i], mk), ov = null, un = null;
+              if (t) t.outcomes.forEach(function (x) { if (x.point == pt) { if (x.name == 'Over') ov = x.price; else if (x.name == 'Under') un = x.price; } });
+              if (ov && un) return [ov, un];
+            }
+            return null;
+          }
           function compact(d, lg) {
             return d.map(function (e) {
               var o = { id: e.id, lg: lg, home: e.home_team, away: e.away_team, time: e.commence_time, h: null, d: null, a: null, ov: null, un: null };
-              var bs = books(e), i;
-              for (i = 0; i < bs.length; i++) {
+              var bs = books(e);
+              for (var i = 0; i < bs.length; i++) {
                 var m = mkt(bs[i], 'h2h');
                 if (m) { m.outcomes.forEach(function (x) { if (x.name == e.home_team) o.h = x.price; else if (x.name == e.away_team) o.a = x.price; else o.d = x.price; }); break; }
               }
-              for (i = 0; i < bs.length; i++) {
-                var t = mkt(bs[i], 'totals'), ov = null, un = null;
-                if (t) t.outcomes.forEach(function (x) { if (x.point == 2.5) { if (x.name == 'Over') ov = x.price; else un = x.price; } });
-                if (ov && un) { o.ov = ov; o.un = un; break; }
-              }
+              var t = totals(bs, 'totals', 2.5);
+              if (t) { o.ov = t[0]; o.un = t[1]; }
               return o;
             }).filter(function (o) { return o.h && o.a; });
           }
-
-          function loadOdds(force) {
-            var list = $('list'), lg = cur;
-            if (!key()) { list.innerHTML = '<div class="empty">اول از بخش ⚙️ تنظیمات کلید API رو وارد کن</div>'; return; }
-            var c = ld('odds_' + lg, null);
-            if (c && !force && Date.now() - c.t < ODDS_TTL) { renderMatches(c.d); return; }
-            list.innerHTML = '<div class="spin">در حال دریافت بازی‌ها...</div>';
+          function fetchOdds(lg, cb) {
             http(API + lg + '/odds/?apiKey=' + encodeURIComponent(key()) + '&regions=eu&markets=h2h,totals&oddsFormat=decimal', function (r) {
-              if (r.remaining && r.remaining != 'null') sv('remaining', r.remaining);
-              if (lg != cur) return;
+              rem(r);
               if (r.status == 200) {
                 var d = [];
                 try { d = compact(JSON.parse(r.body), lg); } catch (e) {}
                 sv('odds_' + lg, { t: Date.now(), d: d });
-                renderMatches(d);
-              } else if (c) { renderMatches(c.d); toast('خطا در اتصال، اطلاعات قبلی نمایش داده شد'); }
-              else list.innerHTML = '<div class="empty">خطا در دریافت اطلاعات (' + r.status + ')<br><span class="ltr">' + esc(r.body).slice(0, 200) + '</span><br><br>اینترنت، VPN و کلید API رو چک کن<br><span class="chip" onclick="loadOdds(true)">تلاش دوباره</span></div>';
+                var idx = ld('oddsIdx', []); if (idx.indexOf(lg) < 0) { idx.push(lg); sv('oddsIdx', idx); }
+                cb(d, r);
+              } else cb(null, r);
             });
           }
-
-          function ob(m, mt, pick, label, odd) {
-            if (!odd) return '<div class="ob dis"><small>' + label + '</small><b>-</b></div>';
-            var s = slip.some(function (x) { return x.id == m.id && x.mt == mt && x.pick == pick; });
-            return '<div class="ob' + (s ? ' sel' : '') + '" onclick="tog(\'' + m.id + '\',\'' + mt + '\',\'' + pick + '\')"><small>' + label + '</small><b>' + odd.toFixed(2) + '</b></div>';
+          function errBox(r, retry) {
+            return '<div class="empty">خطا در دریافت اطلاعات (' + r.status + ')<br><span class="ltr">' + esc(r.body).slice(0, 200) + '</span><br><br>اینترنت، VPN و کلید API رو چک کن<br>' + chip('تلاش دوباره', false, retry) + '</div>';
           }
-          function renderMatches(d) {
-            CUR = d;
-            var now = Date.now(), list = $('list');
-            var ms = d.filter(function (m) { return new Date(m.time).getTime() > now; }).sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
-            var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(ms.length) + ' بازی</span><span class="chip" onclick="loadOdds(true)">🔄 بروزرسانی</span></div>';
-            if (!ms.length) { list.innerHTML = h + '<div class="empty">فعلاً بازی‌ای برای این لیگ نیست</div>'; return; }
+          function loadOdds(force) {
+            var list = $('list'), lg = cur;
+            if (!key()) { list.innerHTML = '<div class="empty">اول از بخش ⚙️ تنظیمات کلید API رو وارد کن</div>'; return; }
+            var c = ld('odds_' + lg, null);
+            if (c && !force && Date.now() - c.t < ODDS_TTL) { renderMatches(c.d, false); return; }
+            list.innerHTML = '<div class="spin">در حال دریافت بازی‌ها...</div>';
+            fetchOdds(lg, function (d, r) {
+              if (lg != cur || reg == 'all') return;
+              if (d) renderMatches(d, false);
+              else if (c) { renderMatches(c.d, false); toast('خطا در اتصال، اطلاعات قبلی نمایش داده شد'); }
+              else list.innerHTML = errBox(r, 'loadOdds(true)');
+            });
+          }
+          function renderAll() {
+            var idx = ld('oddsIdx', []), all = [], n = 0, now = Date.now();
+            idx.forEach(function (k) { var c = ld('odds_' + k, null); if (c && now - c.t < 6 * 3600000 && c.d.length) { all = all.concat(c.d); n++; } });
+            if (!all.length) {
+              CUR = null;
+              $('list').innerHTML = '<div class="empty">اینجا بازی‌های همه لیگ‌هایی که باز کردی، به ترتیب ساعت شروع نشون داده میشه.<br><br>' +
+                chip('📥 دریافت لیگ‌های محبوب', false, 'loadMany(POP)') + '<div class="mut">(حدود ۱۴ اعتبار مصرف میشه)</div></div>';
+              return;
+            }
+            NL = n; renderMatches(all, true);
+          }
+          function loadMany(ks) {
+            if (!key()) { toast('اول کلید API رو وارد کن'); return; }
+            if (!ks.length) ks = POP;
+            var i = 0;
+            $('list').innerHTML = '<div class="spin">در حال دریافت ' + fmt(ks.length) + ' لیگ...</div>';
+            (function next() { if (i >= ks.length) { if (reg == 'all') renderAll(); return; } fetchOdds(ks[i++], function () { next(); }); })();
+          }
+          function inDF(t) {
+            if (DF == 'all') return true;
+            var n = Date.now();
+            if (DF == 'today') return dk(t) == dk(n);
+            if (DF == 'tom') return dk(t) == dk(n + 86400000);
+            return t - n < 7 * 86400000;
+          }
+
+          /* ---------- extra markets ---------- */
+          function exOf(id) {
+            if (EX[id]) return EX[id];
+            var c = ld('ex_' + id, null);
+            if (c && Date.now() - c.t < EX_TTL) { EX[id] = c; return c; }
+            return null;
+          }
+          function fetchEx(m) {
+            http(API + m.lg + '/events/' + m.id + '/odds?apiKey=' + encodeURIComponent(key()) + '&regions=eu&markets=btts,alternate_totals&oddsFormat=decimal', function (r) {
+              rem(r);
+              var o = {};
+              if (r.status == 200) {
+                try {
+                  var bs = books(JSON.parse(r.body));
+                  for (var i = 0; i < bs.length; i++) {
+                    var b = mkt(bs[i], 'btts'), y = null, n = null;
+                    if (b) b.outcomes.forEach(function (x) { if (x.name == 'Yes') y = x.price; else if (x.name == 'No') n = x.price; });
+                    if (y && n) { o.BY = y; o.BN = n; break; }
+                  }
+                  [1.5, 2.5, 3.5].forEach(function (pt) { var t = totals(bs, 'alternate_totals', pt); if (t) { o['O' + pt * 10] = t[0]; o['U' + pt * 10] = t[1]; } });
+                } catch (e) {}
+              }
+              var v = { t: Date.now(), o: o, err: !Object.keys(o).length };
+              EX[m.id] = v;
+              if (r.status == 200) sv('ex_' + m.id, v); else toast('خطا در دریافت (' + r.status + ')');
+              rerender();
+            });
+          }
+          function more(id) {
+            OPEN[id] = !OPEN[id];
+            if (OPEN[id] && !exOf(id) && MATCHES[id]) fetchEx(MATCHES[id]);
+            rerender();
+          }
+
+          /* ---------- match list ---------- */
+          function getOdd(m, p) {
+            if (p == '1') return m.h; if (p == 'X') return m.d; if (p == '2') return m.a;
+            if (p == 'O25' && m.ov) return m.ov; if (p == 'U25' && m.un) return m.un;
+            var x = exOf(m.id); return x && x.o && x.o[p] ? x.o[p] : null;
+          }
+          function ob(m, p, label) {
+            var odd = getOdd(m, p);
+            if (!odd) return '<div class="ob dis"><small>' + label + '</small><b>-</b></div>';
+            var s = slip.some(function (x) { return x.id == m.id && x.pick == p; });
+            return '<div class="ob' + (s ? ' sel' : '') + '" onclick="tog(\'' + m.id + '\',\'' + p + '\')"><small>' + label + '</small><b>' + odd.toFixed(2) + '</b></div>';
+          }
+          function sec(m, t, a, b) {
+            if (!getOdd(m, a[0]) && !getOdd(m, b[0])) return '';
+            return '<div class="lbl">' + t + '</div><div class="odds two">' + ob(m, a[0], a[1]) + ob(m, b[0], b[1]) + '</div>';
+          }
+          function card(m) {
+            var h = '<div class="match"><div class="mt"><span>🕒 ' + hm(m.time) + '</span><span>' + lname(m.lg) + '</span></div>' +
+              '<div class="teams">' + esc(m.home) + '<br>' + esc(m.away) + '</div>' +
+              '<div class="odds">' + ob(m, '1', '۱ میزبان') + ob(m, 'X', 'مساوی') + ob(m, '2', '۲ مهمان') + '</div>';
+            if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'O25', 'بیشتر از ۲.۵ گل') + ob(m, 'U25', 'کمتر از ۲.۵ گل') + '</div>';
+            if (OPEN[m.id]) {
+              var x = exOf(m.id);
+              if (!x) h += '<div class="spin" style="padding:10px">در حال دریافت بازارها...</div>';
+              else {
+                var s = sec(m, 'هر دو تیم گل می‌زنن؟', ['BY', 'بله'], ['BN', 'خیر']) +
+                  sec(m, 'مجموع گل ۱.۵', ['O15', 'بیشتر از ۱.۵'], ['U15', 'کمتر از ۱.۵']) +
+                  ((m.ov && m.un) ? '' : sec(m, 'مجموع گل ۲.۵', ['O25', 'بیشتر از ۲.۵'], ['U25', 'کمتر از ۲.۵'])) +
+                  sec(m, 'مجموع گل ۳.۵', ['O35', 'بیشتر از ۳.۵'], ['U35', 'کمتر از ۳.۵']);
+                h += s || '<div class="mut" style="text-align:center;padding:8px">فعلاً بازار بیشتری برای این بازی نیست</div>';
+              }
+              h += '<div class="more" onclick="more(\'' + m.id + '\')">▲ بستن</div>';
+            } else h += '<div class="more" onclick="more(\'' + m.id + '\')">➕ بازارهای بیشتر (گل هر دو تیم، ۱.۵، ۳.۵)</div>';
+            return h + '</div>';
+          }
+          function renderMatches(d, multi) {
+            CUR = d; CURM = !!multi;
+            var now = Date.now(), list = $('list'), remn = ld('remaining', '');
+            var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return t > now && inDF(t); })
+              .sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
+            var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(ms.length) + ' بازی' + (multi ? ' از ' + fmt(NL) + ' لیگ' : '') +
+              (remn ? ' | اعتبار: ' + esc(remn) : '') + '</span>' + chip('🔄 بروزرسانی', false, multi ? 'loadMany(ld(\'oddsIdx\',[]))' : 'loadOdds(true)', 'sm') + '</div>';
+            if (!ms.length) { list.innerHTML = h + '<div class="empty">برای این فیلتر بازی‌ای نیست</div>'; return; }
+            var last = '';
             ms.forEach(function (m) {
               MATCHES[m.id] = m;
-              h += '<div class="match"><div class="mt"><span>' + tm(m.time) + '</span><span>' + lname(m.lg) + '</span></div>' +
-                '<div class="teams">' + esc(m.home) + '<br>' + esc(m.away) + '</div>' +
-                '<div class="odds">' + ob(m, 'h2h', '1', '۱ میزبان', m.h) + ob(m, 'h2h', 'X', 'مساوی', m.d) + ob(m, 'h2h', '2', '۲ مهمان', m.a) + '</div>';
-              if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'tot', 'O', 'بیشتر از ۲.۵ گل', m.ov) + ob(m, 'tot', 'U', 'کمتر از ۲.۵ گل', m.un) + '</div>';
-              h += '</div>';
+              var k = dk(m.time);
+              if (k != last) { last = k; h += '<div class="day">📅 ' + dl(m.time) + '</div>'; }
+              h += card(m);
             });
             list.innerHTML = h;
           }
 
           /* ---------- bet slip ---------- */
+          function ptOf(p) { return p.length > 1 ? parseInt(p.slice(1), 10) / 10 : 2.5; }
           function pl(x) {
-            return { '1': 'برد ' + x.home, 'X': 'مساوی', '2': 'برد ' + x.away, 'O': 'بیشتر از ۲.۵ گل', 'U': 'کمتر از ۲.۵ گل' }[x.pick];
+            var p = x.pick;
+            if (p == '1') return 'برد ' + x.home; if (p == '2') return 'برد ' + x.away; if (p == 'X') return 'مساوی';
+            if (p == 'BY') return 'هر دو تیم گل می‌زنن: بله'; if (p == 'BN') return 'هر دو تیم گل می‌زنن: خیر';
+            return (p.charAt(0) == 'O' ? 'بیشتر از ' : 'کمتر از ') + fa(ptOf(p)) + ' گل';
           }
-          function tog(id, mt, pick) {
+          function tog(id, p) {
             var m = MATCHES[id]; if (!m) return;
             var i = -1;
-            slip.forEach(function (x, j) { if (x.id == id && x.mt == mt && x.pick == pick) i = j; });
+            slip.forEach(function (x, j) { if (x.id == id && x.pick == p) i = j; });
             if (i >= 0) slip.splice(i, 1);
             else {
-              slip = slip.filter(function (x) { return x.id != id; });
-              if (slip.length >= 15) { toast('حداکثر ۱۵ بازی تو یه میکس'); return; }
-              var odd = { '1': m.h, 'X': m.d, '2': m.a, 'O': m.ov, 'U': m.un }[pick];
-              if (!odd) return;
-              slip.push({ id: id, lg: m.lg, home: m.home, away: m.away, time: m.time, mt: mt, pick: pick, odd: odd });
-              toast(slip.length > 1 ? 'اضافه شد، میکس ' + fmt(slip.length) + ' تایی' : 'به بلیط اضافه شد');
+              var odd = getOdd(m, p); if (!odd) return;
+              var others = slip.filter(function (x) { return x.id != id; }), replaced = others.length < slip.length;
+              if (others.length >= 15) { toast('حداکثر ۱۵ بازی تو یه میکس'); return; }
+              others.push({ id: id, lg: m.lg, home: m.home, away: m.away, time: m.time, pick: p, odd: odd });
+              slip = others;
+              toast(replaced ? 'از هر بازی فقط یه انتخاب، جایگزین شد' : (slip.length > 1 ? 'اضافه شد، میکس ' + fmt(slip.length) + ' تایی' : 'به بلیط اضافه شد'));
             }
-            sv('slip', slip); updateCnt(); if (CUR) renderMatches(CUR);
+            sv('slip', slip); updateCnt(); rerender();
           }
           function totalOdd() { return slip.reduce(function (a, x) { return a * x.odd; }, 1); }
           function rm(i) { slip.splice(i, 1); sv('slip', slip); updateCnt(); renderSlip(); }
@@ -366,7 +573,7 @@ jobs:
             var h = '<div class="box"><div class="row"><b>' + (slip.length > 1 ? 'میکس ' + fmt(slip.length) + ' تایی' : 'شرط تکی') + '</b><span class="x" onclick="clearSlip()">پاک کردن همه</span></div>';
             slip.forEach(function (x, i) {
               h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + '</span><span class="x" onclick="rm(' + i + ')">✕</span></div>' +
-                '<div class="row"><span>' + esc(pl(x)) + '</span><b class="gold">' + x.odd.toFixed(2) + '</b></div></div>';
+                '<div class="row"><span>' + esc(pl(x)) + '</span><b class="gold">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div></div>';
             });
             h += '<div class="row"><span>ضریب کل</span><b class="gold ltr">' + totalOdd().toFixed(2) + '</b></div>';
             h += '<input id="stake" type="number" inputmode="numeric" placeholder="مبلغ شرط (سکه)" oninput="calc()">';
@@ -405,7 +612,7 @@ jobs:
             var left = ks.length;
             ks.forEach(function (lg) {
               http(API + lg + '/scores/?apiKey=' + encodeURIComponent(key()) + '&daysFrom=3', function (r) {
-                if (r.remaining && r.remaining != 'null') sv('remaining', r.remaining);
+                rem(r);
                 if (r.status == 200) { try { applyScores(JSON.parse(r.body)); } catch (e) {} }
                 else if (manual) toast('خطا در دریافت نتایج (' + r.status + ')');
                 if (--left == 0) { settle(); renderBets(); if (manual && r.status == 200) toast('نتایج بروز شد'); }
@@ -424,9 +631,11 @@ jobs:
                 var hs = null, as = null;
                 e.scores.forEach(function (s) { if (s.name == e.home_team) hs = parseInt(s.score, 10); else if (s.name == e.away_team) as = parseInt(s.score, 10); });
                 if (hs === null || as === null || isNaN(hs) || isNaN(as)) return;
-                var g = hs + as, w;
+                var g = hs + as, p = x.pick, w;
                 x.score = hs + '-' + as;
-                if (x.pick == '1') w = hs > as; else if (x.pick == '2') w = as > hs; else if (x.pick == 'X') w = hs == as; else if (x.pick == 'O') w = g > 2.5; else w = g < 2.5;
+                if (p == '1') w = hs > as; else if (p == '2') w = as > hs; else if (p == 'X') w = hs == as;
+                else if (p == 'BY') w = hs > 0 && as > 0; else if (p == 'BN') w = !(hs > 0 && as > 0);
+                else if (p.charAt(0) == 'O') w = g > ptOf(p); else w = g < ptOf(p);
                 x.res = w ? 'w' : 'l';
               });
             });
@@ -467,15 +676,18 @@ jobs:
 
           /* ---------- settings ---------- */
           function renderSet() {
-            var rem = ld('remaining', '');
+            var r = ld('remaining', '');
             $('set').innerHTML =
               '<div class="box"><b>🔑 کلید API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">ذخیره کلید</button>' +
-              (rem ? '<div class="mut" style="margin-top:8px">اعتبار باقی‌مونده این ماه: ' + esc(rem) + '</div>' : '') + '</div>' +
+              (r ? '<div class="mut" style="margin-top:8px">اعتبار باقی‌مونده این ماه: ' + esc(r) + '</div>' : '') + '</div>' +
               '<div class="box"><b>🎁 جایزه روزانه</b><div class="mut">هر ۲۴ ساعت ' + fmt(BONUS) + ' سکه رایگان</div><button class="btn" onclick="bonus()">دریافت جایزه</button></div>' +
               '<div class="box"><b>♻️ شروع دوباره</b><div class="mut">سکه‌ها ' + fmt(START) + ' میشه و تاریخچه پاک میشه</div><button class="btn sec" onclick="resetAll()">ریست</button></div>' +
-              '<div class="box mut">این اپ فقط برای سرگرمیه و با سکه مجازی کار می‌کنه، پول واقعی در کار نیست.</div>';
+              '<div class="box mut">این اپ فقط برای سرگرمیه و با سکه مجازی کار می‌کنه، پول واقعی در کار نیست.<br>مصرف اعتبار: باز کردن هر لیگ ۲، بازارهای بیشتر هر بازی ۲، چک نتایج هر لیگ ۲.</div>';
           }
-          function saveKey() { sv('key', $('k').value.trim()); toast('کلید ذخیره شد'); renderSet(); loadOdds(true); }
+          function saveKey() {
+            sv('key', $('k').value.trim()); sv('sports', null); toast('کلید ذخیره شد'); renderSet();
+            loadSports(function () { renderLeagues(); if (reg != 'all') loadOdds(true); });
+          }
           function bonus() {
             var n = Date.now();
             if (n - (W.last || 0) < 86400000) { toast(fmt(Math.ceil((86400000 - (n - W.last)) / 3600000)) + ' ساعت دیگه دوباره بیا'); return; }
@@ -486,7 +698,8 @@ jobs:
             W = { coins: START, last: 0 }; BETS = []; slip = []; sv('slip', slip); saveAll(); updateCnt(); renderSet(); toast('ریست شد');
           }
 
-          renderBal(); renderLeagues(); updateCnt(); loadOdds(false);
+          renderBal(); updateCnt();
+          loadSports(function () { renderLeagues(); loadOdds(false); });
           setTimeout(function () { checkResults(false); }, 1500);
           </script>
           </body>
