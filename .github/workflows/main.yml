@@ -60,8 +60,8 @@ jobs:
                   applicationId 'com.saeed.bet'
                   minSdk 21
                   targetSdk 34
-                  versionCode 3
-                  versionName '3.0'
+                  versionCode 4
+                  versionName '4.0'
               }
               buildTypes {
                   debug { signingConfig signingConfigs.fixed }
@@ -325,7 +325,7 @@ jobs:
           <header><div class="logo">⚽ فوتبال بت</div><div class="bal" id="bal">0</div></header>
           <div id="p-matches" class="page on"><div id="leagues"></div><div id="list"></div></div>
           <div id="p-slip" class="page"><div id="slip"></div></div>
-          <div id="p-bets" class="page"><div class="box"><button class="btn blue" onclick="checkResults(true)">🔄 بروزرسانی نتایج</button></div><div id="bets"></div></div>
+          <div id="p-bets" class="page"><div class="box"><button class="btn blue" onclick="checkResults()">🔄 بروزرسانی نتایج همه شرط‌ها</button></div><div id="bets"></div></div>
           <div id="p-set" class="page"><div id="set"></div></div>
           <nav>
           <button id="n-matches" class="on" onclick="go('matches')">⚽ بازی‌ها</button>
@@ -353,7 +353,7 @@ jobs:
           };
           var REG = [['pop', '⭐ محبوب'], ['all', '⏰ همه به ترتیب ساعت'], ['eu', '🌍 اروپا'], ['asia', '🌏 آسیا'], ['am', '🌎 آمریکا'], ['nat', '🏳️ ملی'], ['other', '🌐 سایر']];
           var DFS = [['all', 'همه روزها'], ['today', 'امروز'], ['tom', 'فردا'], ['week', '۷ روز آینده']];
-          var ODDS_TTL = 60 * 60000, SCORE_TTL = 10 * 60000, EX_TTL = 60 * 60000, SPORTS_TTL = 12 * 3600000, START = 1000, BONUS = 100;
+          var ODDS_TTL = 3 * 3600000, SCORE_TTL = 10 * 60000, EX_TTL = 60 * 60000, SPORTS_TTL = 12 * 3600000, START = 1000, BONUS = 100;
           var reg = 'pop', cur = POP[0], DF = 'all', CUR = null, CURM = false, NL = 0, MATCHES = {}, OPEN = {}, EX = {}, SPORTS = [], cbs = {}, cbn = 0;
 
           function $(id) { return document.getElementById(id); }
@@ -362,7 +362,13 @@ jobs:
           window.__cb = function (id, res) { var f = cbs[id]; delete cbs[id]; if (f) f(JSON.parse(res)); };
           function http(url, f) { var id = 'c' + (cbn++); cbs[id] = f; Android.get(url, id); }
           function key() { return ld('key', ''); }
-          function rem(r) { if (r.remaining && r.remaining != 'null') sv('remaining', r.remaining); }
+          var LOWW = false;
+          function rem(r) {
+            if (r.remaining && r.remaining != 'null') {
+              sv('remaining', r.remaining);
+              if (+r.remaining < 50 && !LOWW) { LOWW = true; toast('⚠️ فقط ' + fa(+r.remaining) + ' اعتبار برات مونده'); }
+            }
+          }
           function fmt(n) { return Math.round(n).toLocaleString('fa-IR'); }
           function fa(n) { return n.toLocaleString('fa-IR'); }
           function r2(n) { return Math.round(n * 100) / 100; }
@@ -393,7 +399,7 @@ jobs:
               $('n-' + x).classList.toggle('on', x == p);
             });
             if (p == 'slip') renderSlip();
-            if (p == 'bets') { renderBets(); checkResults(false); }
+            if (p == 'bets') { settle(); renderBets(); }
             if (p == 'set') renderSet();
             if (p == 'matches') rerender();
             window.scrollTo(0, 0);
@@ -689,24 +695,33 @@ jobs:
           }
 
           /* ---------- results ---------- */
-          function checkResults(manual) {
+          function needCheck(b, now) {
+            return b.st == 'p' && b.sel.some(function (x) { return x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now; });
+          }
+          function checkResults(betId) {
             var now = Date.now(), lgs = {};
-            var pend = BETS.filter(function (b) { return b.st == 'p'; });
-            if (!pend.length) { if (manual) toast('شرط باز نداری'); return; }
-            if (!key()) return;
-            pend.forEach(function (b) { b.sel.forEach(function (x) { if (x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now) lgs[x.lg] = 1; }); });
+            if (!key()) { toast('اول کلید API رو وارد کن'); return; }
+            var pend = BETS.filter(function (b) { return b.st == 'p' && (!betId || b.id == betId); });
+            if (!pend.length) { toast('شرط باز نداری'); return; }
+            pend.forEach(function (b) {
+              b.sel.forEach(function (x) {
+                if (x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now) { (lgs[x.lg] = lgs[x.lg] || {})[x.id] = 1; }
+              });
+            });
             var ks = Object.keys(lgs);
-            if (!ks.length) { settle(); renderBets(); if (manual) toast('هنوز بازی‌ای تموم نشده'); return; }
-            if (!manual && now - ld('lastScore', 0) < SCORE_TTL) return;
-            sv('lastScore', now);
-            if (manual) toast('در حال بررسی نتایج...');
-            var left = ks.length;
+            if (!ks.length) { settle(); renderBets(); toast('هنوز بازی‌ای تموم نشده، اعتباری مصرف نشد'); return; }
+            toast('در حال بررسی ' + fa(Object.keys(lgs).reduce(function (a, k) { return a + Object.keys(lgs[k]).length; }, 0)) + ' بازی...');
+            var left = ks.length, ok = 0;
             ks.forEach(function (lg) {
-              http(API + lg + '/scores/?apiKey=' + encodeURIComponent(key()) + '&daysFrom=3', function (r) {
+              http(API + lg + '/scores/?apiKey=' + encodeURIComponent(key()) + '&daysFrom=3&eventIds=' + Object.keys(lgs[lg]).join(','), function (r) {
                 rem(r);
-                if (r.status == 200) { try { applyScores(JSON.parse(r.body)); } catch (e) {} }
-                else if (manual) toast('خطا در دریافت نتایج (' + r.status + ')');
-                if (--left == 0) { settle(); renderBets(); if (manual && r.status == 200) toast('نتایج بروز شد'); }
+                if (r.status == 200) { ok++; try { applyScores(JSON.parse(r.body)); } catch (e) {} }
+                if (--left == 0) {
+                  settle(); renderBets();
+                  if (!ok) toast('خطا در دریافت نتایج (' + r.status + ')');
+                  else if (BETS.some(function (b) { return needCheck(b, Date.now()) && (!betId || b.id == betId); })) toast('بعضی نتیجه‌ها هنوز ثبت نشدن، کمی بعد دوباره امتحان کن');
+                  else toast('نتایج بروز شد');
+                }
               });
             });
           }
@@ -760,7 +775,9 @@ jobs:
                   '<div class="row"><span>' + esc(pl(x)) + '</span><b class="ltr">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div></div>';
               });
               var amt = b.st == 'l' ? '۰' : (b.st == 'p' ? fc(b.stake * b.odd) : '+' + fc(b.win));
-              h += '<div class="row"><span class="mut">مبلغ ' + fc(b.stake) + ' | ضریب ' + b.odd.toFixed(2) + '</span><b style="color:' + (b.st == 'l' ? 'var(--red)' : 'var(--green)') + '">' + amt + '</b></div></div>';
+              h += '<div class="row"><span class="mut">مبلغ ' + fc(b.stake) + ' | ضریب ' + b.odd.toFixed(2) + '</span><b style="color:' + (b.st == 'l' ? 'var(--red)' : 'var(--green)') + '">' + amt + '</b></div>';
+              if (needCheck(b, Date.now())) h += '<div class="more" onclick="checkResults(\'' + b.id + '\')">🔄 چک نتیجه همین شرط</div>';
+              h += '</div>';
             });
             el.innerHTML = h;
           }
@@ -776,7 +793,7 @@ jobs:
               '<div class="box"><b>🔔 یادآور بازی</b><div class="mut">یک ساعت قبل از بازی‌هایی که روشون شرط می‌بندی (یا زنگوله‌شون رو روشن می‌کنی) نوتیفیکیشن میاد.</div></div>' +
               '<div class="box"><b>🎁 جایزه روزانه</b><div class="mut">هر ۲۴ ساعت ' + fmt(BONUS) + ' سکه رایگان</div><button class="btn" onclick="bonus()">دریافت جایزه</button></div>' +
               '<div class="box"><b>♻️ شروع دوباره</b><div class="mut">سکه‌ها ' + fmt(START) + ' میشه و تاریخچه پاک میشه</div><button class="btn sec" onclick="resetAll()">ریست</button></div>' +
-              '<div class="box mut">این اپ فقط برای سرگرمیه و با سکه مجازی کار می‌کنه، پول واقعی در کار نیست.<br>مصرف اعتبار: باز کردن هر لیگ ۲، بازارهای بیشتر هر بازی ۲، چک نتایج هر لیگ ۲.</div>';
+              '<div class="box mut">این اپ فقط برای سرگرمیه و با سکه مجازی کار می‌کنه، پول واقعی در کار نیست.<br>مصرف اعتبار: باز کردن هر لیگ ۲ (تا ۳ ساعت تو حافظه می‌مونه)، بازارهای بیشتر هر بازی ۲، چک نتایج ۲ برای هر لیگ. نتایج فقط با زدن دکمه چک میشن.</div>';
           }
           function saveKey() {
             sv('key', $('k').value.trim()); sv('sports', null); toast('کلید ذخیره شد'); renderSet();
@@ -827,7 +844,6 @@ jobs:
 
           renderBal(); updateCnt(); syncRem();
           loadSports(function () { renderLeagues(); loadOdds(false); });
-          setTimeout(function () { checkResults(false); }, 1500);
           </script>
           </body>
           </html>
