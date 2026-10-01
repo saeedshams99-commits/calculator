@@ -60,8 +60,8 @@ jobs:
                   applicationId 'com.saeed.bet'
                   minSdk 21
                   targetSdk 34
-                  versionCode 4
-                  versionName '4.0'
+                  versionCode __BUILD__
+                  versionName '__BUILD__'
               }
               buildTypes {
                   debug { signingConfig signingConfigs.fixed }
@@ -183,6 +183,16 @@ jobs:
                       try {
                           AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
                           am.cancel(alarmIntent(id, "", ""));
+                      } catch (Exception e) {
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public void openUrl(String url) {
+                      try {
+                          Intent i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
+                          i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                          startActivity(i);
                       } catch (Exception e) {
                       }
                   }
@@ -319,11 +329,19 @@ jobs:
           .lbl{color:var(--mut);font-size:12px;margin:8px 0 4px}
           .leagues:empty{display:none}
           .bell{margin-right:6px;font-size:15px}
+          .tc{display:flex;justify-content:space-between;align-items:center;background:#0e2f57;margin:8px 12px 0;padding:13px 14px;border-radius:12px;font-weight:bold;font-size:15px}
+          .tk{display:flex;justify-content:space-between;align-items:center;background:var(--card);margin:4px 12px 0 12px;padding:11px 14px;border-radius:10px;border-right:3px solid var(--acc)}
+          .tl{display:flex;justify-content:space-between;align-items:center;background:var(--card2);margin:3px 26px 0 12px;padding:10px 14px;border-radius:8px;font-size:13px}
+          .tl.off{opacity:.45}
+          .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+          .cell{background:var(--card2);border-radius:8px;padding:8px;text-align:center;font-size:12px}
+          .cell b{display:block;font-size:15px;margin-top:3px}
+          .upd{border:1px solid var(--green)}
           </style>
           </head>
           <body>
           <header><div class="logo">⚽ فوتبال بت</div><div class="bal" id="bal">0</div></header>
-          <div id="p-matches" class="page on"><div id="leagues"></div><div id="list"></div></div>
+          <div id="p-matches" class="page on"><div id="upd"></div><div id="leagues"></div><div id="list"></div></div>
           <div id="p-slip" class="page"><div id="slip"></div></div>
           <div id="p-bets" class="page"><div class="box"><button class="btn blue" onclick="checkResults()">🔄 بروزرسانی نتایج همه شرط‌ها</button></div><div id="bets"></div></div>
           <div id="p-set" class="page"><div id="set"></div></div>
@@ -349,11 +367,91 @@ jobs:
             soccer_australia_aleague: '🇦🇺 ای‌لیگ استرالیا', soccer_mexico_ligamx: '🇲🇽 لیگا MX مکزیک', soccer_brazil_campeonato: '🇧🇷 سری آ برزیل',
             soccer_argentina_primera_division: '🇦🇷 لیگ آرژانتین', soccer_usa_mls: '🇺🇸 MLS آمریکا', soccer_chile_campeonato: '🇨🇱 لیگ شیلی',
             soccer_conmebol_copa_libertadores: '🏆 کوپا لیبرتادورس', soccer_conmebol_copa_sudamericana: '🏆 کوپا سودامریکانا',
-            soccer_fifa_world_cup: '🌍 جام جهانی', soccer_uefa_nations_league: '🇪🇺 لیگ ملت‌های اروپا'
+            soccer_fifa_world_cup: '🌍 جام جهانی', soccer_uefa_nations_league: '🇪🇺 لیگ ملت‌های اروپا',
+            soccer_england_efl_cup: '🏴 جام اتحادیه انگلیس', soccer_england_league2: '🏴 لیگ دو انگلیس', soccer_spain_copa_del_rey: '🇪🇸 کوپا دل ری',
+            soccer_italy_coppa_italia: '🇮🇹 کوپا ایتالیا', soccer_germany_dfb_pokal: '🇩🇪 جام حذفی آلمان', soccer_germany_liga3: '🇩🇪 لیگ ۳ آلمان',
+            soccer_france_coupe_de_france: '🇫🇷 جام حذفی فرانسه', soccer_uefa_champs_league_qualification: '🏆 مقدماتی لیگ قهرمانان', soccer_saudi_arabia_pro_league: '🇸🇦 لیگ حرفه‌ای عربستان',
+            soccer_brazil_serie_b: '🇧🇷 سری بی برزیل', soccer_austria_bundesliga: '🇦🇹 بوندسلیگا اتریش', soccer_switzerland_superleague: '🇨🇭 سوپرلیگ سوئیس',
+            soccer_russia_premier_league: '🇷🇺 لیگ برتر روسیه', soccer_denmark_superliga: '🇩🇰 سوپرلیگا دانمارک', soccer_norway_eliteserien: '🇳🇴 الیته‌سرین نروژ',
+            soccer_sweden_allsvenskan: '🇸🇪 آلسونسکان سوئد', soccer_sweden_superettan: '🇸🇪 سوپرتان سوئد', soccer_poland_ekstraklasa: '🇵🇱 اکستراکلاسا لهستان',
+            soccer_finland_veikkausliiga: '🇫🇮 لیگ فنلاند', soccer_league_of_ireland: '🇮🇪 لیگ ایرلند', soccer_fifa_club_world_cup: '🏆 جام باشگاه‌های جهان',
+            soccer_conmebol_copa_america: '🌎 کوپا آمریکا', soccer_uefa_european_championship: '🇪🇺 جام ملت‌های اروپا', soccer_africa_cup_of_nations: '🌍 جام ملت‌های آفریقا',
+            soccer_concacaf_gold_cup: '🌎 گلدکاپ', soccer_concacaf_leagues_cup: '🏆 لیگز کاپ', soccer_fifa_world_cup_qualifiers_europe: '🌍 مقدماتی جام جهانی (اروپا)',
+            soccer_fifa_world_cup_qualifiers_south_america: '🌍 مقدماتی جام جهانی (آمریکای جنوبی)'
           };
-          var REG = [['pop', '⭐ محبوب'], ['all', '⏰ همه به ترتیب ساعت'], ['eu', '🌍 اروپا'], ['asia', '🌏 آسیا'], ['am', '🌎 آمریکا'], ['nat', '🏳️ ملی'], ['other', '🌐 سایر']];
+          var CONT = [['eu', '🇪🇺 اروپا'], ['asia', '🌏 آسیا و اقیانوسیه'], ['am', '🌎 آمریکا'], ['af', '🌍 آفریقا'], ['world', '🏆 جهانی و تیم‌های ملی'], ['other', '⚽ سایر']];
+          var COUNTRIES = [
+            ['club_world', '🏆', 'جام باشگاه‌های جهان', 'world', /club_world_cup/],
+            ['national', '🌍', 'تیم‌های ملی', 'world', /fifa|uefa_nations|european_championship|euro_qual|copa_america|gold_cup|asian_cup|africa_cup_of_nations|friendl|international|olympic|womens/],
+            ['uefa', '🏆', 'جام‌های باشگاهی اروپا', 'eu', /uefa/],
+            ['england', '🏴', 'انگلیس', 'eu', /epl|efl|england|fa_cup/],
+            ['spain', '🇪🇸', 'اسپانیا', 'eu', /spain/],
+            ['italy', '🇮🇹', 'ایتالیا', 'eu', /italy/],
+            ['germany', '🇩🇪', 'آلمان', 'eu', /germany/],
+            ['france', '🇫🇷', 'فرانسه', 'eu', /france/],
+            ['netherlands', '🇳🇱', 'هلند', 'eu', /netherlands/],
+            ['portugal', '🇵🇹', 'پرتغال', 'eu', /portugal/],
+            ['turkey', '🇹🇷', 'ترکیه', 'eu', /turkey/],
+            ['belgium', '🇧🇪', 'بلژیک', 'eu', /belgium/],
+            ['scotland', '🏴', 'اسکاتلند', 'eu', /spl|scotland/],
+            ['austria', '🇦🇹', 'اتریش', 'eu', /austria/],
+            ['switzerland', '🇨🇭', 'سوئیس', 'eu', /switzerland/],
+            ['greece', '🇬🇷', 'یونان', 'eu', /greece/],
+            ['russia', '🇷🇺', 'روسیه', 'eu', /russia/],
+            ['ukraine', '🇺🇦', 'اوکراین', 'eu', /ukraine/],
+            ['denmark', '🇩🇰', 'دانمارک', 'eu', /denmark/],
+            ['norway', '🇳🇴', 'نروژ', 'eu', /norway/],
+            ['sweden', '🇸🇪', 'سوئد', 'eu', /sweden/],
+            ['poland', '🇵🇱', 'لهستان', 'eu', /poland/],
+            ['czech', '🇨🇿', 'چک', 'eu', /czech/],
+            ['croatia', '🇭🇷', 'کرواسی', 'eu', /croatia/],
+            ['serbia', '🇷🇸', 'صربستان', 'eu', /serbia/],
+            ['romania', '🇷🇴', 'رومانی', 'eu', /romania/],
+            ['finland', '🇫🇮', 'فنلاند', 'eu', /finland/],
+            ['ireland', '🇮🇪', 'ایرلند', 'eu', /ireland/],
+            ['afc', '🏆', 'جام‌های باشگاهی آسیا', 'asia', /afc/],
+            ['saudi', '🇸🇦', 'عربستان', 'asia', /saudi/],
+            ['iran', '🇮🇷', 'ایران', 'asia', /iran/],
+            ['japan', '🇯🇵', 'ژاپن', 'asia', /japan/],
+            ['korea', '🇰🇷', 'کره جنوبی', 'asia', /korea/],
+            ['china', '🇨🇳', 'چین', 'asia', /china/],
+            ['australia', '🇦🇺', 'استرالیا', 'asia', /australia/],
+            ['qatar', '🇶🇦', 'قطر', 'asia', /qatar/],
+            ['uae', '🇦🇪', 'امارات', 'asia', /uae|emirates/],
+            ['india', '🇮🇳', 'هند', 'asia', /india/],
+            ['thailand', '🇹🇭', 'تایلند', 'asia', /thailand/],
+            ['conmebol', '🏆', 'جام‌های آمریکای جنوبی', 'am', /conmebol|libertadores|sudamericana/],
+            ['concacaf', '🏆', 'جام‌های آمریکای شمالی', 'am', /concacaf/],
+            ['brazil', '🇧🇷', 'برزیل', 'am', /brazil/],
+            ['argentina', '🇦🇷', 'آرژانتین', 'am', /argentina/],
+            ['mexico', '🇲🇽', 'مکزیک', 'am', /mexico/],
+            ['usa', '🇺🇸', 'آمریکا', 'am', /usa|mls/],
+            ['colombia', '🇨🇴', 'کلمبیا', 'am', /colombia/],
+            ['chile', '🇨🇱', 'شیلی', 'am', /chile/],
+            ['uruguay', '🇺🇾', 'اروگوئه', 'am', /uruguay/],
+            ['peru', '🇵🇪', 'پرو', 'am', /peru/],
+            ['ecuador', '🇪🇨', 'اکوادور', 'am', /ecuador/],
+            ['paraguay', '🇵🇾', 'پاراگوئه', 'am', /paraguay/],
+            ['canada', '🇨🇦', 'کانادا', 'am', /canada/],
+            ['caf', '🏆', 'جام‌های آفریقا', 'af', /caf/],
+            ['egypt', '🇪🇬', 'مصر', 'af', /egypt/],
+            ['morocco', '🇲🇦', 'مراکش', 'af', /morocco/],
+            ['south_africa', '🇿🇦', 'آفریقای جنوبی', 'af', /south_africa/],
+            ['tunisia', '🇹🇳', 'تونس', 'af', /tunisia/],
+            ['algeria', '🇩🇿', 'الجزایر', 'af', /algeria/],
+            ['nigeria', '🇳🇬', 'نیجریه', 'af', /nigeria/]
+          ];
+          var PRI = ['soccer_uefa_champs_league', 'soccer_uefa_europa_league', 'soccer_uefa_europa_conference_league', 'soccer_uefa_champs_league_qualification',
+            'soccer_epl', 'soccer_efl_champ', 'soccer_fa_cup', 'soccer_england_efl_cup', 'soccer_england_league1', 'soccer_england_league2',
+            'soccer_spain_la_liga', 'soccer_spain_copa_del_rey', 'soccer_spain_segunda_division', 'soccer_italy_serie_a', 'soccer_italy_coppa_italia', 'soccer_italy_serie_b',
+            'soccer_germany_bundesliga', 'soccer_germany_dfb_pokal', 'soccer_germany_bundesliga2', 'soccer_germany_liga3',
+            'soccer_france_ligue_one', 'soccer_france_coupe_de_france', 'soccer_france_ligue_two',
+            'soccer_fifa_world_cup', 'soccer_uefa_european_championship', 'soccer_conmebol_copa_america', 'soccer_uefa_nations_league',
+            'soccer_conmebol_copa_libertadores', 'soccer_conmebol_copa_sudamericana', 'soccer_brazil_campeonato', 'soccer_brazil_serie_b'];
           var DFS = [['all', 'همه روزها'], ['today', 'امروز'], ['tom', 'فردا'], ['week', '۷ روز آینده']];
           var ODDS_TTL = 3 * 3600000, SCORE_TTL = 10 * 60000, EX_TTL = 60 * 60000, SPORTS_TTL = 12 * 3600000, START = 1000, BONUS = 100;
+          var BUILD = parseInt('__BUILD__', 10) || 0, REPO = '__REPO__';
+          var OPENC = {}, OPENK = {}, BF = 'all';
           var reg = 'pop', cur = POP[0], DF = 'all', CUR = null, CURM = false, NL = 0, MATCHES = {}, OPEN = {}, EX = {}, SPORTS = [], cbs = {}, cbn = 0;
 
           function $(id) { return document.getElementById(id); }
@@ -407,16 +505,16 @@ jobs:
 
           /* ---------- leagues ---------- */
           function loadSports(done) {
-            var c = ld('sports', null);
+            var c = ld('sports2', null);
             if (c && Date.now() - c.t < SPORTS_TTL && c.d.length) { SPORTS = c.d; done(); return; }
-            var fb = function () { SPORTS = (c && c.d && c.d.length) ? c.d : POP.map(function (k) { return { key: k, title: k }; }); done(); };
+            var fb = function () { SPORTS = (c && c.d && c.d.length) ? c.d : POP.map(function (k) { return { key: k, title: k, active: true }; }); done(); };
             if (!key()) { fb(); return; }
-            http(API + '?apiKey=' + encodeURIComponent(key()), function (r) {
+            http(API + '?all=true&apiKey=' + encodeURIComponent(key()), function (r) {
               if (r.status == 200) {
                 try {
-                  var s = JSON.parse(r.body).filter(function (s) { return s.group && s.group.indexOf('Soccer') == 0 && s.active && !s.has_outrights && !/_winner$/.test(s.key); })
-                    .map(function (s) { return { key: s.key, title: s.title }; });
-                  if (s.length) { SPORTS = s; sv('sports', { t: Date.now(), d: s }); done(); return; }
+                  var s = JSON.parse(r.body).filter(function (s) { return s.group && s.group.indexOf('Soccer') == 0 && !s.has_outrights && !/_winner$/.test(s.key); })
+                    .map(function (s) { return { key: s.key, title: s.title, active: !!s.active }; });
+                  if (s.length) { SPORTS = s; sv('sports2', { t: Date.now(), d: s }); done(); return; }
                 } catch (e) {}
               }
               fb();
@@ -427,44 +525,79 @@ jobs:
             for (var i = 0; i < SPORTS.length; i++) if (SPORTS[i].key == k) return '⚽ ' + esc(SPORTS[i].title);
             return k;
           }
-          function regionOf(k) {
-            if (/fifa|uefa_nations|uefa_european_championship|euro_qual|copa_america|gold_cup|asian_cup|africa_cup_of_nations|world_cup|friendl|international/.test(k)) return 'nat';
-            if (/japan|china|korea|saudi|australia|iran|india|thailand|afc|qatar|uae|indonesia|vietnam/.test(k)) return 'asia';
-            if (/mexico|brazil|argentina|usa|mls|chile|colombia|peru|conmebol|concacaf|libertadores|sudamericana|ecuador|uruguay|paraguay|bolivia|venezuela|canada|costa_rica/.test(k)) return 'am';
-            if (/africa|egypt|morocco|tunisia|algeria|nigeria/.test(k)) return 'other';
-            return 'eu';
+          function cinfo(k) {
+            for (var i = 0; i < COUNTRIES.length; i++) {
+              var c = COUNTRIES[i];
+              if (c[4].test(k)) return { id: c[0], f: c[1], fa: c[2], c: c[3], o: i };
+            }
+            return { id: 'x', f: '⚽', fa: 'سایر', c: 'other', o: 999 };
+          }
+          function rank(k) {
+            var i = PRI.indexOf(k); if (i >= 0) return i;
+            if (/cup|pokal|coppa|copa_del_rey|coupe|qualif/.test(k)) return 60;
+            if (/2$|two|segunda|serie_b|league1|league2|liga3|superettan|champ$/.test(k)) return 70;
+            return 50;
           }
           function leaguesFor(g) {
-            if (g == 'pop') {
-              var have = {}; SPORTS.forEach(function (s) { have[s.key] = 1; });
-              var p = POP.filter(function (k) { return have[k]; });
-              return (p.length ? p : POP).map(function (k) { return { key: k }; });
-            }
-            return SPORTS.filter(function (s) { return regionOf(s.key) == g; }).sort(function (a, b) { return (FA[b.key] ? 1 : 0) - (FA[a.key] ? 1 : 0); });
+            var have = {}; SPORTS.forEach(function (s) { if (s.active) have[s.key] = 1; });
+            var p = POP.filter(function (k) { return have[k]; });
+            return (p.length ? p : POP).map(function (k) { return { key: k }; });
           }
           function renderLeagues() {
-            var h = '<div class="leagues">';
-            REG.forEach(function (g) { if (g[0] == 'pop' || g[0] == 'all' || leaguesFor(g[0]).length) h += chip(g[1], reg == g[0], "pickReg('" + g[0] + "')"); });
-            h += '</div>';
-            if (reg != 'all') {
+            var h = '<div class="leagues">' + chip('📂 همه کشورها و لیگ‌ها', reg == 'browse', "pickReg('browse')") +
+              chip('⭐ محبوب', reg == 'pop', "pickReg('pop')") + chip('⏰ به ترتیب ساعت', reg == 'all', "pickReg('all')") + '</div>';
+            if (reg == 'pop') {
               h += '<div class="leagues">';
-              leaguesFor(reg).forEach(function (s) { h += chip(lname(s.key), s.key == cur, "pickLeague('" + s.key + "')", 'sm'); });
+              leaguesFor('pop').forEach(function (s) { h += chip(lname(s.key), s.key == cur, "pickLeague('" + s.key + "')", 'sm'); });
               h += '</div>';
             }
-            h += '<div class="leagues">';
-            DFS.forEach(function (d) { h += chip(d[1], DF == d[0], "pickDF('" + d[0] + "')", 'sm'); });
-            $('leagues').innerHTML = h + '</div>';
+            if (reg == 'lg') h += '<div class="leagues">' + chip('📍 ' + lname(cur), true, '', 'sm') + chip('↩️ برگشت به کشورها', false, "pickReg('browse')", 'sm') + '</div>';
+            if (reg != 'browse') {
+              h += '<div class="leagues">';
+              DFS.forEach(function (d) { h += chip(d[1], DF == d[0], "pickDF('" + d[0] + "')", 'sm'); });
+              h += '</div>';
+            }
+            $('leagues').innerHTML = h;
           }
           function pickReg(g) {
-            reg = g;
-            if (g == 'all') { renderLeagues(); renderAll(); return; }
-            var ls = leaguesFor(g);
-            if (ls.length && !ls.some(function (s) { return s.key == cur; })) cur = ls[0].key;
-            renderLeagues(); loadOdds(false);
+            reg = g; renderLeagues();
+            if (g == 'browse') { renderTree(); return; }
+            if (g == 'all') { renderAll(); return; }
+            if (POP.indexOf(cur) < 0) cur = leaguesFor('pop')[0].key;
+            loadOdds(false);
           }
           function pickLeague(k) { cur = k; renderLeagues(); loadOdds(false); }
+          function openLeague(k) { cur = k; reg = POP.indexOf(k) >= 0 ? 'pop' : 'lg'; renderLeagues(); loadOdds(false); window.scrollTo(0, 0); }
           function pickDF(d) { DF = d; renderLeagues(); rerender(); }
-          function rerender() { if (reg == 'all') renderAll(); else if (CUR) renderMatches(CUR, false); }
+          function rerender() { if (reg == 'browse') renderTree(); else if (reg == 'all') renderAll(); else if (CUR) renderMatches(CUR, false); }
+          function tgl(o, k) { o[k] = !o[k]; renderTree(); }
+          function renderTree() {
+            CUR = null;
+            var groups = {};
+            SPORTS.forEach(function (s) {
+              var ci = cinfo(s.key), g = groups[ci.c] = groups[ci.c] || {};
+              var cc = g[ci.id] = g[ci.id] || { ci: ci, ls: [] };
+              cc.ls.push(s);
+            });
+            var h = '<div class="mut" style="padding:4px 14px 8px">دیدن این لیست رایگانه. فقط وقتی یه لیگ رو باز کنی اعتبار مصرف میشه.</div>';
+            CONT.forEach(function (c) {
+              var g = groups[c[0]]; if (!g) return;
+              var cs = Object.keys(g).map(function (k) { return g[k]; }).sort(function (a, b) { return a.ci.o - b.ci.o; });
+              var act = 0; cs.forEach(function (x) { x.ls.forEach(function (s) { if (s.active) act++; }); });
+              h += '<div class="tc" onclick="tgl(OPENC,\'' + c[0] + '\')"><span>' + c[1] + '</span><span class="mut">' + fa(act) + ' لیگ فعال ' + (OPENC[c[0]] ? '▲' : '▼') + '</span></div>';
+              if (!OPENC[c[0]]) return;
+              cs.forEach(function (x) {
+                var id = x.ci.id + '_' + c[0], n = 0; x.ls.forEach(function (s) { if (s.active) n++; });
+                h += '<div class="tk" onclick="tgl(OPENK,\'' + id + '\')"><span>' + x.ci.f + ' ' + x.ci.fa + '</span><span class="mut">' + (n ? fa(n) + ' لیگ' : 'خارج از فصل') + ' ' + (OPENK[id] ? '▲' : '▼') + '</span></div>';
+                if (!OPENK[id]) return;
+                x.ls.sort(function (a, b) { return (rank(a.key) - rank(b.key)) || (a.title < b.title ? -1 : 1); }).forEach(function (s) {
+                  h += s.active ? '<div class="tl" onclick="openLeague(\'' + s.key + '\')"><span>' + lname(s.key) + '</span><span class="gold">›</span></div>'
+                    : '<div class="tl off"><span>' + lname(s.key) + '</span><span class="mut">خارج از فصل</span></div>';
+                });
+              });
+            });
+            $('list').innerHTML = h;
+          }
 
           /* ---------- odds ---------- */
           function mkt(b, k) { if (!b || !b.markets) return null; for (var i = 0; i < b.markets.length; i++) if (b.markets[i].key == k) return b.markets[i]; return null; }
@@ -517,7 +650,7 @@ jobs:
             if (c && !force && Date.now() - c.t < ODDS_TTL) { renderMatches(c.d, false); return; }
             list.innerHTML = '<div class="spin">در حال دریافت بازی‌ها...</div>';
             fetchOdds(lg, function (d, r) {
-              if (lg != cur || reg == 'all') return;
+              if (lg != cur || reg == 'all' || reg == 'browse') return;
               if (d) renderMatches(d, false);
               else if (c) { renderMatches(c.d, false); toast('خطا در اتصال، اطلاعات قبلی نمایش داده شد'); }
               else list.innerHTML = errBox(r, 'loadOdds(true)');
@@ -762,11 +895,36 @@ jobs:
             });
             saveAll();
           }
+          function stats() {
+            var s = { n: 0, w: 0, l: 0, p: 0, v: 0, stk: 0, ret: 0, big: 0, bigOdd: 0, sn: 0, sw: 0, mn: 0, mw: 0 };
+            BETS.forEach(function (b) {
+              s.n++; s[b.st]++;
+              if (b.st == 'p' || b.st == 'v') return;
+              s.stk += b.stake; s.ret += b.win;
+              if (b.st == 'w') { if (b.win > s.big) s.big = b.win; if (b.odd > s.bigOdd) s.bigOdd = b.odd; }
+              if (b.sel.length > 1) { s.mn++; if (b.st == 'w') s.mw++; } else { s.sn++; if (b.st == 'w') s.sw++; }
+            });
+            return s;
+          }
+          function cell(t, v, col) { return '<div class="cell"><span class="mut">' + t + '</span><b' + (col ? ' style="color:' + col + '"' : '') + '>' + v + '</b></div>'; }
+          function pickBF(f) { BF = f; renderBets(); }
           function renderBets() {
             var el = $('bets');
             if (!BETS.length) { el.innerHTML = '<div class="empty">هنوز شرطی نبستی</div>'; return; }
-            var h = '';
-            BETS.forEach(function (b) {
+            var s = stats(), pr = r2(s.ret - s.stk), rate = (s.w + s.l) ? Math.round(s.w * 100 / (s.w + s.l)) : 0;
+            var h = '<div class="box"><b>📊 آمار من</b><div class="grid" style="margin-top:8px">' +
+              cell('کل شرط‌ها', fa(s.n)) + cell('درصد برد', fa(rate) + '٪', rate >= 50 ? 'var(--green)' : 'var(--red)') +
+              cell('برده', fa(s.w), 'var(--green)') + cell('باخته', fa(s.l), 'var(--red)') +
+              cell('در انتظار', fa(s.p), 'var(--gold)') + cell('لغو شده', fa(s.v)) +
+              cell('مجموع شرط', fc(s.stk)) + cell('مجموع برد', fc(s.ret)) +
+              cell('سود / زیان', (pr > 0 ? '+' : '') + fc(pr), pr >= 0 ? 'var(--green)' : 'var(--red)') + cell('بیشترین برد', fc(s.big)) +
+              cell('بالاترین ضریب برده', s.bigOdd ? s.bigOdd.toFixed(2) : '-') + cell('تکی / میکس برده', fa(s.sw) + ' از ' + fa(s.sn) + ' / ' + fa(s.mw) + ' از ' + fa(s.mn)) +
+              '</div></div>';
+            h += '<div class="leagues">' + chip('همه', BF == 'all', "pickBF('all')", 'sm') + chip('⏳ در انتظار', BF == 'p', "pickBF('p')", 'sm') +
+              chip('✅ برده', BF == 'w', "pickBF('w')", 'sm') + chip('❌ باخته', BF == 'l', "pickBF('l')", 'sm') + '</div>';
+            var list = BETS.filter(function (b) { return BF == 'all' || b.st == BF; });
+            if (!list.length) h += '<div class="empty">شرطی با این وضعیت نداری</div>';
+            list.forEach(function (b) {
               var st = { p: ['p', 'در انتظار'], w: ['w', 'برنده 🎉'], l: ['l', 'بازنده'], v: ['p', 'لغو شد'] }[b.st];
               h += '<div class="box"><div class="row"><b>' + (b.sel.length > 1 ? 'میکس ' + fmt(b.sel.length) + ' تایی' : 'تکی') + '</b><span class="st ' + st[0] + '">' + st[1] + '</span></div>';
               b.sel.forEach(function (x) {
@@ -788,6 +946,7 @@ jobs:
             $('set').innerHTML =
               '<div class="box"><b>🔑 کلید API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">ذخیره کلید</button>' +
               (r ? '<div class="mut" style="margin-top:8px">اعتبار باقی‌مونده این ماه: ' + esc(r) + '</div>' : '') + '</div>' +
+              '<div class="box"><b>🔄 آپدیت برنامه</b><div class="mut">نسخه فعلی: ' + (BUILD ? 'v' + fa(BUILD) : '-') + '</div><button class="btn blue" onclick="checkUpdate(true)">بررسی آپدیت</button></div>' +
               '<div class="box"><b>🪙 مدیریت سکه</b><div class="mut">موجودی فعلی: ' + fc(W.coins) + '</div><input id="coin" type="number" step="0.01" inputmode="decimal" placeholder="تعداد سکه">' +
               '<div class="quick"><button onclick="coins(1)">➕ اضافه کن</button><button onclick="coins(0)">✏️ تنظیم موجودی</button></div></div>' +
               '<div class="box"><b>🔔 یادآور بازی</b><div class="mut">یک ساعت قبل از بازی‌هایی که روشون شرط می‌بندی (یا زنگوله‌شون رو روشن می‌کنی) نوتیفیکیشن میاد.</div></div>' +
@@ -796,7 +955,7 @@ jobs:
               '<div class="box mut">این اپ فقط برای سرگرمیه و با سکه مجازی کار می‌کنه، پول واقعی در کار نیست.<br>مصرف اعتبار: باز کردن هر لیگ ۲ (تا ۳ ساعت تو حافظه می‌مونه)، بازارهای بیشتر هر بازی ۲، چک نتایج ۲ برای هر لیگ. نتایج فقط با زدن دکمه چک میشن.</div>';
           }
           function saveKey() {
-            sv('key', $('k').value.trim()); sv('sports', null); toast('کلید ذخیره شد'); renderSet();
+            sv('key', $('k').value.trim()); sv('sports2', null); toast('کلید ذخیره شد'); renderSet();
             loadSports(function () { renderLeagues(); if (reg != 'all') loadOdds(true); });
           }
           function coins(add) {
@@ -832,6 +991,29 @@ jobs:
             });
             sv('rem', REM);
           }
+          /* ---------- app update ---------- */
+          function checkUpdate(manual) {
+            if (!BUILD || REPO.indexOf('/') < 0) { if (manual) toast('آپدیت فقط تو نسخه ساخته‌شده کار می‌کنه'); return; }
+            if (!manual && Date.now() - ld('updT', 0) < 12 * 3600000) { showUpd(false); return; }
+            if (manual) toast('در حال بررسی آپدیت...');
+            http('https://api.github.com/repos/' + REPO + '/releases/latest', function (r) {
+              if (r.status != 200) { if (manual) toast('خطا در بررسی آپدیت (' + r.status + ')، VPN رو چک کن'); showUpd(false); return; }
+              try {
+                var j = JSON.parse(r.body), n = parseInt(String(j.tag_name).replace(/\D/g, ''), 10) || 0;
+                var a = (j.assets || []).filter(function (x) { return /\.apk$/.test(x.name); })[0];
+                sv('upd', { n: n, url: a ? a.browser_download_url : j.html_url }); sv('updT', Date.now());
+              } catch (e) {}
+              showUpd(manual);
+            });
+          }
+          function showUpd(manual) {
+            var u = ld('upd', null), el = $('upd');
+            if (u && u.n > BUILD) el.innerHTML = '<div class="box upd"><div class="row"><b>🆕 نسخه جدید (v' + fa(u.n) + ') آماده‌ست</b></div><button class="btn" onclick="getUpd()">⬇️ دانلود و نصب</button></div>';
+            else { el.innerHTML = ''; if (manual) toast('آخرین نسخه رو داری ✅'); }
+            if (manual && u && u.n > BUILD) { go('matches'); }
+          }
+          function getUpd() { var u = ld('upd', null); if (!u) return; try { Android.openUrl(u.url); toast('بعد از دانلود، فایل رو باز کن و «به‌روزرسانی» رو بزن'); } catch (e) { toast('مرورگر باز نشد'); } }
+
           function bonus() {
             var n = Date.now();
             if (n - (W.last || 0) < 86400000) { toast(fmt(Math.ceil((86400000 - (n - W.last)) / 3600000)) + ' ساعت دیگه دوباره بیا'); return; }
@@ -844,10 +1026,13 @@ jobs:
 
           renderBal(); updateCnt(); syncRem();
           loadSports(function () { renderLeagues(); loadOdds(false); });
+          setTimeout(function () { checkUpdate(false); }, 1200);
           </script>
           </body>
           </html>
           EOF_X
+          sed -i "s/__BUILD__/$GITHUB_RUN_NUMBER/g" build.gradle src/main/assets/index.html
+          sed -i "s#__REPO__#$GITHUB_REPOSITORY#g" src/main/assets/index.html
 
       - name: Build
         working-directory: app
