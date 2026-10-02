@@ -337,6 +337,13 @@ jobs:
           .cell{background:var(--card2);border-radius:8px;padding:8px;text-align:center;font-size:12px}
           .cell b{display:block;font-size:15px;margin-top:3px}
           .upd{border:1px solid var(--green)}
+          textarea{width:100%;background:var(--card2);border:1px solid #2a4a70;color:var(--txt);border-radius:8px;padding:10px;font-size:14px;font-family:inherit;margin:6px 0;min-height:60px;resize:vertical}
+          .note{background:#0e2f57;border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.9;white-space:pre-wrap}
+          .tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+          .tbl th,.tbl td{padding:7px 3px;border-bottom:1px solid #234;text-align:center}
+          .tbl th{color:var(--mut);font-weight:normal}
+          .tbl td:first-child,.tbl th:first-child{text-align:right}
+          .tbl tr.best td{background:#2ecc7122}
           </style>
           </head>
           <body>
@@ -487,6 +494,7 @@ jobs:
           var W = ld('wallet', null); if (!W) { W = { coins: START, last: 0 }; sv('wallet', W); }
           var BETS = ld('bets', []);
           var slip = ld('slip', []);
+          var NOTE = '';
           function saveAll() { sv('wallet', W); sv('bets', BETS); renderBal(); }
           function renderBal() { $('bal').textContent = '🪙 ' + fc(W.coins); }
           function updateCnt() { $('cnt').innerHTML = slip.length ? '<span class="badge">' + fmt(slip.length) + '</span>' : ''; }
@@ -502,7 +510,6 @@ jobs:
             if (p == 'matches') rerender();
             window.scrollTo(0, 0);
           }
-
           /* ---------- leagues ---------- */
           function loadSports(done) {
             var c = ld('sports2', null);
@@ -718,6 +725,11 @@ jobs:
 
           /* ---------- match list ---------- */
           function getOdd(m, p) {
+            if (p == '1X' || p == 'X2' || p == '12') {
+              var oa = p == 'X2' ? m.d : m.h, obb = p == '1X' ? m.d : m.a;
+              if (!oa || !obb) return null;
+              return Math.max(1.01, r2(1 / (1 / oa + 1 / obb)));
+            }
             if (p == '1') return m.h; if (p == 'X') return m.d; if (p == '2') return m.a;
             if (p == 'O25' && m.ov) return m.ov; if (p == 'U25' && m.un) return m.un;
             var x = exOf(m.id); return x && x.o && x.o[p] ? x.o[p] : null;
@@ -736,6 +748,7 @@ jobs:
             var h = '<div class="match"><div class="mt"><span>🕒 ' + hm(m.time) + ' <span class="bell" onclick="bell(\'' + m.id + '\')">' + (REM[m.id] ? '🔔' : '🔕') + '</span></span><span>' + lname(m.lg) + '</span></div>' +
               '<div class="teams">' + esc(m.home) + '<br>' + esc(m.away) + '</div>' +
               '<div class="odds">' + ob(m, '1', '۱ میزبان') + ob(m, 'X', 'مساوی') + ob(m, '2', '۲ مهمان') + '</div>';
+            if (m.d) h += '<div class="lbl">شانس دوگانه (برد یا مساوی)</div><div class="odds">' + ob(m, '1X', '۱ یا مساوی') + ob(m, 'X2', 'مساوی یا ۲') + ob(m, '12', '۱ یا ۲') + '</div>';
             if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'O25', 'بیشتر از ۲.۵ گل') + ob(m, 'U25', 'کمتر از ۲.۵ گل') + '</div>';
             if (OPEN[m.id]) {
               var x = exOf(m.id);
@@ -774,6 +787,7 @@ jobs:
           function pl(x) {
             var p = x.pick;
             if (p == '1') return 'برد ' + x.home; if (p == '2') return 'برد ' + x.away; if (p == 'X') return 'مساوی';
+            if (p == '1X') return 'برد ' + x.home + ' یا مساوی'; if (p == 'X2') return 'برد ' + x.away + ' یا مساوی'; if (p == '12') return 'یکی ببره (مساوی نشه)';
             if (p == 'BY') return 'هر دو تیم گل می‌زنن: بله'; if (p == 'BN') return 'هر دو تیم گل می‌زنن: خیر';
             return (p.charAt(0) == 'O' ? 'بیشتر از ' : 'کمتر از ') + fa(ptOf(p)) + ' گل';
           }
@@ -804,6 +818,7 @@ jobs:
                 '<div class="row"><span>' + esc(pl(x)) + '</span><b class="gold">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div></div>';
             });
             h += '<div class="row"><span>ضریب کل</span><b class="gold ltr">' + totalOdd().toFixed(2) + '</b></div>';
+            h += '<textarea id="note" placeholder="📝 چرا این شرط رو می‌بندی؟ (اختیاری، مثلاً: فلان تیم ۳ بازیه گل نزده)" oninput="NOTE=this.value">' + esc(NOTE) + '</textarea>';
             h += '<input id="stake" type="number" step="0.01" inputmode="decimal" placeholder="مبلغ شرط (سکه)" oninput="calc()">';
             h += '<div class="quick"><button onclick="qs(50)">۵۰</button><button onclick="qs(100)">۱۰۰</button><button onclick="qs(500)">۵۰۰</button><button onclick="qs(-1)">همه</button></div>';
             h += '<div class="row"><span>برد احتمالی</span><b id="win" style="color:var(--green)">۰</b></div>';
@@ -818,16 +833,15 @@ jobs:
             if (s > r2(W.coins)) { toast('سکه کافی نداری'); return; }
             for (var i = 0; i < slip.length; i++) if (new Date(slip[i].time).getTime() <= now) { toast('بازی ' + slip[i].home + ' شروع شده، از بلیط حذفش کن'); return; }
             BETS.unshift({
-              id: 'b' + now, t: now, stake: s, odd: Math.round(totalOdd() * 100) / 100, st: 'p', win: 0,
+              id: 'b' + now, t: now, note: String(NOTE || '').trim(), lesson: '', stake: s, odd: Math.round(totalOdd() * 100) / 100, st: 'p', win: 0,
               sel: slip.map(function (x) { var y = JSON.parse(JSON.stringify(x)); y.res = 'p'; return y; })
             });
             W.coins = r2(W.coins - s);
             slip.forEach(function (x) { if (!REM[x.id]) setRem(x, true, true); });
-            slip = []; sv('slip', slip); saveAll(); updateCnt();
+            slip = []; NOTE = ''; sv('slip', slip); saveAll(); updateCnt();
             toast('شرطت ثبت شد ✅'); go('bets');
           }
-
-          /* ---------- results ---------- */
+                /* ---------- results ---------- */
           function needCheck(b, now) {
             return b.st == 'p' && b.sel.some(function (x) { return x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now; });
           }
@@ -873,6 +887,7 @@ jobs:
                 var g = hs + as, p = x.pick, w;
                 x.score = hs + '-' + as;
                 if (p == '1') w = hs > as; else if (p == '2') w = as > hs; else if (p == 'X') w = hs == as;
+                else if (p == '1X') w = hs >= as; else if (p == 'X2') w = as >= hs; else if (p == '12') w = hs != as;
                 else if (p == 'BY') w = hs > 0 && as > 0; else if (p == 'BN') w = !(hs > 0 && as > 0);
                 else if (p.charAt(0) == 'O') w = g > ptOf(p); else w = g < ptOf(p);
                 x.res = w ? 'w' : 'l';
@@ -906,6 +921,40 @@ jobs:
             });
             return s;
           }
+          var MK = [['1', 'برد میزبان'], ['X', 'مساوی'], ['2', 'برد مهمان'], ['1X', '۱ یا مساوی'], ['X2', 'مساوی یا ۲'], ['12', '۱ یا ۲'],
+            ['O15', 'بیشتر از ۱.۵'], ['U15', 'کمتر از ۱.۵'], ['O25', 'بیشتر از ۲.۵'], ['U25', 'کمتر از ۲.۵'], ['O35', 'بیشتر از ۳.۵'], ['U35', 'کمتر از ۳.۵'],
+            ['BY', 'گل هر دو: بله'], ['BN', 'گل هر دو: خیر']];
+          function marketTable() {
+            var g = {};
+            BETS.forEach(function (b) {
+              b.sel.forEach(function (x) {
+                if (x.res != 'w' && x.res != 'l') return;
+                var k = x.pick == 'O' ? 'O25' : (x.pick == 'U' ? 'U25' : x.pick);
+                var o = g[k] = g[k] || { w: 0, l: 0, so: 0 };
+                o[x.res]++; o.so += x.odd;
+              });
+            });
+            var rows = MK.filter(function (m) { return g[m[0]]; }).map(function (m) {
+              var o = g[m[0]], n = o.w + o.l;
+              return { k: m[0], t: m[1], w: o.w, l: o.l, n: n, r: Math.round(o.w * 100 / n), ao: o.so / n };
+            }).sort(function (a, b) { return (b.r - a.r) || (b.n - a.n); });
+            var h = '<div class="box"><b>🏅 کدوم بازار بیشتر برات برده؟</b>';
+            if (!rows.length) return h + '<div class="mut" style="margin-top:8px">هنوز نتیجه‌ای ثبت نشده. بعد از چک نتایج، اینجا پر میشه.</div></div>';
+            var best = null; rows.forEach(function (r) { if (!best && r.n >= 3) best = r; });
+            h += '<table class="tbl"><tr><th>بازار</th><th>✅</th><th>❌</th><th>درصد برد</th><th>میانگین ضریب</th></tr>';
+            rows.forEach(function (r) {
+              h += '<tr' + (best && r.k == best.k ? ' class="best"' : '') + '><td>' + (best && r.k == best.k ? '🏆 ' : '') + r.t + '</td><td style="color:var(--green)">' + fa(r.w) + '</td><td style="color:var(--red)">' + fa(r.l) + '</td>' +
+                '<td><b style="color:' + (r.r >= 50 ? 'var(--green)' : 'var(--red)') + '">' + fa(r.r) + '٪</b></td><td class="ltr">' + r.ao.toFixed(2) + '</td></tr>';
+            });
+            h += '</table><div class="mut" style="margin-top:8px;line-height:1.8">هر انتخاب جدا حساب میشه، چه تکی چه داخل میکس. 🏆 = بهترین بازار با حداقل ۳ نتیجه. اگه درصد برد از ' + '«۱۰۰ تقسیم بر میانگین ضریب» بیشتر باشه، تو اون بازار از بنگاه جلوتری.</div></div>';
+            return h;
+          }
+          function editNote(id, f) {
+            var b = null; BETS.forEach(function (x) { if (x.id == id) b = x; }); if (!b) return;
+            var v = prompt(f == 'note' ? '📝 چرا این شرط رو بستی؟' : '📚 بعد از بازی چی یاد گرفتی؟ کدوم استدلالت درست بود و کدوم غلط؟', b[f] || '');
+            if (v === null) return;
+            b[f] = String(v).trim(); sv('bets', BETS); renderBets(); toast('ذخیره شد ✅');
+          }
           function cell(t, v, col) { return '<div class="cell"><span class="mut">' + t + '</span><b' + (col ? ' style="color:' + col + '"' : '') + '>' + v + '</b></div>'; }
           function pickBF(f) { BF = f; renderBets(); }
           function renderBets() {
@@ -920,6 +969,7 @@ jobs:
               cell('سود / زیان', (pr > 0 ? '+' : '') + fc(pr), pr >= 0 ? 'var(--green)' : 'var(--red)') + cell('بیشترین برد', fc(s.big)) +
               cell('بالاترین ضریب برده', s.bigOdd ? s.bigOdd.toFixed(2) : '-') + cell('تکی / میکس برده', fa(s.sw) + ' از ' + fa(s.sn) + ' / ' + fa(s.mw) + ' از ' + fa(s.mn)) +
               '</div></div>';
+            h += marketTable();
             h += '<div class="leagues">' + chip('همه', BF == 'all', "pickBF('all')", 'sm') + chip('⏳ در انتظار', BF == 'p', "pickBF('p')", 'sm') +
               chip('✅ برده', BF == 'w', "pickBF('w')", 'sm') + chip('❌ باخته', BF == 'l', "pickBF('l')", 'sm') + '</div>';
             var list = BETS.filter(function (b) { return BF == 'all' || b.st == BF; });
@@ -934,6 +984,10 @@ jobs:
               });
               var amt = b.st == 'l' ? '۰' : (b.st == 'p' ? fc(b.stake * b.odd) : '+' + fc(b.win));
               h += '<div class="row"><span class="mut">مبلغ ' + fc(b.stake) + ' | ضریب ' + b.odd.toFixed(2) + '</span><b style="color:' + (b.st == 'l' ? 'var(--red)' : 'var(--green)') + '">' + amt + '</b></div>';
+              if (b.note) h += '<div class="note">📝 <b>چرا بستم:</b> ' + esc(b.note) + '</div>';
+              if (b.lesson) h += '<div class="note" style="border-right:3px solid var(--gold)">📚 <b>درس بعد بازی:</b> ' + esc(b.lesson) + '</div>';
+              h += '<div class="row" style="justify-content:space-around"><span class="more" onclick="editNote(\'' + b.id + '\',\'note\')">✏️ یادداشت</span>' +
+                ((b.st == 'w' || b.st == 'l') ? '<span class="more" onclick="editNote(\'' + b.id + '\',\'lesson\')">📚 درس بعد بازی</span>' : '') + '</div>';
               if (needCheck(b, Date.now())) h += '<div class="more" onclick="checkResults(\'' + b.id + '\')">🔄 چک نتیجه همین شرط</div>';
               h += '</div>';
             });
@@ -1050,4 +1104,4 @@ jobs:
         with:
           tag_name: v${{ github.run_number }}
           name: Football Bet v${{ github.run_number }}
-          files: footballbet.apk
+          files: footballbet.apk    
