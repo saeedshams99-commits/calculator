@@ -959,22 +959,39 @@ jobs:
               var L = LIVE[id]; if (L && L.st == 'post') return;
               var k = new Date(m.time).getTime();
               if (!force && (!L || L.st != 'in') && now - k > END_MS) { LTRY[id] = (LTRY[id] || 0) + 1; if (LTRY[id] > 3) return; }
-              var o = g[s] = g[s] || { ms: [], a: k, b: k };
-              o.ms.push(m); if (k < o.a) o.a = k; if (k > o.b) o.b = k;
+              var o = g[s] = g[s] || { ms: [], d: {} };
+              o.ms.push(m); o.d[ymd(k)] = 1; o.d[ymd(k - 5 * 3600000)] = 1;
             });
             var ks = Object.keys(g).filter(function (s) { return force || now - (LT[s] || 0) > 50000; }), left = ks.length;
             if (!left) { if (done) done(); return; }
             ks.forEach(function (s) {
               LT[s] = now; var o = g[s];
-              http(ESPN_API + s + '/scoreboard?limit=300&dates=' + ymd(o.a - 86400000) + '-' + ymd(o.b + 86400000), function (r) {
-                if (r.status == 200) {
-                  try {
-                    var evs = JSON.parse(r.body).events || [];
-                    LERR[s] = { n: evs.length };
-                    o.ms.forEach(function (m) { var e = matchEv(m, evs); if (e) LIVE[m.id] = e; else LERR['m' + m.id] = evs.length; });
-                  } catch (e) { LERR[s] = { e: 'JSON' }; }
-                } else LERR[s] = { e: r.status, b: String(r.body || '').slice(0, 60) };
+              espnFetch(s, Object.keys(o.d), function (evs, err) {
+                if (evs) {
+                  LERR[s] = { n: evs.length };
+                  o.ms.forEach(function (m) { var e = matchEv(m, evs); if (e) LIVE[m.id] = e; else LERR['m' + m.id] = evs.length; });
+                } else LERR[s] = err;
                 if (--left == 0) { afterLive(); if (done) done(); }
+              });
+            });
+          }
+          function espnGet(url, cb) {
+            http(url, function (r) {
+              if (r.status != 200) { cb(null, { e: r.status, b: String(r.body || '').slice(0, 60) }); return; }
+              try { cb(JSON.parse(r.body).events || [], null); } catch (e) { cb(null, { e: 'JSON' }); }
+            });
+          }
+          function espnFetch(s, ds, cb) {
+            var all = [], seen = {}, left = ds.length, ok = false, lastErr = null;
+            var add = function (evs) { evs.forEach(function (e) { if (!seen[e.id]) { seen[e.id] = 1; all.push(e); } }); };
+            var fin = function () {
+              if (ok) { cb(all, null); return; }
+              espnGet(ESPN_API + s + '/scoreboard', function (evs, err) { if (evs) cb(evs, null); else cb(null, err || lastErr); });
+            };
+            ds.forEach(function (d) {
+              espnGet(ESPN_API + s + '/scoreboard?dates=' + d, function (evs, err) {
+                if (evs) { ok = true; add(evs); } else lastErr = err;
+                if (--left == 0) fin();
               });
             });
           }
