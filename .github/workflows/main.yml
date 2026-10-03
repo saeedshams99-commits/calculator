@@ -76,7 +76,7 @@ jobs:
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-              <application android:label="فوتبال بت"
+              <application android:label="ظپظˆطھط¨ط§ظ„ ط¨طھ"
                   android:theme="@android:style/Theme.Material.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
@@ -252,7 +252,7 @@ jobs:
                   if (nm == null) return;
                   Notification.Builder b;
                   if (Build.VERSION.SDK_INT >= 26) {
-                      NotificationChannel ch = new NotificationChannel("matches", "یادآور بازی‌ها", NotificationManager.IMPORTANCE_HIGH);
+                      NotificationChannel ch = new NotificationChannel("matches", "غŒط§ط¯ط¢ظˆط± ط¨ط§ط²غŒâ€Œظ‡ط§", NotificationManager.IMPORTANCE_HIGH);
                       nm.createNotificationChannel(ch);
                       b = new Notification.Builder(ctx, "matches");
                   } else {
@@ -279,7 +279,7 @@ jobs:
           <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-          <title>فوتبال بت</title>
+          <title>ظپظˆطھط¨ط§ظ„ ط¨طھ</title>
           <style>
           :root{--bg:#0b1a2e;--card:#13263f;--card2:#1b3352;--acc:#1e88e5;--gold:#ffc107;--green:#2ecc71;--red:#e74c3c;--txt:#e8eef6;--mut:#8aa0b8}
           *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -347,106 +347,106 @@ jobs:
           </style>
           </head>
           <body>
-          <header><div class="logo">⚽ فوتبال بت</div><div class="bal" id="bal">0</div></header>
+          <header><div class="logo">âڑ½ ظپظˆطھط¨ط§ظ„ ط¨طھ</div><div class="bal" id="bal">0</div></header>
           <div id="p-matches" class="page on"><div id="upd"></div><div id="leagues"></div><div id="list"></div></div>
           <div id="p-slip" class="page"><div id="slip"></div></div>
-          <div id="p-bets" class="page"><div class="box"><button class="btn blue" onclick="checkResults()">🔄 بروزرسانی نتایج همه شرط‌ها</button></div><div id="bets"></div></div>
+          <div id="p-bets" class="page"><div class="box"><button class="btn blue" onclick="checkResults()">ًں”„ ط¨ط±ظˆط²ط±ط³ط§ظ†غŒ ظ†طھط§غŒط¬ ظ‡ظ…ظ‡ ط´ط±ط·â€Œظ‡ط§</button></div><div id="bets"></div></div>
           <div id="p-set" class="page"><div id="set"></div></div>
           <nav>
-          <button id="n-matches" class="on" onclick="go('matches')">⚽ بازی‌ها</button>
-          <button id="n-slip" onclick="go('slip')">🎫 بلیط<span id="cnt"></span></button>
-          <button id="n-bets" onclick="go('bets')">📋 شرط‌های من</button>
-          <button id="n-set" onclick="go('set')">⚙️ تنظیمات</button>
+          <button id="n-matches" class="on" onclick="go('matches')">âڑ½ ط¨ط§ط²غŒâ€Œظ‡ط§</button>
+          <button id="n-slip" onclick="go('slip')">ًںژ« ط¨ظ„غŒط·<span id="cnt"></span></button>
+          <button id="n-bets" onclick="go('bets')">ًں“‹ ط´ط±ط·â€Œظ‡ط§غŒ ظ…ظ†</button>
+          <button id="n-set" onclick="go('set')">âڑ™ï¸ڈ طھظ†ط¸غŒظ…ط§طھ</button>
           </nav>
           <div class="toast" id="toast"></div>
           <script>
           var API = 'https://api.the-odds-api.com/v4/sports/';
           var POP = ['soccer_epl', 'soccer_spain_la_liga', 'soccer_italy_serie_a', 'soccer_germany_bundesliga', 'soccer_france_ligue_one', 'soccer_uefa_champs_league', 'soccer_uefa_europa_league'];
           var FA = {
-            soccer_epl: '🏴 لیگ برتر انگلیس', soccer_efl_champ: '🏴 چمپیونشیپ انگلیس', soccer_england_league1: '🏴 لیگ یک انگلیس',
-            soccer_fa_cup: '🏴 جام حذفی انگلیس', soccer_spain_la_liga: '🇪🇸 لالیگا اسپانیا', soccer_spain_segunda_division: '🇪🇸 لالیگا ۲',
-            soccer_italy_serie_a: '🇮🇹 سری آ ایتالیا', soccer_italy_serie_b: '🇮🇹 سری بی ایتالیا', soccer_germany_bundesliga: '🇩🇪 بوندسلیگا آلمان',
-            soccer_germany_bundesliga2: '🇩🇪 بوندسلیگا ۲', soccer_france_ligue_one: '🇫🇷 لوشامپیونه فرانسه', soccer_france_ligue_two: '🇫🇷 لیگ ۲ فرانسه',
-            soccer_uefa_champs_league: '🏆 لیگ قهرمانان اروپا', soccer_uefa_europa_league: '🏆 لیگ اروپا', soccer_uefa_europa_conference_league: '🏆 لیگ کنفرانس اروپا',
-            soccer_netherlands_eredivisie: '🇳🇱 اردیویسی هلند', soccer_portugal_primeira_liga: '🇵🇹 لیگ برتر پرتغال', soccer_turkey_super_league: '🇹🇷 سوپرلیگ ترکیه',
-            soccer_belgium_first_div: '🇧🇪 لیگ بلژیک', soccer_spl: '🏴 لیگ اسکاتلند', soccer_greece_super_league: '🇬🇷 سوپرلیگ یونان',
-            soccer_japan_j_league: '🇯🇵 جی‌لیگ ژاپن', soccer_china_superleague: '🇨🇳 سوپرلیگ چین', soccer_korea_kleague1: '🇰🇷 کی‌لیگ کره',
-            soccer_australia_aleague: '🇦🇺 ای‌لیگ استرالیا', soccer_mexico_ligamx: '🇲🇽 لیگا MX مکزیک', soccer_brazil_campeonato: '🇧🇷 سری آ برزیل',
-            soccer_argentina_primera_division: '🇦🇷 لیگ آرژانتین', soccer_usa_mls: '🇺🇸 MLS آمریکا', soccer_chile_campeonato: '🇨🇱 لیگ شیلی',
-            soccer_conmebol_copa_libertadores: '🏆 کوپا لیبرتادورس', soccer_conmebol_copa_sudamericana: '🏆 کوپا سودامریکانا',
-            soccer_fifa_world_cup: '🌍 جام جهانی', soccer_uefa_nations_league: '🇪🇺 لیگ ملت‌های اروپا',
-            soccer_england_efl_cup: '🏴 جام اتحادیه انگلیس', soccer_england_league2: '🏴 لیگ دو انگلیس', soccer_spain_copa_del_rey: '🇪🇸 کوپا دل ری',
-            soccer_italy_coppa_italia: '🇮🇹 کوپا ایتالیا', soccer_germany_dfb_pokal: '🇩🇪 جام حذفی آلمان', soccer_germany_liga3: '🇩🇪 لیگ ۳ آلمان',
-            soccer_france_coupe_de_france: '🇫🇷 جام حذفی فرانسه', soccer_uefa_champs_league_qualification: '🏆 مقدماتی لیگ قهرمانان', soccer_saudi_arabia_pro_league: '🇸🇦 لیگ حرفه‌ای عربستان',
-            soccer_brazil_serie_b: '🇧🇷 سری بی برزیل', soccer_austria_bundesliga: '🇦🇹 بوندسلیگا اتریش', soccer_switzerland_superleague: '🇨🇭 سوپرلیگ سوئیس',
-            soccer_russia_premier_league: '🇷🇺 لیگ برتر روسیه', soccer_denmark_superliga: '🇩🇰 سوپرلیگا دانمارک', soccer_norway_eliteserien: '🇳🇴 الیته‌سرین نروژ',
-            soccer_sweden_allsvenskan: '🇸🇪 آلسونسکان سوئد', soccer_sweden_superettan: '🇸🇪 سوپرتان سوئد', soccer_poland_ekstraklasa: '🇵🇱 اکستراکلاسا لهستان',
-            soccer_finland_veikkausliiga: '🇫🇮 لیگ فنلاند', soccer_league_of_ireland: '🇮🇪 لیگ ایرلند', soccer_fifa_club_world_cup: '🏆 جام باشگاه‌های جهان',
-            soccer_conmebol_copa_america: '🌎 کوپا آمریکا', soccer_uefa_european_championship: '🇪🇺 جام ملت‌های اروپا', soccer_africa_cup_of_nations: '🌍 جام ملت‌های آفریقا',
-            soccer_concacaf_gold_cup: '🌎 گلدکاپ', soccer_concacaf_leagues_cup: '🏆 لیگز کاپ', soccer_fifa_world_cup_qualifiers_europe: '🌍 مقدماتی جام جهانی (اروپا)',
-            soccer_fifa_world_cup_qualifiers_south_america: '🌍 مقدماتی جام جهانی (آمریکای جنوبی)'
+            soccer_epl: 'ًںڈ´ ظ„غŒع¯ ط¨ط±طھط± ط§ظ†ع¯ظ„غŒط³', soccer_efl_champ: 'ًںڈ´ ع†ظ…ظ¾غŒظˆظ†ط´غŒظ¾ ط§ظ†ع¯ظ„غŒط³', soccer_england_league1: 'ًںڈ´ ظ„غŒع¯ غŒع© ط§ظ†ع¯ظ„غŒط³',
+            soccer_fa_cup: 'ًںڈ´ ط¬ط§ظ… ط­ط°ظپغŒ ط§ظ†ع¯ظ„غŒط³', soccer_spain_la_liga: 'ًں‡ھًں‡¸ ظ„ط§ظ„غŒع¯ط§ ط§ط³ظ¾ط§ظ†غŒط§', soccer_spain_segunda_division: 'ًں‡ھًں‡¸ ظ„ط§ظ„غŒع¯ط§ غ²',
+            soccer_italy_serie_a: 'ًں‡®ًں‡¹ ط³ط±غŒ ط¢ ط§غŒطھط§ظ„غŒط§', soccer_italy_serie_b: 'ًں‡®ًں‡¹ ط³ط±غŒ ط¨غŒ ط§غŒطھط§ظ„غŒط§', soccer_germany_bundesliga: 'ًں‡©ًں‡ھ ط¨ظˆظ†ط¯ط³ظ„غŒع¯ط§ ط¢ظ„ظ…ط§ظ†',
+            soccer_germany_bundesliga2: 'ًں‡©ًں‡ھ ط¨ظˆظ†ط¯ط³ظ„غŒع¯ط§ غ²', soccer_france_ligue_one: 'ًں‡«ًں‡· ظ„ظˆط´ط§ظ…ظ¾غŒظˆظ†ظ‡ ظپط±ط§ظ†ط³ظ‡', soccer_france_ligue_two: 'ًں‡«ًں‡· ظ„غŒع¯ غ² ظپط±ط§ظ†ط³ظ‡',
+            soccer_uefa_champs_league: 'ًںڈ† ظ„غŒع¯ ظ‚ظ‡ط±ظ…ط§ظ†ط§ظ† ط§ط±ظˆظ¾ط§', soccer_uefa_europa_league: 'ًںڈ† ظ„غŒع¯ ط§ط±ظˆظ¾ط§', soccer_uefa_europa_conference_league: 'ًںڈ† ظ„غŒع¯ ع©ظ†ظپط±ط§ظ†ط³ ط§ط±ظˆظ¾ط§',
+            soccer_netherlands_eredivisie: 'ًں‡³ًں‡± ط§ط±ط¯غŒظˆغŒط³غŒ ظ‡ظ„ظ†ط¯', soccer_portugal_primeira_liga: 'ًں‡µًں‡¹ ظ„غŒع¯ ط¨ط±طھط± ظ¾ط±طھط؛ط§ظ„', soccer_turkey_super_league: 'ًں‡¹ًں‡· ط³ظˆظ¾ط±ظ„غŒع¯ طھط±ع©غŒظ‡',
+            soccer_belgium_first_div: 'ًں‡§ًں‡ھ ظ„غŒع¯ ط¨ظ„عکغŒع©', soccer_spl: 'ًںڈ´ ظ„غŒع¯ ط§ط³ع©ط§طھظ„ظ†ط¯', soccer_greece_super_league: 'ًں‡¬ًں‡· ط³ظˆظ¾ط±ظ„غŒع¯ غŒظˆظ†ط§ظ†',
+            soccer_japan_j_league: 'ًں‡¯ًں‡µ ط¬غŒâ€Œظ„غŒع¯ عکط§ظ¾ظ†', soccer_china_superleague: 'ًں‡¨ًں‡³ ط³ظˆظ¾ط±ظ„غŒع¯ ع†غŒظ†', soccer_korea_kleague1: 'ًں‡°ًں‡· ع©غŒâ€Œظ„غŒع¯ ع©ط±ظ‡',
+            soccer_australia_aleague: 'ًں‡¦ًں‡؛ ط§غŒâ€Œظ„غŒع¯ ط§ط³طھط±ط§ظ„غŒط§', soccer_mexico_ligamx: 'ًں‡²ًں‡½ ظ„غŒع¯ط§ MX ظ…ع©ط²غŒع©', soccer_brazil_campeonato: 'ًں‡§ًں‡· ط³ط±غŒ ط¢ ط¨ط±ط²غŒظ„',
+            soccer_argentina_primera_division: 'ًں‡¦ًں‡· ظ„غŒع¯ ط¢ط±عکط§ظ†طھغŒظ†', soccer_usa_mls: 'ًں‡؛ًں‡¸ MLS ط¢ظ…ط±غŒع©ط§', soccer_chile_campeonato: 'ًں‡¨ًں‡± ظ„غŒع¯ ط´غŒظ„غŒ',
+            soccer_conmebol_copa_libertadores: 'ًںڈ† ع©ظˆظ¾ط§ ظ„غŒط¨ط±طھط§ط¯ظˆط±ط³', soccer_conmebol_copa_sudamericana: 'ًںڈ† ع©ظˆظ¾ط§ ط³ظˆط¯ط§ظ…ط±غŒع©ط§ظ†ط§',
+            soccer_fifa_world_cup: 'ًںŒچ ط¬ط§ظ… ط¬ظ‡ط§ظ†غŒ', soccer_uefa_nations_league: 'ًں‡ھًں‡؛ ظ„غŒع¯ ظ…ظ„طھâ€Œظ‡ط§غŒ ط§ط±ظˆظ¾ط§',
+            soccer_england_efl_cup: 'ًںڈ´ ط¬ط§ظ… ط§طھط­ط§ط¯غŒظ‡ ط§ظ†ع¯ظ„غŒط³', soccer_england_league2: 'ًںڈ´ ظ„غŒع¯ ط¯ظˆ ط§ظ†ع¯ظ„غŒط³', soccer_spain_copa_del_rey: 'ًں‡ھًں‡¸ ع©ظˆظ¾ط§ ط¯ظ„ ط±غŒ',
+            soccer_italy_coppa_italia: 'ًں‡®ًں‡¹ ع©ظˆظ¾ط§ ط§غŒطھط§ظ„غŒط§', soccer_germany_dfb_pokal: 'ًں‡©ًں‡ھ ط¬ط§ظ… ط­ط°ظپغŒ ط¢ظ„ظ…ط§ظ†', soccer_germany_liga3: 'ًں‡©ًں‡ھ ظ„غŒع¯ غ³ ط¢ظ„ظ…ط§ظ†',
+            soccer_france_coupe_de_france: 'ًں‡«ًں‡· ط¬ط§ظ… ط­ط°ظپغŒ ظپط±ط§ظ†ط³ظ‡', soccer_uefa_champs_league_qualification: 'ًںڈ† ظ…ظ‚ط¯ظ…ط§طھغŒ ظ„غŒع¯ ظ‚ظ‡ط±ظ…ط§ظ†ط§ظ†', soccer_saudi_arabia_pro_league: 'ًں‡¸ًں‡¦ ظ„غŒع¯ ط­ط±ظپظ‡â€Œط§غŒ ط¹ط±ط¨ط³طھط§ظ†',
+            soccer_brazil_serie_b: 'ًں‡§ًں‡· ط³ط±غŒ ط¨غŒ ط¨ط±ط²غŒظ„', soccer_austria_bundesliga: 'ًں‡¦ًں‡¹ ط¨ظˆظ†ط¯ط³ظ„غŒع¯ط§ ط§طھط±غŒط´', soccer_switzerland_superleague: 'ًں‡¨ًں‡­ ط³ظˆظ¾ط±ظ„غŒع¯ ط³ظˆط¦غŒط³',
+            soccer_russia_premier_league: 'ًں‡·ًں‡؛ ظ„غŒع¯ ط¨ط±طھط± ط±ظˆط³غŒظ‡', soccer_denmark_superliga: 'ًں‡©ًں‡° ط³ظˆظ¾ط±ظ„غŒع¯ط§ ط¯ط§ظ†ظ…ط§ط±ع©', soccer_norway_eliteserien: 'ًں‡³ًں‡´ ط§ظ„غŒطھظ‡â€Œط³ط±غŒظ† ظ†ط±ظˆعک',
+            soccer_sweden_allsvenskan: 'ًں‡¸ًں‡ھ ط¢ظ„ط³ظˆظ†ط³ع©ط§ظ† ط³ظˆط¦ط¯', soccer_sweden_superettan: 'ًں‡¸ًں‡ھ ط³ظˆظ¾ط±طھط§ظ† ط³ظˆط¦ط¯', soccer_poland_ekstraklasa: 'ًں‡µًں‡± ط§ع©ط³طھط±ط§ع©ظ„ط§ط³ط§ ظ„ظ‡ط³طھط§ظ†',
+            soccer_finland_veikkausliiga: 'ًں‡«ًں‡® ظ„غŒع¯ ظپظ†ظ„ط§ظ†ط¯', soccer_league_of_ireland: 'ًں‡®ًں‡ھ ظ„غŒع¯ ط§غŒط±ظ„ظ†ط¯', soccer_fifa_club_world_cup: 'ًںڈ† ط¬ط§ظ… ط¨ط§ط´ع¯ط§ظ‡â€Œظ‡ط§غŒ ط¬ظ‡ط§ظ†',
+            soccer_conmebol_copa_america: 'ًںŒژ ع©ظˆظ¾ط§ ط¢ظ…ط±غŒع©ط§', soccer_uefa_european_championship: 'ًں‡ھًں‡؛ ط¬ط§ظ… ظ…ظ„طھâ€Œظ‡ط§غŒ ط§ط±ظˆظ¾ط§', soccer_africa_cup_of_nations: 'ًںŒچ ط¬ط§ظ… ظ…ظ„طھâ€Œظ‡ط§غŒ ط¢ظپط±غŒظ‚ط§',
+            soccer_concacaf_gold_cup: 'ًںŒژ ع¯ظ„ط¯ع©ط§ظ¾', soccer_concacaf_leagues_cup: 'ًںڈ† ظ„غŒع¯ط² ع©ط§ظ¾', soccer_fifa_world_cup_qualifiers_europe: 'ًںŒچ ظ…ظ‚ط¯ظ…ط§طھغŒ ط¬ط§ظ… ط¬ظ‡ط§ظ†غŒ (ط§ط±ظˆظ¾ط§)',
+            soccer_fifa_world_cup_qualifiers_south_america: 'ًںŒچ ظ…ظ‚ط¯ظ…ط§طھغŒ ط¬ط§ظ… ط¬ظ‡ط§ظ†غŒ (ط¢ظ…ط±غŒع©ط§غŒ ط¬ظ†ظˆط¨غŒ)'
           };
-          var CONT = [['eu', '🇪🇺 اروپا'], ['asia', '🌏 آسیا و اقیانوسیه'], ['am', '🌎 آمریکا'], ['af', '🌍 آفریقا'], ['world', '🏆 جهانی و تیم‌های ملی'], ['other', '⚽ سایر']];
+          var CONT = [['eu', 'ًں‡ھًں‡؛ ط§ط±ظˆظ¾ط§'], ['asia', 'ًںŒڈ ط¢ط³غŒط§ ظˆ ط§ظ‚غŒط§ظ†ظˆط³غŒظ‡'], ['am', 'ًںŒژ ط¢ظ…ط±غŒع©ط§'], ['af', 'ًںŒچ ط¢ظپط±غŒظ‚ط§'], ['world', 'ًںڈ† ط¬ظ‡ط§ظ†غŒ ظˆ طھغŒظ…â€Œظ‡ط§غŒ ظ…ظ„غŒ'], ['other', 'âڑ½ ط³ط§غŒط±']];
           var COUNTRIES = [
-            ['club_world', '🏆', 'جام باشگاه‌های جهان', 'world', /club_world_cup/],
-            ['national', '🌍', 'تیم‌های ملی', 'world', /fifa|uefa_nations|european_championship|euro_qual|copa_america|gold_cup|asian_cup|africa_cup_of_nations|friendl|international|olympic|womens/],
-            ['uefa', '🏆', 'جام‌های باشگاهی اروپا', 'eu', /uefa/],
-            ['england', '🏴', 'انگلیس', 'eu', /epl|efl|england|fa_cup/],
-            ['spain', '🇪🇸', 'اسپانیا', 'eu', /spain/],
-            ['italy', '🇮🇹', 'ایتالیا', 'eu', /italy/],
-            ['germany', '🇩🇪', 'آلمان', 'eu', /germany/],
-            ['france', '🇫🇷', 'فرانسه', 'eu', /france/],
-            ['netherlands', '🇳🇱', 'هلند', 'eu', /netherlands/],
-            ['portugal', '🇵🇹', 'پرتغال', 'eu', /portugal/],
-            ['turkey', '🇹🇷', 'ترکیه', 'eu', /turkey/],
-            ['belgium', '🇧🇪', 'بلژیک', 'eu', /belgium/],
-            ['scotland', '🏴', 'اسکاتلند', 'eu', /spl|scotland/],
-            ['austria', '🇦🇹', 'اتریش', 'eu', /austria/],
-            ['switzerland', '🇨🇭', 'سوئیس', 'eu', /switzerland/],
-            ['greece', '🇬🇷', 'یونان', 'eu', /greece/],
-            ['russia', '🇷🇺', 'روسیه', 'eu', /russia/],
-            ['ukraine', '🇺🇦', 'اوکراین', 'eu', /ukraine/],
-            ['denmark', '🇩🇰', 'دانمارک', 'eu', /denmark/],
-            ['norway', '🇳🇴', 'نروژ', 'eu', /norway/],
-            ['sweden', '🇸🇪', 'سوئد', 'eu', /sweden/],
-            ['poland', '🇵🇱', 'لهستان', 'eu', /poland/],
-            ['czech', '🇨🇿', 'چک', 'eu', /czech/],
-            ['croatia', '🇭🇷', 'کرواسی', 'eu', /croatia/],
-            ['serbia', '🇷🇸', 'صربستان', 'eu', /serbia/],
-            ['romania', '🇷🇴', 'رومانی', 'eu', /romania/],
-            ['finland', '🇫🇮', 'فنلاند', 'eu', /finland/],
-            ['ireland', '🇮🇪', 'ایرلند', 'eu', /ireland/],
-            ['afc', '🏆', 'جام‌های باشگاهی آسیا', 'asia', /afc/],
-            ['saudi', '🇸🇦', 'عربستان', 'asia', /saudi/],
-            ['iran', '🇮🇷', 'ایران', 'asia', /iran/],
-            ['japan', '🇯🇵', 'ژاپن', 'asia', /japan/],
-            ['korea', '🇰🇷', 'کره جنوبی', 'asia', /korea/],
-            ['china', '🇨🇳', 'چین', 'asia', /china/],
-            ['australia', '🇦🇺', 'استرالیا', 'asia', /australia/],
-            ['qatar', '🇶🇦', 'قطر', 'asia', /qatar/],
-            ['uae', '🇦🇪', 'امارات', 'asia', /uae|emirates/],
-            ['india', '🇮🇳', 'هند', 'asia', /india/],
-            ['thailand', '🇹🇭', 'تایلند', 'asia', /thailand/],
-            ['conmebol', '🏆', 'جام‌های آمریکای جنوبی', 'am', /conmebol|libertadores|sudamericana/],
-            ['concacaf', '🏆', 'جام‌های آمریکای شمالی', 'am', /concacaf/],
-            ['brazil', '🇧🇷', 'برزیل', 'am', /brazil/],
-            ['argentina', '🇦🇷', 'آرژانتین', 'am', /argentina/],
-            ['mexico', '🇲🇽', 'مکزیک', 'am', /mexico/],
-            ['usa', '🇺🇸', 'آمریکا', 'am', /usa|mls/],
-            ['colombia', '🇨🇴', 'کلمبیا', 'am', /colombia/],
-            ['chile', '🇨🇱', 'شیلی', 'am', /chile/],
-            ['uruguay', '🇺🇾', 'اروگوئه', 'am', /uruguay/],
-            ['peru', '🇵🇪', 'پرو', 'am', /peru/],
-            ['ecuador', '🇪🇨', 'اکوادور', 'am', /ecuador/],
-            ['paraguay', '🇵🇾', 'پاراگوئه', 'am', /paraguay/],
-            ['canada', '🇨🇦', 'کانادا', 'am', /canada/],
-            ['caf', '🏆', 'جام‌های آفریقا', 'af', /caf/],
-            ['egypt', '🇪🇬', 'مصر', 'af', /egypt/],
-            ['morocco', '🇲🇦', 'مراکش', 'af', /morocco/],
-            ['south_africa', '🇿🇦', 'آفریقای جنوبی', 'af', /south_africa/],
-            ['tunisia', '🇹🇳', 'تونس', 'af', /tunisia/],
-            ['algeria', '🇩🇿', 'الجزایر', 'af', /algeria/],
-            ['nigeria', '🇳🇬', 'نیجریه', 'af', /nigeria/]
+            ['club_world', 'ًںڈ†', 'ط¬ط§ظ… ط¨ط§ط´ع¯ط§ظ‡â€Œظ‡ط§غŒ ط¬ظ‡ط§ظ†', 'world', /club_world_cup/],
+            ['national', 'ًںŒچ', 'طھغŒظ…â€Œظ‡ط§غŒ ظ…ظ„غŒ', 'world', /fifa|uefa_nations|european_championship|euro_qual|copa_america|gold_cup|asian_cup|africa_cup_of_nations|friendl|international|olympic|womens/],
+            ['uefa', 'ًںڈ†', 'ط¬ط§ظ…â€Œظ‡ط§غŒ ط¨ط§ط´ع¯ط§ظ‡غŒ ط§ط±ظˆظ¾ط§', 'eu', /uefa/],
+            ['england', 'ًںڈ´', 'ط§ظ†ع¯ظ„غŒط³', 'eu', /epl|efl|england|fa_cup/],
+            ['spain', 'ًں‡ھًں‡¸', 'ط§ط³ظ¾ط§ظ†غŒط§', 'eu', /spain/],
+            ['italy', 'ًں‡®ًں‡¹', 'ط§غŒطھط§ظ„غŒط§', 'eu', /italy/],
+            ['germany', 'ًں‡©ًں‡ھ', 'ط¢ظ„ظ…ط§ظ†', 'eu', /germany/],
+            ['france', 'ًں‡«ًں‡·', 'ظپط±ط§ظ†ط³ظ‡', 'eu', /france/],
+            ['netherlands', 'ًں‡³ًں‡±', 'ظ‡ظ„ظ†ط¯', 'eu', /netherlands/],
+            ['portugal', 'ًں‡µًں‡¹', 'ظ¾ط±طھط؛ط§ظ„', 'eu', /portugal/],
+            ['turkey', 'ًں‡¹ًں‡·', 'طھط±ع©غŒظ‡', 'eu', /turkey/],
+            ['belgium', 'ًں‡§ًں‡ھ', 'ط¨ظ„عکغŒع©', 'eu', /belgium/],
+            ['scotland', 'ًںڈ´', 'ط§ط³ع©ط§طھظ„ظ†ط¯', 'eu', /spl|scotland/],
+            ['austria', 'ًں‡¦ًں‡¹', 'ط§طھط±غŒط´', 'eu', /austria/],
+            ['switzerland', 'ًں‡¨ًں‡­', 'ط³ظˆط¦غŒط³', 'eu', /switzerland/],
+            ['greece', 'ًں‡¬ًں‡·', 'غŒظˆظ†ط§ظ†', 'eu', /greece/],
+            ['russia', 'ًں‡·ًں‡؛', 'ط±ظˆط³غŒظ‡', 'eu', /russia/],
+            ['ukraine', 'ًں‡؛ًں‡¦', 'ط§ظˆع©ط±ط§غŒظ†', 'eu', /ukraine/],
+            ['denmark', 'ًں‡©ًں‡°', 'ط¯ط§ظ†ظ…ط§ط±ع©', 'eu', /denmark/],
+            ['norway', 'ًں‡³ًں‡´', 'ظ†ط±ظˆعک', 'eu', /norway/],
+            ['sweden', 'ًں‡¸ًں‡ھ', 'ط³ظˆط¦ط¯', 'eu', /sweden/],
+            ['poland', 'ًں‡µًں‡±', 'ظ„ظ‡ط³طھط§ظ†', 'eu', /poland/],
+            ['czech', 'ًں‡¨ًں‡؟', 'ع†ع©', 'eu', /czech/],
+            ['croatia', 'ًں‡­ًں‡·', 'ع©ط±ظˆط§ط³غŒ', 'eu', /croatia/],
+            ['serbia', 'ًں‡·ًں‡¸', 'طµط±ط¨ط³طھط§ظ†', 'eu', /serbia/],
+            ['romania', 'ًں‡·ًں‡´', 'ط±ظˆظ…ط§ظ†غŒ', 'eu', /romania/],
+            ['finland', 'ًں‡«ًں‡®', 'ظپظ†ظ„ط§ظ†ط¯', 'eu', /finland/],
+            ['ireland', 'ًں‡®ًں‡ھ', 'ط§غŒط±ظ„ظ†ط¯', 'eu', /ireland/],
+            ['afc', 'ًںڈ†', 'ط¬ط§ظ…â€Œظ‡ط§غŒ ط¨ط§ط´ع¯ط§ظ‡غŒ ط¢ط³غŒط§', 'asia', /afc/],
+            ['saudi', 'ًں‡¸ًں‡¦', 'ط¹ط±ط¨ط³طھط§ظ†', 'asia', /saudi/],
+            ['iran', 'ًں‡®ًں‡·', 'ط§غŒط±ط§ظ†', 'asia', /iran/],
+            ['japan', 'ًں‡¯ًں‡µ', 'عکط§ظ¾ظ†', 'asia', /japan/],
+            ['korea', 'ًں‡°ًں‡·', 'ع©ط±ظ‡ ط¬ظ†ظˆط¨غŒ', 'asia', /korea/],
+            ['china', 'ًں‡¨ًں‡³', 'ع†غŒظ†', 'asia', /china/],
+            ['australia', 'ًں‡¦ًں‡؛', 'ط§ط³طھط±ط§ظ„غŒط§', 'asia', /australia/],
+            ['qatar', 'ًں‡¶ًں‡¦', 'ظ‚ط·ط±', 'asia', /qatar/],
+            ['uae', 'ًں‡¦ًں‡ھ', 'ط§ظ…ط§ط±ط§طھ', 'asia', /uae|emirates/],
+            ['india', 'ًں‡®ًں‡³', 'ظ‡ظ†ط¯', 'asia', /india/],
+            ['thailand', 'ًں‡¹ًں‡­', 'طھط§غŒظ„ظ†ط¯', 'asia', /thailand/],
+            ['conmebol', 'ًںڈ†', 'ط¬ط§ظ…â€Œظ‡ط§غŒ ط¢ظ…ط±غŒع©ط§غŒ ط¬ظ†ظˆط¨غŒ', 'am', /conmebol|libertadores|sudamericana/],
+            ['concacaf', 'ًںڈ†', 'ط¬ط§ظ…â€Œظ‡ط§غŒ ط¢ظ…ط±غŒع©ط§غŒ ط´ظ…ط§ظ„غŒ', 'am', /concacaf/],
+            ['brazil', 'ًں‡§ًں‡·', 'ط¨ط±ط²غŒظ„', 'am', /brazil/],
+            ['argentina', 'ًں‡¦ًں‡·', 'ط¢ط±عکط§ظ†طھغŒظ†', 'am', /argentina/],
+            ['mexico', 'ًں‡²ًں‡½', 'ظ…ع©ط²غŒع©', 'am', /mexico/],
+            ['usa', 'ًں‡؛ًں‡¸', 'ط¢ظ…ط±غŒع©ط§', 'am', /usa|mls/],
+            ['colombia', 'ًں‡¨ًں‡´', 'ع©ظ„ظ…ط¨غŒط§', 'am', /colombia/],
+            ['chile', 'ًں‡¨ًں‡±', 'ط´غŒظ„غŒ', 'am', /chile/],
+            ['uruguay', 'ًں‡؛ًں‡¾', 'ط§ط±ظˆع¯ظˆط¦ظ‡', 'am', /uruguay/],
+            ['peru', 'ًں‡µًں‡ھ', 'ظ¾ط±ظˆ', 'am', /peru/],
+            ['ecuador', 'ًں‡ھًں‡¨', 'ط§ع©ظˆط§ط¯ظˆط±', 'am', /ecuador/],
+            ['paraguay', 'ًں‡µًں‡¾', 'ظ¾ط§ط±ط§ع¯ظˆط¦ظ‡', 'am', /paraguay/],
+            ['canada', 'ًں‡¨ًں‡¦', 'ع©ط§ظ†ط§ط¯ط§', 'am', /canada/],
+            ['caf', 'ًںڈ†', 'ط¬ط§ظ…â€Œظ‡ط§غŒ ط¢ظپط±غŒظ‚ط§', 'af', /caf/],
+            ['egypt', 'ًں‡ھًں‡¬', 'ظ…طµط±', 'af', /egypt/],
+            ['morocco', 'ًں‡²ًں‡¦', 'ظ…ط±ط§ع©ط´', 'af', /morocco/],
+            ['south_africa', 'ًں‡؟ًں‡¦', 'ط¢ظپط±غŒظ‚ط§غŒ ط¬ظ†ظˆط¨غŒ', 'af', /south_africa/],
+            ['tunisia', 'ًں‡¹ًں‡³', 'طھظˆظ†ط³', 'af', /tunisia/],
+            ['algeria', 'ًں‡©ًں‡؟', 'ط§ظ„ط¬ط²ط§غŒط±', 'af', /algeria/],
+            ['nigeria', 'ًں‡³ًں‡¬', 'ظ†غŒط¬ط±غŒظ‡', 'af', /nigeria/]
           ];
           var PRI = ['soccer_uefa_champs_league', 'soccer_uefa_europa_league', 'soccer_uefa_europa_conference_league', 'soccer_uefa_champs_league_qualification',
             'soccer_epl', 'soccer_efl_champ', 'soccer_fa_cup', 'soccer_england_efl_cup', 'soccer_england_league1', 'soccer_england_league2',
@@ -455,10 +455,10 @@ jobs:
             'soccer_france_ligue_one', 'soccer_france_coupe_de_france', 'soccer_france_ligue_two',
             'soccer_fifa_world_cup', 'soccer_uefa_european_championship', 'soccer_conmebol_copa_america', 'soccer_uefa_nations_league',
             'soccer_conmebol_copa_libertadores', 'soccer_conmebol_copa_sudamericana', 'soccer_brazil_campeonato', 'soccer_brazil_serie_b'];
-          var DFS = [['all', 'همه روزها'], ['today', 'امروز'], ['tom', 'فردا'], ['week', '۷ روز آینده']];
-          var ODDS_TTL = 3 * 3600000, SCORE_TTL = 10 * 60000, EX_TTL = 60 * 60000, SPORTS_TTL = 12 * 3600000, START = 1000, BONUS = 100;
+          var DFS = [['all', 'ظ‡ظ…ظ‡ ط±ظˆط²ظ‡ط§'], ['today', 'ط§ظ…ط±ظˆط²'], ['tom', 'ظپط±ط¯ط§'], ['week', 'غ· ط±ظˆط² ط¢غŒظ†ط¯ظ‡']];
+          var ODDS_TTL = 3 * 3600000, SCORE_TTL = 10 * 60000, EX_TTL = 60 * 60000, SPORTS_TTL = 12 * 3600000, END_MS = 150 * 60000, START = 1000, BONUS = 100;
           var BUILD = parseInt('__BUILD__', 10) || 0, REPO = '__REPO__';
-          var OPENC = {}, OPENK = {}, BF = 'all';
+          var OPENC = {}, OPENK = {}, BF = 'all', ALLK = [], OT = {};
           var reg = 'pop', cur = POP[0], DF = 'all', CUR = null, CURM = false, NL = 0, MATCHES = {}, OPEN = {}, EX = {}, SPORTS = [], cbs = {}, cbn = 0;
 
           function $(id) { return document.getElementById(id); }
@@ -471,7 +471,7 @@ jobs:
           function rem(r) {
             if (r.remaining && r.remaining != 'null') {
               sv('remaining', r.remaining);
-              if (+r.remaining < 50 && !LOWW) { LOWW = true; toast('⚠️ فقط ' + fa(+r.remaining) + ' اعتبار برات مونده'); }
+              if (+r.remaining < 50 && !LOWW) { LOWW = true; toast('âڑ ï¸ڈ ظپظ‚ط· ' + fa(+r.remaining) + ' ط§ط¹طھط¨ط§ط± ط¨ط±ط§طھ ظ…ظˆظ†ط¯ظ‡'); }
             }
           }
           function fmt(n) { return Math.round(n).toLocaleString('fa-IR'); }
@@ -496,7 +496,7 @@ jobs:
           var slip = ld('slip', []);
           var NOTE = '';
           function saveAll() { sv('wallet', W); sv('bets', BETS); renderBal(); }
-          function renderBal() { $('bal').textContent = '🪙 ' + fc(W.coins); }
+          function renderBal() { $('bal').textContent = 'ًںھ™ ' + fc(W.coins); }
           function updateCnt() { $('cnt').innerHTML = slip.length ? '<span class="badge">' + fmt(slip.length) + '</span>' : ''; }
 
           function go(p) {
@@ -510,6 +510,7 @@ jobs:
             if (p == 'matches') rerender();
             window.scrollTo(0, 0);
           }
+
           /* ---------- leagues ---------- */
           function loadSports(done) {
             var c = ld('sports2', null);
@@ -529,7 +530,7 @@ jobs:
           }
           function lname(k) {
             if (FA[k]) return FA[k];
-            for (var i = 0; i < SPORTS.length; i++) if (SPORTS[i].key == k) return '⚽ ' + esc(SPORTS[i].title);
+            for (var i = 0; i < SPORTS.length; i++) if (SPORTS[i].key == k) return 'âڑ½ ' + esc(SPORTS[i].title);
             return k;
           }
           function cinfo(k) {
@@ -537,7 +538,7 @@ jobs:
               var c = COUNTRIES[i];
               if (c[4].test(k)) return { id: c[0], f: c[1], fa: c[2], c: c[3], o: i };
             }
-            return { id: 'x', f: '⚽', fa: 'سایر', c: 'other', o: 999 };
+            return { id: 'x', f: 'âڑ½', fa: 'ط³ط§غŒط±', c: 'other', o: 999 };
           }
           function rank(k) {
             var i = PRI.indexOf(k); if (i >= 0) return i;
@@ -551,14 +552,14 @@ jobs:
             return (p.length ? p : POP).map(function (k) { return { key: k }; });
           }
           function renderLeagues() {
-            var h = '<div class="leagues">' + chip('📂 همه کشورها و لیگ‌ها', reg == 'browse', "pickReg('browse')") +
-              chip('⭐ محبوب', reg == 'pop', "pickReg('pop')") + chip('⏰ به ترتیب ساعت', reg == 'all', "pickReg('all')") + '</div>';
+            var h = '<div class="leagues">' + chip('ًں“‚ ظ‡ظ…ظ‡ ع©ط´ظˆط±ظ‡ط§ ظˆ ظ„غŒع¯â€Œظ‡ط§', reg == 'browse', "pickReg('browse')") +
+              chip('â­گ ظ…ط­ط¨ظˆط¨', reg == 'pop', "pickReg('pop')") + chip('âڈ° ط¨ظ‡ طھط±طھغŒط¨ ط³ط§ط¹طھ', reg == 'all', "pickReg('all')") + '</div>';
             if (reg == 'pop') {
               h += '<div class="leagues">';
               leaguesFor('pop').forEach(function (s) { h += chip(lname(s.key), s.key == cur, "pickLeague('" + s.key + "')", 'sm'); });
               h += '</div>';
             }
-            if (reg == 'lg') h += '<div class="leagues">' + chip('📍 ' + lname(cur), true, '', 'sm') + chip('↩️ برگشت به کشورها', false, "pickReg('browse')", 'sm') + '</div>';
+            if (reg == 'lg') h += '<div class="leagues">' + chip('ًں“چ ' + lname(cur), true, '', 'sm') + chip('â†©ï¸ڈ ط¨ط±ع¯ط´طھ ط¨ظ‡ ع©ط´ظˆط±ظ‡ط§', false, "pickReg('browse')", 'sm') + '</div>';
             if (reg != 'browse') {
               h += '<div class="leagues">';
               DFS.forEach(function (d) { h += chip(d[1], DF == d[0], "pickDF('" + d[0] + "')", 'sm'); });
@@ -586,20 +587,20 @@ jobs:
               var cc = g[ci.id] = g[ci.id] || { ci: ci, ls: [] };
               cc.ls.push(s);
             });
-            var h = '<div class="mut" style="padding:4px 14px 8px">دیدن این لیست رایگانه. فقط وقتی یه لیگ رو باز کنی اعتبار مصرف میشه.</div>';
+            var h = '<div class="mut" style="padding:4px 14px 8px">ط¯غŒط¯ظ† ط§غŒظ† ظ„غŒط³طھ ط±ط§غŒع¯ط§ظ†ظ‡. ظپظ‚ط· ظˆظ‚طھغŒ غŒظ‡ ظ„غŒع¯ ط±ظˆ ط¨ط§ط² ع©ظ†غŒ ط§ط¹طھط¨ط§ط± ظ…طµط±ظپ ظ…غŒط´ظ‡.</div>';
             CONT.forEach(function (c) {
               var g = groups[c[0]]; if (!g) return;
               var cs = Object.keys(g).map(function (k) { return g[k]; }).sort(function (a, b) { return a.ci.o - b.ci.o; });
               var act = 0; cs.forEach(function (x) { x.ls.forEach(function (s) { if (s.active) act++; }); });
-              h += '<div class="tc" onclick="tgl(OPENC,\'' + c[0] + '\')"><span>' + c[1] + '</span><span class="mut">' + fa(act) + ' لیگ فعال ' + (OPENC[c[0]] ? '▲' : '▼') + '</span></div>';
+              h += '<div class="tc" onclick="tgl(OPENC,\'' + c[0] + '\')"><span>' + c[1] + '</span><span class="mut">' + fa(act) + ' ظ„غŒع¯ ظپط¹ط§ظ„ ' + (OPENC[c[0]] ? 'â–²' : 'â–¼') + '</span></div>';
               if (!OPENC[c[0]]) return;
               cs.forEach(function (x) {
                 var id = x.ci.id + '_' + c[0], n = 0; x.ls.forEach(function (s) { if (s.active) n++; });
-                h += '<div class="tk" onclick="tgl(OPENK,\'' + id + '\')"><span>' + x.ci.f + ' ' + x.ci.fa + '</span><span class="mut">' + (n ? fa(n) + ' لیگ' : 'خارج از فصل') + ' ' + (OPENK[id] ? '▲' : '▼') + '</span></div>';
+                h += '<div class="tk" onclick="tgl(OPENK,\'' + id + '\')"><span>' + x.ci.f + ' ' + x.ci.fa + '</span><span class="mut">' + (n ? fa(n) + ' ظ„غŒع¯' : 'ط®ط§ط±ط¬ ط§ط² ظپطµظ„') + ' ' + (OPENK[id] ? 'â–²' : 'â–¼') + '</span></div>';
                 if (!OPENK[id]) return;
                 x.ls.sort(function (a, b) { return (rank(a.key) - rank(b.key)) || (a.title < b.title ? -1 : 1); }).forEach(function (s) {
-                  h += s.active ? '<div class="tl" onclick="openLeague(\'' + s.key + '\')"><span>' + lname(s.key) + '</span><span class="gold">›</span></div>'
-                    : '<div class="tl off"><span>' + lname(s.key) + '</span><span class="mut">خارج از فصل</span></div>';
+                  h += s.active ? '<div class="tl" onclick="openLeague(\'' + s.key + '\')"><span>' + lname(s.key) + '</span><span class="gold">â€؛</span></div>'
+                    : '<div class="tl off"><span>' + lname(s.key) + '</span><span class="mut">ط®ط§ط±ط¬ ط§ط² ظپطµظ„</span></div>';
                 });
               });
             });
@@ -641,44 +642,64 @@ jobs:
               if (r.status == 200) {
                 var d = [];
                 try { d = compact(JSON.parse(r.body), lg); } catch (e) {}
-                sv('odds_' + lg, { t: Date.now(), d: d });
+                var old = ld('odds_' + lg, null), now = Date.now(), seen = {};
+                d.forEach(function (m) { seen[m.id] = 1; });
+                if (old && old.d) old.d.forEach(function (m) { if (seen[m.id]) return; if (alive(m, now)) d.push(m); else sv('ex_' + m.id, null); });
+                sv('odds_' + lg, { t: now, d: d });
                 var idx = ld('oddsIdx', []); if (idx.indexOf(lg) < 0) { idx.push(lg); sv('oddsIdx', idx); }
                 cb(d, r);
               } else cb(null, r);
             });
           }
+          function alive(m, now) { return new Date(m.time).getTime() + END_MS > (now || Date.now()); }
+          function started(m) { return new Date(m.time).getTime() <= Date.now(); }
+          function agoTxt(t) {
+            var mn = Math.round((Date.now() - t) / 60000); if (mn < 60) return fmt(Math.max(mn, 1)) + ' ط¯ظ‚غŒظ‚ظ‡ ظ¾غŒط´';
+            var hr = Math.floor(mn / 60); if (hr < 24) return fmt(hr) + ' ط³ط§ط¹طھ ظ¾غŒط´'; return fmt(Math.floor(hr / 24)) + ' ط±ظˆط² ظ¾غŒط´';
+          }
           function errBox(r, retry) {
-            return '<div class="empty">خطا در دریافت اطلاعات (' + r.status + ')<br><span class="ltr">' + esc(r.body).slice(0, 200) + '</span><br><br>اینترنت، VPN و کلید API رو چک کن<br>' + chip('تلاش دوباره', false, retry) + '</div>';
+            return '<div class="empty">ط®ط·ط§ ط¯ط± ط¯ط±غŒط§ظپطھ ط§ط·ظ„ط§ط¹ط§طھ (' + r.status + ')<br><span class="ltr">' + esc(r.body).slice(0, 200) + '</span><br><br>ط§غŒظ†طھط±ظ†طھطŒ VPN ظˆ ع©ظ„غŒط¯ API ط±ظˆ ع†ع© ع©ظ†<br>' + chip('طھظ„ط§ط´ ط¯ظˆط¨ط§ط±ظ‡', false, retry) + '</div>';
           }
           function loadOdds(force) {
             var list = $('list'), lg = cur;
-            if (!key()) { list.innerHTML = '<div class="empty">اول از بخش ⚙️ تنظیمات کلید API رو وارد کن</div>'; return; }
+            if (!key()) { list.innerHTML = '<div class="empty">ط§ظˆظ„ ط§ط² ط¨ط®ط´ âڑ™ï¸ڈ طھظ†ط¸غŒظ…ط§طھ ع©ظ„غŒط¯ API ط±ظˆ ظˆط§ط±ط¯ ع©ظ†</div>'; return; }
             var c = ld('odds_' + lg, null);
-            if (c && !force && Date.now() - c.t < ODDS_TTL) { renderMatches(c.d, false); return; }
-            list.innerHTML = '<div class="spin">در حال دریافت بازی‌ها...</div>';
+            if (!force) {
+              if (c) { renderMatches(c.d, false); return; }
+              list.innerHTML = '<div class="empty">ط¨ط§ط²غŒâ€Œظ‡ط§غŒ ' + lname(lg) + ' ظ‡ظ†ظˆط² ط¯ط§ظ†ظ„ظˆط¯ ظ†ط´ط¯ظ‡.<br>ط¨ط±ط§غŒ طµط±ظپظ‡â€Œط¬ظˆغŒغŒ طھظˆ ط§ط¹طھط¨ط§ط±طŒ ظ‡غŒع† ظ„غŒع¯غŒ ط®ظˆط¯ع©ط§ط± ط¯ط§ظ†ظ„ظˆط¯ ظ†ظ…غŒط´ظ‡.<br><br>' +
+                chip('ًں“¥ ط¯ط±غŒط§ظپطھ ط¨ط§ط²غŒâ€Œظ‡ط§غŒ ط§غŒظ† ظ„غŒع¯', false, 'loadOdds(true)') + '<div class="mut">(غ² ط§ط¹طھط¨ط§ط± ظ…طµط±ظپ ظ…غŒط´ظ‡)</div></div>';
+              return;
+            }
+            list.innerHTML = '<div class="spin">ط¯ط± ط­ط§ظ„ ط¯ط±غŒط§ظپطھ ط¨ط§ط²غŒâ€Œظ‡ط§...</div>';
             fetchOdds(lg, function (d, r) {
               if (lg != cur || reg == 'all' || reg == 'browse') return;
               if (d) renderMatches(d, false);
-              else if (c) { renderMatches(c.d, false); toast('خطا در اتصال، اطلاعات قبلی نمایش داده شد'); }
+              else if (c) { renderMatches(c.d, false); toast('ط®ط·ط§ ط¯ط± ط§طھطµط§ظ„طŒ ط§ط·ظ„ط§ط¹ط§طھ ظ‚ط¨ظ„غŒ ظ†ظ…ط§غŒط´ ط¯ط§ط¯ظ‡ ط´ط¯'); }
               else list.innerHTML = errBox(r, 'loadOdds(true)');
             });
           }
           function renderAll() {
             var idx = ld('oddsIdx', []), all = [], n = 0, now = Date.now();
-            idx.forEach(function (k) { var c = ld('odds_' + k, null); if (c && now - c.t < 6 * 3600000 && c.d.length) { all = all.concat(c.d); n++; } });
+            var keep = []; ALLK = [];
+            idx.forEach(function (k) {
+              var c = ld('odds_' + k, null), a = (c && c.d) ? c.d.filter(function (m) { return alive(m, now); }) : [];
+              if (a.length) { all = all.concat(a); n++; keep.push(k); ALLK.push(k); }
+              else if (c) sv('odds_' + k, null);
+            });
+            if (keep.length != idx.length) sv('oddsIdx', keep);
             if (!all.length) {
               CUR = null;
-              $('list').innerHTML = '<div class="empty">اینجا بازی‌های همه لیگ‌هایی که باز کردی، به ترتیب ساعت شروع نشون داده میشه.<br><br>' +
-                chip('📥 دریافت لیگ‌های محبوب', false, 'loadMany(POP)') + '<div class="mut">(حدود ۱۴ اعتبار مصرف میشه)</div></div>';
+              $('list').innerHTML = '<div class="empty">ط§غŒظ†ط¬ط§ ط¨ط§ط²غŒâ€Œظ‡ط§غŒ ظ‡ظ…ظ‡ ظ„غŒع¯â€Œظ‡ط§غŒغŒ ع©ظ‡ ط¨ط§ط² ع©ط±ط¯غŒطŒ ط¨ظ‡ طھط±طھغŒط¨ ط³ط§ط¹طھ ط´ط±ظˆط¹ ظ†ط´ظˆظ† ط¯ط§ط¯ظ‡ ظ…غŒط´ظ‡.<br><br>' +
+                chip('ًں“¥ ط¯ط±غŒط§ظپطھ ظ„غŒع¯â€Œظ‡ط§غŒ ظ…ط­ط¨ظˆط¨', false, 'loadMany(POP)') + '<div class="mut">(ط­ط¯ظˆط¯ غ±غ´ ط§ط¹طھط¨ط§ط± ظ…طµط±ظپ ظ…غŒط´ظ‡)</div></div>';
               return;
             }
             NL = n; renderMatches(all, true);
           }
           function loadMany(ks) {
-            if (!key()) { toast('اول کلید API رو وارد کن'); return; }
+            if (!key()) { toast('ط§ظˆظ„ ع©ظ„غŒط¯ API ط±ظˆ ظˆط§ط±ط¯ ع©ظ†'); return; }
             if (!ks.length) ks = POP;
             var i = 0;
-            $('list').innerHTML = '<div class="spin">در حال دریافت ' + fmt(ks.length) + ' لیگ...</div>';
+            $('list').innerHTML = '<div class="spin">ط¯ط± ط­ط§ظ„ ط¯ط±غŒط§ظپطھ ' + fmt(ks.length) + ' ظ„غŒع¯...</div>';
             (function next() { if (i >= ks.length) { if (reg == 'all') renderAll(); return; } fetchOdds(ks[i++], function () { next(); }); })();
           }
           function inDF(t) {
@@ -693,7 +714,7 @@ jobs:
           function exOf(id) {
             if (EX[id]) return EX[id];
             var c = ld('ex_' + id, null);
-            if (c && Date.now() - c.t < EX_TTL) { EX[id] = c; return c; }
+            if (c && c.o) { EX[id] = c; return c; }
             return null;
           }
           function fetchEx(m) {
@@ -713,13 +734,14 @@ jobs:
               }
               var v = { t: Date.now(), o: o, err: !Object.keys(o).length };
               EX[m.id] = v;
-              if (r.status == 200) sv('ex_' + m.id, v); else toast('خطا در دریافت (' + r.status + ')');
+              if (r.status == 200) sv('ex_' + m.id, v); else toast('ط®ط·ط§ ط¯ط± ط¯ط±غŒط§ظپطھ (' + r.status + ')');
               rerender();
             });
           }
+          function exRef(id) { if (MATCHES[id] && !started(MATCHES[id])) fetchEx(MATCHES[id]); }
           function more(id) {
             OPEN[id] = !OPEN[id];
-            if (OPEN[id] && !exOf(id) && MATCHES[id]) fetchEx(MATCHES[id]);
+            if (OPEN[id] && !exOf(id) && MATCHES[id] && !started(MATCHES[id])) fetchEx(MATCHES[id]);
             rerender();
           }
 
@@ -737,6 +759,7 @@ jobs:
           function ob(m, p, label) {
             var odd = getOdd(m, p);
             if (!odd) return '<div class="ob dis"><small>' + label + '</small><b>-</b></div>';
+            if (started(m)) return '<div class="ob dis"><small>' + label + '</small><b>' + odd.toFixed(2) + '</b></div>';
             var s = slip.some(function (x) { return x.id == m.id && x.pick == p; });
             return '<div class="ob' + (s ? ' sel' : '') + '" onclick="tog(\'' + m.id + '\',\'' + p + '\')"><small>' + label + '</small><b>' + odd.toFixed(2) + '</b></div>';
           }
@@ -745,38 +768,42 @@ jobs:
             return '<div class="lbl">' + t + '</div><div class="odds two">' + ob(m, a[0], a[1]) + ob(m, b[0], b[1]) + '</div>';
           }
           function card(m) {
-            var h = '<div class="match"><div class="mt"><span>🕒 ' + hm(m.time) + ' <span class="bell" onclick="bell(\'' + m.id + '\')">' + (REM[m.id] ? '🔔' : '🔕') + '</span></span><span>' + lname(m.lg) + '</span></div>' +
+            var ot = OT[m.lg], tag = started(m) ? 'ًں”´ ط´ط±ظˆط¹ ط´ط¯ظ‡ ' : 'ًں•’ ', old = (ot && Date.now() - ot > ODDS_TTL) ? ' <span class="mut">âڈ³ ' + agoTxt(ot) + '</span>' : '';
+            var h = '<div class="match"><div class="mt"><span>' + tag + hm(m.time) + old + ' <span class="bell" onclick="bell(\'' + m.id + '\')">' + (REM[m.id] ? 'ًں””' : 'ًں”•') + '</span></span><span>' + lname(m.lg) + '</span></div>' +
               '<div class="teams">' + esc(m.home) + '<br>' + esc(m.away) + '</div>' +
-              '<div class="odds">' + ob(m, '1', '۱ میزبان') + ob(m, 'X', 'مساوی') + ob(m, '2', '۲ مهمان') + '</div>';
-            if (m.d) h += '<div class="lbl">شانس دوگانه (برد یا مساوی)</div><div class="odds">' + ob(m, '1X', '۱ یا مساوی') + ob(m, 'X2', 'مساوی یا ۲') + ob(m, '12', '۱ یا ۲') + '</div>';
-            if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'O25', 'بیشتر از ۲.۵ گل') + ob(m, 'U25', 'کمتر از ۲.۵ گل') + '</div>';
+              '<div class="odds">' + ob(m, '1', 'غ± ظ…غŒط²ط¨ط§ظ†') + ob(m, 'X', 'ظ…ط³ط§ظˆغŒ') + ob(m, '2', 'غ² ظ…ظ‡ظ…ط§ظ†') + '</div>';
+          if (m.d) h += '<div class="lbl">ط´ط§ظ†ط³ ط¯ظˆع¯ط§ظ†ظ‡ (ط¨ط±ط¯ غŒط§ ظ…ط³ط§ظˆغŒ)</div><div class="odds">' + ob(m, '1X', 'غ± غŒط§ ظ…ط³ط§ظˆغŒ') + ob(m, 'X2', 'ظ…ط³ط§ظˆغŒ غŒط§ غ²') + ob(m, '12', 'غ± غŒط§ غ²') + '</div>';
+            if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'O25', 'ط¨غŒط´طھط± ط§ط² غ².غµ ع¯ظ„') + ob(m, 'U25', 'ع©ظ…طھط± ط§ط² غ².غµ ع¯ظ„') + '</div>';
             if (OPEN[m.id]) {
               var x = exOf(m.id);
-              if (!x) h += '<div class="spin" style="padding:10px">در حال دریافت بازارها...</div>';
+              if (!x) h += started(m) ? '<div class="mut" style="text-align:center;padding:8px">ط¨ط§ط²غŒ ط´ط±ظˆط¹ ط´ط¯ظ‡</div>' : '<div class="spin" style="padding:10px">ط¯ط± ط­ط§ظ„ ط¯ط±غŒط§ظپطھ ط¨ط§ط²ط§ط±ظ‡ط§...</div>';
               else {
-                var s = sec(m, 'هر دو تیم گل می‌زنن؟', ['BY', 'بله'], ['BN', 'خیر']) +
-                  sec(m, 'مجموع گل ۱.۵', ['O15', 'بیشتر از ۱.۵'], ['U15', 'کمتر از ۱.۵']) +
-                  ((m.ov && m.un) ? '' : sec(m, 'مجموع گل ۲.۵', ['O25', 'بیشتر از ۲.۵'], ['U25', 'کمتر از ۲.۵'])) +
-                  sec(m, 'مجموع گل ۳.۵', ['O35', 'بیشتر از ۳.۵'], ['U35', 'کمتر از ۳.۵']);
-                h += s || '<div class="mut" style="text-align:center;padding:8px">فعلاً بازار بیشتری برای این بازی نیست</div>';
+                var s = sec(m, 'ظ‡ط± ط¯ظˆ طھغŒظ… ع¯ظ„ ظ…غŒâ€Œط²ظ†ظ†طں', ['BY', 'ط¨ظ„ظ‡'], ['BN', 'ط®غŒط±']) +
+                  sec(m, 'ظ…ط¬ظ…ظˆط¹ ع¯ظ„ غ±.غµ', ['O15', 'ط¨غŒط´طھط± ط§ط² غ±.غµ'], ['U15', 'ع©ظ…طھط± ط§ط² غ±.غµ']) +
+                  ((m.ov && m.un) ? '' : sec(m, 'ظ…ط¬ظ…ظˆط¹ ع¯ظ„ غ².غµ', ['O25', 'ط¨غŒط´طھط± ط§ط² غ².غµ'], ['U25', 'ع©ظ…طھط± ط§ط² غ².غµ'])) +
+                  sec(m, 'ظ…ط¬ظ…ظˆط¹ ع¯ظ„ غ³.غµ', ['O35', 'ط¨غŒط´طھط± ط§ط² غ³.غµ'], ['U35', 'ع©ظ…طھط± ط§ط² غ³.غµ']);
+                h += s || '<div class="mut" style="text-align:center;padding:8px">ظپط¹ظ„ط§ظ‹ ط¨ط§ط²ط§ط± ط¨غŒط´طھط±غŒ ط¨ط±ط§غŒ ط§غŒظ† ط¨ط§ط²غŒ ظ†غŒط³طھ</div>';
+                if (!started(m)) h += '<div class="mut" style="text-align:center;padding:4px" onclick="exRef(\'' + m.id + '\')">ًں”„ ط¨ط±ظˆط²ط±ط³ط§ظ†غŒ ط§غŒظ† ط¨ط§ط²ط§ط±ظ‡ط§ (غ² ط§ط¹طھط¨ط§ط±)' + (x.t ? 'طŒ ط¯ط±غŒط§ظپطھ: ' + agoTxt(x.t) : '') + '</div>';
               }
-              h += '<div class="more" onclick="more(\'' + m.id + '\')">▲ بستن</div>';
-            } else h += '<div class="more" onclick="more(\'' + m.id + '\')">➕ بازارهای بیشتر (گل هر دو تیم، ۱.۵، ۳.۵)</div>';
+              h += '<div class="more" onclick="more(\'' + m.id + '\')">â–² ط¨ط³طھظ†</div>';
+            } else h += '<div class="more" onclick="more(\'' + m.id + '\')">â‍• ط¨ط§ط²ط§ط±ظ‡ط§غŒ ط¨غŒط´طھط± (ع¯ظ„ ظ‡ط± ط¯ظˆ طھغŒظ…طŒ غ±.غµطŒ غ³.غµ)</div>';
             return h + '</div>';
           }
           function renderMatches(d, multi) {
             CUR = d; CURM = !!multi;
             var now = Date.now(), list = $('list'), remn = ld('remaining', '');
-            var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return t > now && inDF(t); })
+            OT = {}; d.forEach(function (m) { if (!(m.lg in OT)) { var c = ld('odds_' + m.lg, null); OT[m.lg] = c ? c.t : 0; } });
+            var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return alive(m, now) && inDF(t); })
               .sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
-            var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(ms.length) + ' بازی' + (multi ? ' از ' + fmt(NL) + ' لیگ' : '') +
-              (remn ? ' | اعتبار: ' + esc(remn) : '') + '</span>' + chip('🔄 بروزرسانی', false, multi ? 'loadMany(ld(\'oddsIdx\',[]))' : 'loadOdds(true)', 'sm') + '</div>';
-            if (!ms.length) { list.innerHTML = h + '<div class="empty">برای این فیلتر بازی‌ای نیست</div>'; return; }
+            var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(ms.length) + ' ط¨ط§ط²غŒ' + (multi ? ' ط§ط² ' + fmt(NL) + ' ظ„غŒع¯' : '') +
+              (!multi && OT[cur] ? ' | ط¯ط±غŒط§ظپطھ: ' + agoTxt(OT[cur]) : '') + (remn ? ' | ط§ط¹طھط¨ط§ط±: ' + esc(remn) : '') + '</span>' +
+              chip(multi ? 'ًں”„ ط¨ط±ظˆط²ط±ط³ط§ظ†غŒ ظ‡ظ…ظ‡ (' + fmt(ALLK.length * 2) + ' ط§ط¹طھط¨ط§ط±)' : 'ًں”„ ط¨ط±ظˆط²ط±ط³ط§ظ†غŒ (غ² ط§ط¹طھط¨ط§ط±)', false, multi ? 'loadMany(ALLK.slice())' : 'loadOdds(true)', 'sm') + '</div>';
+            if (!ms.length) { list.innerHTML = h + '<div class="empty">ط¨ط±ط§غŒ ط§غŒظ† ظپغŒظ„طھط± ط¨ط§ط²غŒâ€Œط§غŒ ظ†غŒط³طھ</div>'; return; }
             var last = '';
             ms.forEach(function (m) {
               MATCHES[m.id] = m;
               var k = dk(m.time);
-              if (k != last) { last = k; h += '<div class="day">📅 ' + dl(m.time) + '</div>'; }
+              if (k != last) { last = k; h += '<div class="day">ًں“… ' + dl(m.time) + '</div>'; }
               h += card(m);
             });
             list.innerHTML = h;
@@ -786,10 +813,10 @@ jobs:
           function ptOf(p) { return p.length > 1 ? parseInt(p.slice(1), 10) / 10 : 2.5; }
           function pl(x) {
             var p = x.pick;
-            if (p == '1') return 'برد ' + x.home; if (p == '2') return 'برد ' + x.away; if (p == 'X') return 'مساوی';
-            if (p == '1X') return 'برد ' + x.home + ' یا مساوی'; if (p == 'X2') return 'برد ' + x.away + ' یا مساوی'; if (p == '12') return 'یکی ببره (مساوی نشه)';
-            if (p == 'BY') return 'هر دو تیم گل می‌زنن: بله'; if (p == 'BN') return 'هر دو تیم گل می‌زنن: خیر';
-            return (p.charAt(0) == 'O' ? 'بیشتر از ' : 'کمتر از ') + fa(ptOf(p)) + ' گل';
+            if (p == '1') return 'ط¨ط±ط¯ ' + x.home; if (p == '2') return 'ط¨ط±ط¯ ' + x.away; if (p == 'X') return 'ظ…ط³ط§ظˆغŒ';
+            if (p == '1X') return 'ط¨ط±ط¯ ' + x.home + ' غŒط§ ظ…ط³ط§ظˆغŒ'; if (p == 'X2') return 'ط¨ط±ط¯ ' + x.away + ' غŒط§ ظ…ط³ط§ظˆغŒ'; if (p == '12') return 'غŒع©غŒ ط¨ط¨ط±ظ‡ (ظ…ط³ط§ظˆغŒ ظ†ط´ظ‡)';
+            if (p == 'BY') return 'ظ‡ط± ط¯ظˆ طھغŒظ… ع¯ظ„ ظ…غŒâ€Œط²ظ†ظ†: ط¨ظ„ظ‡'; if (p == 'BN') return 'ظ‡ط± ط¯ظˆ طھغŒظ… ع¯ظ„ ظ…غŒâ€Œط²ظ†ظ†: ط®غŒط±';
+            return (p.charAt(0) == 'O' ? 'ط¨غŒط´طھط± ط§ط² ' : 'ع©ظ…طھط± ط§ط² ') + fa(ptOf(p)) + ' ع¯ظ„';
           }
           function tog(id, p) {
             var m = MATCHES[id]; if (!m) return;
@@ -797,12 +824,13 @@ jobs:
             slip.forEach(function (x, j) { if (x.id == id && x.pick == p) i = j; });
             if (i >= 0) slip.splice(i, 1);
             else {
+              if (started(m)) { toast('ط§غŒظ† ط¨ط§ط²غŒ ط´ط±ظˆط¹ ط´ط¯ظ‡طŒ ط¯غŒع¯ظ‡ ظ†ظ…غŒط´ظ‡ ط±ظˆط´ ط´ط±ط· ط¨ط³طھ'); return; }
               var odd = getOdd(m, p); if (!odd) return;
               var others = slip.filter(function (x) { return x.id != id; }), replaced = others.length < slip.length;
-              if (others.length >= 15) { toast('حداکثر ۱۵ بازی تو یه میکس'); return; }
+              if (others.length >= 15) { toast('ط­ط¯ط§ع©ط«ط± غ±غµ ط¨ط§ط²غŒ طھظˆ غŒظ‡ ظ…غŒع©ط³'); return; }
               others.push({ id: id, lg: m.lg, home: m.home, away: m.away, time: m.time, pick: p, odd: odd });
               slip = others;
-              toast(replaced ? 'از هر بازی فقط یه انتخاب، جایگزین شد' : (slip.length > 1 ? 'اضافه شد، میکس ' + fmt(slip.length) + ' تایی' : 'به بلیط اضافه شد'));
+              toast(replaced ? 'ط§ط² ظ‡ط± ط¨ط§ط²غŒ ظپظ‚ط· غŒظ‡ ط§ظ†طھط®ط§ط¨طŒ ط¬ط§غŒع¯ط²غŒظ† ط´ط¯' : (slip.length > 1 ? 'ط§ط¶ط§ظپظ‡ ط´ط¯طŒ ظ…غŒع©ط³ ' + fmt(slip.length) + ' طھط§غŒغŒ' : 'ط¨ظ‡ ط¨ظ„غŒط· ط§ط¶ط§ظپظ‡ ط´ط¯'));
             }
             sv('slip', slip); updateCnt(); rerender();
           }
@@ -811,27 +839,27 @@ jobs:
           function clearSlip() { slip = []; sv('slip', slip); updateCnt(); renderSlip(); }
           function renderSlip() {
             var el = $('slip');
-            if (!slip.length) { el.innerHTML = '<div class="empty">بلیطت خالیه 🎫<br>از بخش بازی‌ها روی ضریب‌ها بزن.<br>اگه چند بازی انتخاب کنی، شرطت میکس میشه.</div>'; return; }
-            var h = '<div class="box"><div class="row"><b>' + (slip.length > 1 ? 'میکس ' + fmt(slip.length) + ' تایی' : 'شرط تکی') + '</b><span class="x" onclick="clearSlip()">پاک کردن همه</span></div>';
+            if (!slip.length) { el.innerHTML = '<div class="empty">ط¨ظ„غŒط·طھ ط®ط§ظ„غŒظ‡ ًںژ«<br>ط§ط² ط¨ط®ط´ ط¨ط§ط²غŒâ€Œظ‡ط§ ط±ظˆغŒ ط¶ط±غŒط¨â€Œظ‡ط§ ط¨ط²ظ†.<br>ط§ع¯ظ‡ ع†ظ†ط¯ ط¨ط§ط²غŒ ط§ظ†طھط®ط§ط¨ ع©ظ†غŒطŒ ط´ط±ط·طھ ظ…غŒع©ط³ ظ…غŒط´ظ‡.</div>'; return; }
+            var h = '<div class="box"><div class="row"><b>' + (slip.length > 1 ? 'ظ…غŒع©ط³ ' + fmt(slip.length) + ' طھط§غŒغŒ' : 'ط´ط±ط· طھع©غŒ') + '</b><span class="x" onclick="clearSlip()">ظ¾ط§ع© ع©ط±ط¯ظ† ظ‡ظ…ظ‡</span></div>';
             slip.forEach(function (x, i) {
-              h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + '</span><span class="x" onclick="rm(' + i + ')">✕</span></div>' +
+              h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + '</span><span class="x" onclick="rm(' + i + ')">âœ•</span></div>' +
                 '<div class="row"><span>' + esc(pl(x)) + '</span><b class="gold">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div></div>';
             });
-            h += '<div class="row"><span>ضریب کل</span><b class="gold ltr">' + totalOdd().toFixed(2) + '</b></div>';
-            h += '<textarea id="note" placeholder="📝 چرا این شرط رو می‌بندی؟ (اختیاری، مثلاً: فلان تیم ۳ بازیه گل نزده)" oninput="NOTE=this.value">' + esc(NOTE) + '</textarea>';
-            h += '<input id="stake" type="number" step="0.01" inputmode="decimal" placeholder="مبلغ شرط (سکه)" oninput="calc()">';
-            h += '<div class="quick"><button onclick="qs(50)">۵۰</button><button onclick="qs(100)">۱۰۰</button><button onclick="qs(500)">۵۰۰</button><button onclick="qs(-1)">همه</button></div>';
-            h += '<div class="row"><span>برد احتمالی</span><b id="win" style="color:var(--green)">۰</b></div>';
-            h += '<button class="btn" onclick="place()">✅ ثبت شرط</button></div>';
+            h += '<div class="row"><span>ط¶ط±غŒط¨ ع©ظ„</span><b class="gold ltr">' + totalOdd().toFixed(2) + '</b></div>';
+            h += '<textarea id="note" placeholder="ًں“‌ ع†ط±ط§ ط§غŒظ† ط´ط±ط· ط±ظˆ ظ…غŒâ€Œط¨ظ†ط¯غŒطں (ط§ط®طھغŒط§ط±غŒطŒ ظ…ط«ظ„ط§ظ‹: ظپظ„ط§ظ† طھغŒظ… غ³ ط¨ط§ط²غŒظ‡ ع¯ظ„ ظ†ط²ط¯ظ‡)" oninput="NOTE=this.value">' + esc(NOTE) + '</textarea>';
+            h += '<input id="stake" type="number" step="0.01" inputmode="decimal" placeholder="ظ…ط¨ظ„ط؛ ط´ط±ط· (ط³ع©ظ‡)" oninput="calc()">';
+            h += '<div class="quick"><button onclick="qs(50)">غµغ°</button><button onclick="qs(100)">غ±غ°غ°</button><button onclick="qs(500)">غµغ°غ°</button><button onclick="qs(-1)">ظ‡ظ…ظ‡</button></div>';
+            h += '<div class="row"><span>ط¨ط±ط¯ ط§ط­طھظ…ط§ظ„غŒ</span><b id="win" style="color:var(--green)">غ°</b></div>';
+            h += '<button class="btn" onclick="place()">âœ… ط«ط¨طھ ط´ط±ط·</button></div>';
             el.innerHTML = h;
           }
           function qs(v) { $('stake').value = v < 0 ? r2(W.coins) : v; calc(); }
           function calc() { var s = r2(+$('stake').value || 0); $('win').textContent = fc(s * totalOdd()); }
           function place() {
             var s = r2(+$('stake').value || 0), now = Date.now();
-            if (s <= 0) { toast('مبلغ شرط رو وارد کن'); return; }
-            if (s > r2(W.coins)) { toast('سکه کافی نداری'); return; }
-            for (var i = 0; i < slip.length; i++) if (new Date(slip[i].time).getTime() <= now) { toast('بازی ' + slip[i].home + ' شروع شده، از بلیط حذفش کن'); return; }
+            if (s <= 0) { toast('ظ…ط¨ظ„ط؛ ط´ط±ط· ط±ظˆ ظˆط§ط±ط¯ ع©ظ†'); return; }
+            if (s > r2(W.coins)) { toast('ط³ع©ظ‡ ع©ط§ظپغŒ ظ†ط¯ط§ط±غŒ'); return; }
+            for (var i = 0; i < slip.length; i++) if (new Date(slip[i].time).getTime() <= now) { toast('ط¨ط§ط²غŒ ' + slip[i].home + ' ط´ط±ظˆط¹ ط´ط¯ظ‡طŒ ط§ط² ط¨ظ„غŒط· ط­ط°ظپط´ ع©ظ†'); return; }
             BETS.unshift({
               id: 'b' + now, t: now, note: String(NOTE || '').trim(), lesson: '', stake: s, odd: Math.round(totalOdd() * 100) / 100, st: 'p', win: 0,
               sel: slip.map(function (x) { var y = JSON.parse(JSON.stringify(x)); y.res = 'p'; return y; })
@@ -839,25 +867,26 @@ jobs:
             W.coins = r2(W.coins - s);
             slip.forEach(function (x) { if (!REM[x.id]) setRem(x, true, true); });
             slip = []; NOTE = ''; sv('slip', slip); saveAll(); updateCnt();
-            toast('شرطت ثبت شد ✅'); go('bets');
+            toast('ط´ط±ط·طھ ط«ط¨طھ ط´ط¯ âœ…'); go('bets');
           }
-                /* ---------- results ---------- */
+
+          /* ---------- results ---------- */
           function needCheck(b, now) {
             return b.st == 'p' && b.sel.some(function (x) { return x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now; });
           }
           function checkResults(betId) {
             var now = Date.now(), lgs = {};
-            if (!key()) { toast('اول کلید API رو وارد کن'); return; }
+            if (!key()) { toast('ط§ظˆظ„ ع©ظ„غŒط¯ API ط±ظˆ ظˆط§ط±ط¯ ع©ظ†'); return; }
             var pend = BETS.filter(function (b) { return b.st == 'p' && (!betId || b.id == betId); });
-            if (!pend.length) { toast('شرط باز نداری'); return; }
+            if (!pend.length) { toast('ط´ط±ط· ط¨ط§ط² ظ†ط¯ط§ط±غŒ'); return; }
             pend.forEach(function (b) {
               b.sel.forEach(function (x) {
                 if (x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now) { (lgs[x.lg] = lgs[x.lg] || {})[x.id] = 1; }
               });
             });
             var ks = Object.keys(lgs);
-            if (!ks.length) { settle(); renderBets(); toast('هنوز بازی‌ای تموم نشده، اعتباری مصرف نشد'); return; }
-            toast('در حال بررسی ' + fa(Object.keys(lgs).reduce(function (a, k) { return a + Object.keys(lgs[k]).length; }, 0)) + ' بازی...');
+            if (!ks.length) { settle(); renderBets(); toast('ظ‡ظ†ظˆط² ط¨ط§ط²غŒâ€Œط§غŒ طھظ…ظˆظ… ظ†ط´ط¯ظ‡طŒ ط§ط¹طھط¨ط§ط±غŒ ظ…طµط±ظپ ظ†ط´ط¯'); return; }
+            toast('ط¯ط± ط­ط§ظ„ ط¨ط±ط±ط³غŒ ' + fa(Object.keys(lgs).reduce(function (a, k) { return a + Object.keys(lgs[k]).length; }, 0)) + ' ط¨ط§ط²غŒ...');
             var left = ks.length, ok = 0;
             ks.forEach(function (lg) {
               http(API + lg + '/scores/?apiKey=' + encodeURIComponent(key()) + '&daysFrom=3&eventIds=' + Object.keys(lgs[lg]).join(','), function (r) {
@@ -865,9 +894,9 @@ jobs:
                 if (r.status == 200) { ok++; try { applyScores(JSON.parse(r.body)); } catch (e) {} }
                 if (--left == 0) {
                   settle(); renderBets();
-                  if (!ok) toast('خطا در دریافت نتایج (' + r.status + ')');
-                  else if (BETS.some(function (b) { return needCheck(b, Date.now()) && (!betId || b.id == betId); })) toast('بعضی نتیجه‌ها هنوز ثبت نشدن، کمی بعد دوباره امتحان کن');
-                  else toast('نتایج بروز شد');
+                  if (!ok) toast('ط®ط·ط§ ط¯ط± ط¯ط±غŒط§ظپطھ ظ†طھط§غŒط¬ (' + r.status + ')');
+                  else if (BETS.some(function (b) { return needCheck(b, Date.now()) && (!betId || b.id == betId); })) toast('ط¨ط¹ط¶غŒ ظ†طھغŒط¬ظ‡â€Œظ‡ط§ ظ‡ظ†ظˆط² ط«ط¨طھ ظ†ط´ط¯ظ†طŒ ع©ظ…غŒ ط¨ط¹ط¯ ط¯ظˆط¨ط§ط±ظ‡ ط§ظ…طھط­ط§ظ† ع©ظ†');
+                  else toast('ظ†طھط§غŒط¬ ط¨ط±ظˆط² ط´ط¯');
                 }
               });
             });
@@ -888,7 +917,7 @@ jobs:
                 x.score = hs + '-' + as;
                 if (p == '1') w = hs > as; else if (p == '2') w = as > hs; else if (p == 'X') w = hs == as;
                 else if (p == '1X') w = hs >= as; else if (p == 'X2') w = as >= hs; else if (p == '12') w = hs != as;
-                else if (p == 'BY') w = hs > 0 && as > 0; else if (p == 'BN') w = !(hs > 0 && as > 0);
+                  else if (p == 'BY') w = hs > 0 && as > 0; else if (p == 'BN') w = !(hs > 0 && as > 0);
                 else if (p.charAt(0) == 'O') w = g > ptOf(p); else w = g < ptOf(p);
                 x.res = w ? 'w' : 'l';
               });
@@ -905,7 +934,7 @@ jobs:
                 b.win = r2(b.stake * o);
                 b.st = b.sel.every(function (x) { return x.res == 'v'; }) ? 'v' : 'w';
                 W.coins = r2(W.coins + b.win);
-                if (b.st == 'w') toast('🎉 بردی! ' + fc(b.win) + ' سکه');
+                if (b.st == 'w') toast('ًںژ‰ ط¨ط±ط¯غŒ! ' + fc(b.win) + ' ط³ع©ظ‡');
               }
             });
             saveAll();
@@ -921,9 +950,9 @@ jobs:
             });
             return s;
           }
-          var MK = [['1', 'برد میزبان'], ['X', 'مساوی'], ['2', 'برد مهمان'], ['1X', '۱ یا مساوی'], ['X2', 'مساوی یا ۲'], ['12', '۱ یا ۲'],
-            ['O15', 'بیشتر از ۱.۵'], ['U15', 'کمتر از ۱.۵'], ['O25', 'بیشتر از ۲.۵'], ['U25', 'کمتر از ۲.۵'], ['O35', 'بیشتر از ۳.۵'], ['U35', 'کمتر از ۳.۵'],
-            ['BY', 'گل هر دو: بله'], ['BN', 'گل هر دو: خیر']];
+          var MK = [['1', 'ط¨ط±ط¯ ظ…غŒط²ط¨ط§ظ†'], ['X', 'ظ…ط³ط§ظˆغŒ'], ['2', 'ط¨ط±ط¯ ظ…ظ‡ظ…ط§ظ†'], ['1X', 'غ± غŒط§ ظ…ط³ط§ظˆغŒ'], ['X2', 'ظ…ط³ط§ظˆغŒ غŒط§ غ²'], ['12', 'غ± غŒط§ غ²'],
+            ['O15', 'ط¨غŒط´طھط± ط§ط² غ±.غµ'], ['U15', 'ع©ظ…طھط± ط§ط² غ±.غµ'], ['O25', 'ط¨غŒط´طھط± ط§ط² غ².غµ'], ['U25', 'ع©ظ…طھط± ط§ط² غ².غµ'], ['O35', 'ط¨غŒط´طھط± ط§ط² غ³.غµ'], ['U35', 'ع©ظ…طھط± ط§ط² غ³.غµ'],
+            ['BY', 'ع¯ظ„ ظ‡ط± ط¯ظˆ: ط¨ظ„ظ‡'], ['BN', 'ع¯ظ„ ظ‡ط± ط¯ظˆ: ط®غŒط±']];
           function marketTable() {
             var g = {};
             BETS.forEach(function (b) {
@@ -938,57 +967,57 @@ jobs:
               var o = g[m[0]], n = o.w + o.l;
               return { k: m[0], t: m[1], w: o.w, l: o.l, n: n, r: Math.round(o.w * 100 / n), ao: o.so / n };
             }).sort(function (a, b) { return (b.r - a.r) || (b.n - a.n); });
-            var h = '<div class="box"><b>🏅 کدوم بازار بیشتر برات برده؟</b>';
-            if (!rows.length) return h + '<div class="mut" style="margin-top:8px">هنوز نتیجه‌ای ثبت نشده. بعد از چک نتایج، اینجا پر میشه.</div></div>';
+            var h = '<div class="box"><b>ًںڈ… ع©ط¯ظˆظ… ط¨ط§ط²ط§ط± ط¨غŒط´طھط± ط¨ط±ط§طھ ط¨ط±ط¯ظ‡طں</b>';
+            if (!rows.length) return h + '<div class="mut" style="margin-top:8px">ظ‡ظ†ظˆط² ظ†طھغŒط¬ظ‡â€Œط§غŒ ط«ط¨طھ ظ†ط´ط¯ظ‡. ط¨ط¹ط¯ ط§ط² ع†ع© ظ†طھط§غŒط¬طŒ ط§غŒظ†ط¬ط§ ظ¾ط± ظ…غŒط´ظ‡.</div></div>';
             var best = null; rows.forEach(function (r) { if (!best && r.n >= 3) best = r; });
-            h += '<table class="tbl"><tr><th>بازار</th><th>✅</th><th>❌</th><th>درصد برد</th><th>میانگین ضریب</th></tr>';
+            h += '<table class="tbl"><tr><th>ط¨ط§ط²ط§ط±</th><th>âœ…</th><th>â‌Œ</th><th>ط¯ط±طµط¯ ط¨ط±ط¯</th><th>ظ…غŒط§ظ†ع¯غŒظ† ط¶ط±غŒط¨</th></tr>';
             rows.forEach(function (r) {
-              h += '<tr' + (best && r.k == best.k ? ' class="best"' : '') + '><td>' + (best && r.k == best.k ? '🏆 ' : '') + r.t + '</td><td style="color:var(--green)">' + fa(r.w) + '</td><td style="color:var(--red)">' + fa(r.l) + '</td>' +
-                '<td><b style="color:' + (r.r >= 50 ? 'var(--green)' : 'var(--red)') + '">' + fa(r.r) + '٪</b></td><td class="ltr">' + r.ao.toFixed(2) + '</td></tr>';
+              h += '<tr' + (best && r.k == best.k ? ' class="best"' : '') + '><td>' + (best && r.k == best.k ? 'ًںڈ† ' : '') + r.t + '</td><td style="color:var(--green)">' + fa(r.w) + '</td><td style="color:var(--red)">' + fa(r.l) + '</td>' +
+                '<td><b style="color:' + (r.r >= 50 ? 'var(--green)' : 'var(--red)') + '">' + fa(r.r) + 'ظھ</b></td><td class="ltr">' + r.ao.toFixed(2) + '</td></tr>';
             });
-            h += '</table><div class="mut" style="margin-top:8px;line-height:1.8">هر انتخاب جدا حساب میشه، چه تکی چه داخل میکس. 🏆 = بهترین بازار با حداقل ۳ نتیجه. اگه درصد برد از ' + '«۱۰۰ تقسیم بر میانگین ضریب» بیشتر باشه، تو اون بازار از بنگاه جلوتری.</div></div>';
+            h += '</table><div class="mut" style="margin-top:8px;line-height:1.8">ظ‡ط± ط§ظ†طھط®ط§ط¨ ط¬ط¯ط§ ط­ط³ط§ط¨ ظ…غŒط´ظ‡طŒ ع†ظ‡ طھع©غŒ ع†ظ‡ ط¯ط§ط®ظ„ ظ…غŒع©ط³. ًںڈ† = ط¨ظ‡طھط±غŒظ† ط¨ط§ط²ط§ط± ط¨ط§ ط­ط¯ط§ظ‚ظ„ غ³ ظ†طھغŒط¬ظ‡. ط§ع¯ظ‡ ط¯ط±طµط¯ ط¨ط±ط¯ ط§ط² ' + 'آ«غ±غ°غ° طھظ‚ط³غŒظ… ط¨ط± ظ…غŒط§ظ†ع¯غŒظ† ط¶ط±غŒط¨آ» ط¨غŒط´طھط± ط¨ط§ط´ظ‡طŒ طھظˆ ط§ظˆظ† ط¨ط§ط²ط§ط± ط§ط² ط¨ظ†ع¯ط§ظ‡ ط¬ظ„ظˆطھط±غŒ.</div></div>';
             return h;
           }
           function editNote(id, f) {
             var b = null; BETS.forEach(function (x) { if (x.id == id) b = x; }); if (!b) return;
-            var v = prompt(f == 'note' ? '📝 چرا این شرط رو بستی؟' : '📚 بعد از بازی چی یاد گرفتی؟ کدوم استدلالت درست بود و کدوم غلط؟', b[f] || '');
+            var v = prompt(f == 'note' ? 'ًں“‌ ع†ط±ط§ ط§غŒظ† ط´ط±ط· ط±ظˆ ط¨ط³طھغŒطں' : 'ًں“ڑ ط¨ط¹ط¯ ط§ط² ط¨ط§ط²غŒ ع†غŒ غŒط§ط¯ ع¯ط±ظپطھغŒطں ع©ط¯ظˆظ… ط§ط³طھط¯ظ„ط§ظ„طھ ط¯ط±ط³طھ ط¨ظˆط¯ ظˆ ع©ط¯ظˆظ… ط؛ظ„ط·طں', b[f] || '');
             if (v === null) return;
-            b[f] = String(v).trim(); sv('bets', BETS); renderBets(); toast('ذخیره شد ✅');
+            b[f] = String(v).trim(); sv('bets', BETS); renderBets(); toast('ط°ط®غŒط±ظ‡ ط´ط¯ âœ…');
           }
           function cell(t, v, col) { return '<div class="cell"><span class="mut">' + t + '</span><b' + (col ? ' style="color:' + col + '"' : '') + '>' + v + '</b></div>'; }
           function pickBF(f) { BF = f; renderBets(); }
           function renderBets() {
             var el = $('bets');
-            if (!BETS.length) { el.innerHTML = '<div class="empty">هنوز شرطی نبستی</div>'; return; }
+            if (!BETS.length) { el.innerHTML = '<div class="empty">ظ‡ظ†ظˆط² ط´ط±ط·غŒ ظ†ط¨ط³طھغŒ</div>'; return; }
             var s = stats(), pr = r2(s.ret - s.stk), rate = (s.w + s.l) ? Math.round(s.w * 100 / (s.w + s.l)) : 0;
-            var h = '<div class="box"><b>📊 آمار من</b><div class="grid" style="margin-top:8px">' +
-              cell('کل شرط‌ها', fa(s.n)) + cell('درصد برد', fa(rate) + '٪', rate >= 50 ? 'var(--green)' : 'var(--red)') +
-              cell('برده', fa(s.w), 'var(--green)') + cell('باخته', fa(s.l), 'var(--red)') +
-              cell('در انتظار', fa(s.p), 'var(--gold)') + cell('لغو شده', fa(s.v)) +
-              cell('مجموع شرط', fc(s.stk)) + cell('مجموع برد', fc(s.ret)) +
-              cell('سود / زیان', (pr > 0 ? '+' : '') + fc(pr), pr >= 0 ? 'var(--green)' : 'var(--red)') + cell('بیشترین برد', fc(s.big)) +
-              cell('بالاترین ضریب برده', s.bigOdd ? s.bigOdd.toFixed(2) : '-') + cell('تکی / میکس برده', fa(s.sw) + ' از ' + fa(s.sn) + ' / ' + fa(s.mw) + ' از ' + fa(s.mn)) +
+            var h = '<div class="box"><b>ًں“ٹ ط¢ظ…ط§ط± ظ…ظ†</b><div class="grid" style="margin-top:8px">' +
+              cell('ع©ظ„ ط´ط±ط·â€Œظ‡ط§', fa(s.n)) + cell('ط¯ط±طµط¯ ط¨ط±ط¯', fa(rate) + 'ظھ', rate >= 50 ? 'var(--green)' : 'var(--red)') +
+              cell('ط¨ط±ط¯ظ‡', fa(s.w), 'var(--green)') + cell('ط¨ط§ط®طھظ‡', fa(s.l), 'var(--red)') +
+              cell('ط¯ط± ط§ظ†طھط¸ط§ط±', fa(s.p), 'var(--gold)') + cell('ظ„ط؛ظˆ ط´ط¯ظ‡', fa(s.v)) +
+              cell('ظ…ط¬ظ…ظˆط¹ ط´ط±ط·', fc(s.stk)) + cell('ظ…ط¬ظ…ظˆط¹ ط¨ط±ط¯', fc(s.ret)) +
+              cell('ط³ظˆط¯ / ط²غŒط§ظ†', (pr > 0 ? '+' : '') + fc(pr), pr >= 0 ? 'var(--green)' : 'var(--red)') + cell('ط¨غŒط´طھط±غŒظ† ط¨ط±ط¯', fc(s.big)) +
+              cell('ط¨ط§ظ„ط§طھط±غŒظ† ط¶ط±غŒط¨ ط¨ط±ط¯ظ‡', s.bigOdd ? s.bigOdd.toFixed(2) : '-') + cell('طھع©غŒ / ظ…غŒع©ط³ ط¨ط±ط¯ظ‡', fa(s.sw) + ' ط§ط² ' + fa(s.sn) + ' / ' + fa(s.mw) + ' ط§ط² ' + fa(s.mn)) +
               '</div></div>';
             h += marketTable();
-            h += '<div class="leagues">' + chip('همه', BF == 'all', "pickBF('all')", 'sm') + chip('⏳ در انتظار', BF == 'p', "pickBF('p')", 'sm') +
-              chip('✅ برده', BF == 'w', "pickBF('w')", 'sm') + chip('❌ باخته', BF == 'l', "pickBF('l')", 'sm') + '</div>';
+            h += '<div class="leagues">' + chip('ظ‡ظ…ظ‡', BF == 'all', "pickBF('all')", 'sm') + chip('âڈ³ ط¯ط± ط§ظ†طھط¸ط§ط±', BF == 'p', "pickBF('p')", 'sm') +
+              chip('âœ… ط¨ط±ط¯ظ‡', BF == 'w', "pickBF('w')", 'sm') + chip('â‌Œ ط¨ط§ط®طھظ‡', BF == 'l', "pickBF('l')", 'sm') + '</div>';
             var list = BETS.filter(function (b) { return BF == 'all' || b.st == BF; });
-            if (!list.length) h += '<div class="empty">شرطی با این وضعیت نداری</div>';
+            if (!list.length) h += '<div class="empty">ط´ط±ط·غŒ ط¨ط§ ط§غŒظ† ظˆط¶ط¹غŒطھ ظ†ط¯ط§ط±غŒ</div>';
             list.forEach(function (b) {
-              var st = { p: ['p', 'در انتظار'], w: ['w', 'برنده 🎉'], l: ['l', 'بازنده'], v: ['p', 'لغو شد'] }[b.st];
-              h += '<div class="box"><div class="row"><b>' + (b.sel.length > 1 ? 'میکس ' + fmt(b.sel.length) + ' تایی' : 'تکی') + '</b><span class="st ' + st[0] + '">' + st[1] + '</span></div>';
+              var st = { p: ['p', 'ط¯ط± ط§ظ†طھط¸ط§ط±'], w: ['w', 'ط¨ط±ظ†ط¯ظ‡ ًںژ‰'], l: ['l', 'ط¨ط§ط²ظ†ط¯ظ‡'], v: ['p', 'ظ„ط؛ظˆ ط´ط¯'] }[b.st];
+              h += '<div class="box"><div class="row"><b>' + (b.sel.length > 1 ? 'ظ…غŒع©ط³ ' + fmt(b.sel.length) + ' طھط§غŒغŒ' : 'طھع©غŒ') + '</b><span class="st ' + st[0] + '">' + st[1] + '</span></div>';
               b.sel.forEach(function (x) {
-                var ic = { p: '⏳', w: '✅', l: '❌', v: '↩️' }[x.res];
+                var ic = { p: 'âڈ³', w: 'âœ…', l: 'â‌Œ', v: 'â†©ï¸ڈ' }[x.res];
                 h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + (x.score ? ' (' + x.score + ')' : '') + '</span><span>' + ic + '</span></div>' +
                   '<div class="row"><span>' + esc(pl(x)) + '</span><b class="ltr">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div></div>';
               });
-              var amt = b.st == 'l' ? '۰' : (b.st == 'p' ? fc(b.stake * b.odd) : '+' + fc(b.win));
-              h += '<div class="row"><span class="mut">مبلغ ' + fc(b.stake) + ' | ضریب ' + b.odd.toFixed(2) + '</span><b style="color:' + (b.st == 'l' ? 'var(--red)' : 'var(--green)') + '">' + amt + '</b></div>';
-              if (b.note) h += '<div class="note">📝 <b>چرا بستم:</b> ' + esc(b.note) + '</div>';
-              if (b.lesson) h += '<div class="note" style="border-right:3px solid var(--gold)">📚 <b>درس بعد بازی:</b> ' + esc(b.lesson) + '</div>';
-              h += '<div class="row" style="justify-content:space-around"><span class="more" onclick="editNote(\'' + b.id + '\',\'note\')">✏️ یادداشت</span>' +
-                ((b.st == 'w' || b.st == 'l') ? '<span class="more" onclick="editNote(\'' + b.id + '\',\'lesson\')">📚 درس بعد بازی</span>' : '') + '</div>';
-              if (needCheck(b, Date.now())) h += '<div class="more" onclick="checkResults(\'' + b.id + '\')">🔄 چک نتیجه همین شرط</div>';
+              var amt = b.st == 'l' ? 'غ°' : (b.st == 'p' ? fc(b.stake * b.odd) : '+' + fc(b.win));
+              h += '<div class="row"><span class="mut">ظ…ط¨ظ„ط؛ ' + fc(b.stake) + ' | ط¶ط±غŒط¨ ' + b.odd.toFixed(2) + '</span><b style="color:' + (b.st == 'l' ? 'var(--red)' : 'var(--green)') + '">' + amt + '</b></div>';
+              if (b.note) h += '<div class="note">ًں“‌ <b>ع†ط±ط§ ط¨ط³طھظ…:</b> ' + esc(b.note) + '</div>';
+              if (b.lesson) h += '<div class="note" style="border-right:3px solid var(--gold)">ًں“ڑ <b>ط¯ط±ط³ ط¨ط¹ط¯ ط¨ط§ط²غŒ:</b> ' + esc(b.lesson) + '</div>';
+              h += '<div class="row" style="justify-content:space-around"><span class="more" onclick="editNote(\'' + b.id + '\',\'note\')">âœڈï¸ڈ غŒط§ط¯ط¯ط§ط´طھ</span>' +
+                ((b.st == 'w' || b.st == 'l') ? '<span class="more" onclick="editNote(\'' + b.id + '\',\'lesson\')">ًں“ڑ ط¯ط±ط³ ط¨ط¹ط¯ ط¨ط§ط²غŒ</span>' : '') + '</div>';
+              if (needCheck(b, Date.now())) h += '<div class="more" onclick="checkResults(\'' + b.id + '\')">ًں”„ ع†ع© ظ†طھغŒط¬ظ‡ ظ‡ظ…غŒظ† ط´ط±ط·</div>';
               h += '</div>';
             });
             el.innerHTML = h;
@@ -998,25 +1027,25 @@ jobs:
           function renderSet() {
             var r = ld('remaining', '');
             $('set').innerHTML =
-              '<div class="box"><b>🔑 کلید API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">ذخیره کلید</button>' +
-              (r ? '<div class="mut" style="margin-top:8px">اعتبار باقی‌مونده این ماه: ' + esc(r) + '</div>' : '') + '</div>' +
-              '<div class="box"><b>🔄 آپدیت برنامه</b><div class="mut">نسخه فعلی: ' + (BUILD ? 'v' + fa(BUILD) : '-') + '</div><button class="btn blue" onclick="checkUpdate(true)">بررسی آپدیت</button></div>' +
-              '<div class="box"><b>🪙 مدیریت سکه</b><div class="mut">موجودی فعلی: ' + fc(W.coins) + '</div><input id="coin" type="number" step="0.01" inputmode="decimal" placeholder="تعداد سکه">' +
-              '<div class="quick"><button onclick="coins(1)">➕ اضافه کن</button><button onclick="coins(0)">✏️ تنظیم موجودی</button></div></div>' +
-              '<div class="box"><b>🔔 یادآور بازی</b><div class="mut">یک ساعت قبل از بازی‌هایی که روشون شرط می‌بندی (یا زنگوله‌شون رو روشن می‌کنی) نوتیفیکیشن میاد.</div></div>' +
-              '<div class="box"><b>🎁 جایزه روزانه</b><div class="mut">هر ۲۴ ساعت ' + fmt(BONUS) + ' سکه رایگان</div><button class="btn" onclick="bonus()">دریافت جایزه</button></div>' +
-              '<div class="box"><b>♻️ شروع دوباره</b><div class="mut">سکه‌ها ' + fmt(START) + ' میشه و تاریخچه پاک میشه</div><button class="btn sec" onclick="resetAll()">ریست</button></div>' +
-              '<div class="box mut">این اپ فقط برای سرگرمیه و با سکه مجازی کار می‌کنه، پول واقعی در کار نیست.<br>مصرف اعتبار: باز کردن هر لیگ ۲ (تا ۳ ساعت تو حافظه می‌مونه)، بازارهای بیشتر هر بازی ۲، چک نتایج ۲ برای هر لیگ. نتایج فقط با زدن دکمه چک میشن.</div>';
+              '<div class="box"><b>ًں”‘ ع©ظ„غŒط¯ API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">ط°ط®غŒط±ظ‡ ع©ظ„غŒط¯</button>' +
+              (r ? '<div class="mut" style="margin-top:8px">ط§ط¹طھط¨ط§ط± ط¨ط§ظ‚غŒâ€Œظ…ظˆظ†ط¯ظ‡ ط§غŒظ† ظ…ط§ظ‡: ' + esc(r) + '</div>' : '') + '</div>' +
+              '<div class="box"><b>ًں”„ ط¢ظ¾ط¯غŒطھ ط¨ط±ظ†ط§ظ…ظ‡</b><div class="mut">ظ†ط³ط®ظ‡ ظپط¹ظ„غŒ: ' + (BUILD ? 'v' + fa(BUILD) : '-') + '</div><button class="btn blue" onclick="checkUpdate(true)">ط¨ط±ط±ط³غŒ ط¢ظ¾ط¯غŒطھ</button></div>' +
+              '<div class="box"><b>ًںھ™ ظ…ط¯غŒط±غŒطھ ط³ع©ظ‡</b><div class="mut">ظ…ظˆط¬ظˆط¯غŒ ظپط¹ظ„غŒ: ' + fc(W.coins) + '</div><input id="coin" type="number" step="0.01" inputmode="decimal" placeholder="طھط¹ط¯ط§ط¯ ط³ع©ظ‡">' +
+              '<div class="quick"><button onclick="coins(1)">â‍• ط§ط¶ط§ظپظ‡ ع©ظ†</button><button onclick="coins(0)">âœڈï¸ڈ طھظ†ط¸غŒظ… ظ…ظˆط¬ظˆط¯غŒ</button></div></div>' +
+              '<div class="box"><b>ًں”” غŒط§ط¯ط¢ظˆط± ط¨ط§ط²غŒ</b><div class="mut">غŒع© ط³ط§ط¹طھ ظ‚ط¨ظ„ ط§ط² ط¨ط§ط²غŒâ€Œظ‡ط§غŒغŒ ع©ظ‡ ط±ظˆط´ظˆظ† ط´ط±ط· ظ…غŒâ€Œط¨ظ†ط¯غŒ (غŒط§ ط²ظ†ع¯ظˆظ„ظ‡â€Œط´ظˆظ† ط±ظˆ ط±ظˆط´ظ† ظ…غŒâ€Œع©ظ†غŒ) ظ†ظˆطھغŒظپغŒع©غŒط´ظ† ظ…غŒط§ط¯.</div></div>' +
+              '<div class="box"><b>ًںژپ ط¬ط§غŒط²ظ‡ ط±ظˆط²ط§ظ†ظ‡</b><div class="mut">ظ‡ط± غ²غ´ ط³ط§ط¹طھ ' + fmt(BONUS) + ' ط³ع©ظ‡ ط±ط§غŒع¯ط§ظ†</div><button class="btn" onclick="bonus()">ط¯ط±غŒط§ظپطھ ط¬ط§غŒط²ظ‡</button></div>' +
+              '<div class="box"><b>â™»ï¸ڈ ط´ط±ظˆط¹ ط¯ظˆط¨ط§ط±ظ‡</b><div class="mut">ط³ع©ظ‡â€Œظ‡ط§ ' + fmt(START) + ' ظ…غŒط´ظ‡ ظˆ طھط§ط±غŒط®ع†ظ‡ ظ¾ط§ع© ظ…غŒط´ظ‡</div><button class="btn sec" onclick="resetAll()">ط±غŒط³طھ</button></div>' +
+              '<div class="box mut">ط§غŒظ† ط§ظ¾ ظپظ‚ط· ط¨ط±ط§غŒ ط³ط±ع¯ط±ظ…غŒظ‡ ظˆ ط¨ط§ ط³ع©ظ‡ ظ…ط¬ط§ط²غŒ ع©ط§ط± ظ…غŒâ€Œع©ظ†ظ‡طŒ ظ¾ظˆظ„ ظˆط§ظ‚ط¹غŒ ط¯ط± ع©ط§ط± ظ†غŒط³طھ.<br>ظ…طµط±ظپ ط§ط¹طھط¨ط§ط±: ظ‡غŒع† ظ„غŒع¯غŒ ط®ظˆط¯ع©ط§ط± ط¯ط§ظ†ظ„ظˆط¯ ظ†ظ…غŒط´ظ‡. ط¯ط±غŒط§ظپطھ ظ‡ط± ظ„غŒع¯ غ² (طھط§ ط¢ط®ط± ط¨ط§ط²غŒâ€Œظ‡ط§ طھظˆ ط­ط§ظپط¸ظ‡ ظ…غŒâ€Œظ…ظˆظ†ظ‡)طŒ ط¨ط§ط²ط§ط±ظ‡ط§غŒ ط¨غŒط´طھط± ظ‡ط± ط¨ط§ط²غŒ غ²طŒ ع†ع© ظ†طھط§غŒط¬ غ² ط¨ط±ط§غŒ ظ‡ط± ظ„غŒع¯. ظ†طھط§غŒط¬ ظپظ‚ط· ط¨ط§ ط²ط¯ظ† ط¯ع©ظ…ظ‡ ع†ع© ظ…غŒط´ظ†.</div>';
           }
           function saveKey() {
-            sv('key', $('k').value.trim()); sv('sports2', null); toast('کلید ذخیره شد'); renderSet();
-            loadSports(function () { renderLeagues(); if (reg != 'all') loadOdds(true); });
+            sv('key', $('k').value.trim()); sv('sports2', null); toast('ع©ظ„غŒط¯ ط°ط®غŒط±ظ‡ ط´ط¯'); renderSet();
+            loadSports(function () { renderLeagues(); if (reg != 'all') loadOdds(false); });
           }
           function coins(add) {
             var v = r2(+$('coin').value || 0);
-            if (v < 0 || (add && v == 0)) { toast('یه عدد درست وارد کن'); return; }
+            if (v < 0 || (add && v == 0)) { toast('غŒظ‡ ط¹ط¯ط¯ ط¯ط±ط³طھ ظˆط§ط±ط¯ ع©ظ†'); return; }
             W.coins = add ? r2(W.coins + v) : v; saveAll(); renderSet();
-            toast(add ? fc(v) + ' سکه اضافه شد' : 'موجودی شد ' + fc(v));
+            toast(add ? fc(v) + ' ط³ع©ظ‡ ط§ط¶ط§ظپظ‡ ط´ط¯' : 'ظ…ظˆط¬ظˆط¯غŒ ط´ط¯ ' + fc(v));
           }
 
           /* ---------- reminders ---------- */
@@ -1024,14 +1053,14 @@ jobs:
           function setRem(m, on, silent) {
             var at = new Date(m.time).getTime() - 3600000;
             if (on) {
-              if (at <= Date.now()) { if (!silent) toast('کمتر از یک ساعت به بازی مونده'); return; }
-              REM[m.id] = { t: at, title: '⚽ یک ساعت دیگه بازی شروع میشه', text: m.home + ' - ' + m.away + ' | ساعت ' + hm(m.time) };
+              if (at <= Date.now()) { if (!silent) toast('ع©ظ…طھط± ط§ط² غŒع© ط³ط§ط¹طھ ط¨ظ‡ ط¨ط§ط²غŒ ظ…ظˆظ†ط¯ظ‡'); return; }
+              REM[m.id] = { t: at, title: 'âڑ½ غŒع© ط³ط§ط¹طھ ط¯غŒع¯ظ‡ ط¨ط§ط²غŒ ط´ط±ظˆط¹ ظ…غŒط´ظ‡', text: m.home + ' - ' + m.away + ' | ط³ط§ط¹طھ ' + hm(m.time) };
               try { Android.alarm(m.id, String(at), REM[m.id].title, REM[m.id].text); } catch (e) {}
-              if (!silent) toast('🔔 یک ساعت قبل از بازی خبرت می‌کنم');
+              if (!silent) toast('ًں”” غŒع© ط³ط§ط¹طھ ظ‚ط¨ظ„ ط§ط² ط¨ط§ط²غŒ ط®ط¨ط±طھ ظ…غŒâ€Œع©ظ†ظ…');
             } else {
               delete REM[m.id];
               try { Android.cancelAlarm(m.id); } catch (e) {}
-              if (!silent) toast('🔕 یادآور خاموش شد');
+              if (!silent) toast('ًں”• غŒط§ط¯ط¢ظˆط± ط®ط§ظ…ظˆط´ ط´ط¯');
             }
             sv('rem', REM);
           }
@@ -1047,11 +1076,11 @@ jobs:
           }
           /* ---------- app update ---------- */
           function checkUpdate(manual) {
-            if (!BUILD || REPO.indexOf('/') < 0) { if (manual) toast('آپدیت فقط تو نسخه ساخته‌شده کار می‌کنه'); return; }
+            if (!BUILD || REPO.indexOf('/') < 0) { if (manual) toast('ط¢ظ¾ط¯غŒطھ ظپظ‚ط· طھظˆ ظ†ط³ط®ظ‡ ط³ط§ط®طھظ‡â€Œط´ط¯ظ‡ ع©ط§ط± ظ…غŒâ€Œع©ظ†ظ‡'); return; }
             if (!manual && Date.now() - ld('updT', 0) < 12 * 3600000) { showUpd(false); return; }
-            if (manual) toast('در حال بررسی آپدیت...');
+            if (manual) toast('ط¯ط± ط­ط§ظ„ ط¨ط±ط±ط³غŒ ط¢ظ¾ط¯غŒطھ...');
             http('https://api.github.com/repos/' + REPO + '/releases/latest', function (r) {
-              if (r.status != 200) { if (manual) toast('خطا در بررسی آپدیت (' + r.status + ')، VPN رو چک کن'); showUpd(false); return; }
+              if (r.status != 200) { if (manual) toast('ط®ط·ط§ ط¯ط± ط¨ط±ط±ط³غŒ ط¢ظ¾ط¯غŒطھ (' + r.status + ')طŒ VPN ط±ظˆ ع†ع© ع©ظ†'); showUpd(false); return; }
               try {
                 var j = JSON.parse(r.body), n = parseInt(String(j.tag_name).replace(/\D/g, ''), 10) || 0;
                 var a = (j.assets || []).filter(function (x) { return /\.apk$/.test(x.name); })[0];
@@ -1062,20 +1091,20 @@ jobs:
           }
           function showUpd(manual) {
             var u = ld('upd', null), el = $('upd');
-            if (u && u.n > BUILD) el.innerHTML = '<div class="box upd"><div class="row"><b>🆕 نسخه جدید (v' + fa(u.n) + ') آماده‌ست</b></div><button class="btn" onclick="getUpd()">⬇️ دانلود و نصب</button></div>';
-            else { el.innerHTML = ''; if (manual) toast('آخرین نسخه رو داری ✅'); }
+            if (u && u.n > BUILD) el.innerHTML = '<div class="box upd"><div class="row"><b>ًں†• ظ†ط³ط®ظ‡ ط¬ط¯غŒط¯ (v' + fa(u.n) + ') ط¢ظ…ط§ط¯ظ‡â€Œط³طھ</b></div><button class="btn" onclick="getUpd()">â¬‡ï¸ڈ ط¯ط§ظ†ظ„ظˆط¯ ظˆ ظ†طµط¨</button></div>';
+            else { el.innerHTML = ''; if (manual) toast('ط¢ط®ط±غŒظ† ظ†ط³ط®ظ‡ ط±ظˆ ط¯ط§ط±غŒ âœ…'); }
             if (manual && u && u.n > BUILD) { go('matches'); }
           }
-          function getUpd() { var u = ld('upd', null); if (!u) return; try { Android.openUrl(u.url); toast('بعد از دانلود، فایل رو باز کن و «به‌روزرسانی» رو بزن'); } catch (e) { toast('مرورگر باز نشد'); } }
+          function getUpd() { var u = ld('upd', null); if (!u) return; try { Android.openUrl(u.url); toast('ط¨ط¹ط¯ ط§ط² ط¯ط§ظ†ظ„ظˆط¯طŒ ظپط§غŒظ„ ط±ظˆ ط¨ط§ط² ع©ظ† ظˆ آ«ط¨ظ‡â€Œط±ظˆط²ط±ط³ط§ظ†غŒآ» ط±ظˆ ط¨ط²ظ†'); } catch (e) { toast('ظ…ط±ظˆط±ع¯ط± ط¨ط§ط² ظ†ط´ط¯'); } }
 
           function bonus() {
             var n = Date.now();
-            if (n - (W.last || 0) < 86400000) { toast(fmt(Math.ceil((86400000 - (n - W.last)) / 3600000)) + ' ساعت دیگه دوباره بیا'); return; }
-            W.last = n; W.coins = r2(W.coins + BONUS); saveAll(); toast('🎁 ' + fmt(BONUS) + ' سکه گرفتی');
+            if (n - (W.last || 0) < 86400000) { toast(fmt(Math.ceil((86400000 - (n - W.last)) / 3600000)) + ' ط³ط§ط¹طھ ط¯غŒع¯ظ‡ ط¯ظˆط¨ط§ط±ظ‡ ط¨غŒط§'); return; }
+            W.last = n; W.coins = r2(W.coins + BONUS); saveAll(); toast('ًںژپ ' + fmt(BONUS) + ' ط³ع©ظ‡ ع¯ط±ظپطھغŒ');
           }
           function resetAll() {
-            if (!confirm('مطمئنی؟ همه شرط‌ها پاک میشن')) return;
-            W = { coins: START, last: 0 }; BETS = []; slip = []; sv('slip', slip); saveAll(); updateCnt(); renderSet(); toast('ریست شد');
+            if (!confirm('ظ…ط·ظ…ط¦ظ†غŒطں ظ‡ظ…ظ‡ ط´ط±ط·â€Œظ‡ط§ ظ¾ط§ع© ظ…غŒط´ظ†')) return;
+            W = { coins: START, last: 0 }; BETS = []; slip = []; sv('slip', slip); saveAll(); updateCnt(); renderSet(); toast('ط±غŒط³طھ ط´ط¯');
           }
 
           renderBal(); updateCnt(); syncRem();
@@ -1104,4 +1133,4 @@ jobs:
         with:
           tag_name: v${{ github.run_number }}
           name: Football Bet v${{ github.run_number }}
-          files: footballbet.apk    
+          files: footballbet.apk
