@@ -134,6 +134,16 @@ jobs:
                   }
               }
 
+              @Override
+              protected void onPause() {
+                  super.onPause();
+                  if (web != null) { web.onPause(); web.pauseTimers(); }
+              }
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  if (web != null) { web.resumeTimers(); web.onResume(); }
+              }
               PendingIntent alarmIntent(String id, String title, String text) {
                   Intent i = new Intent(this, AlarmReceiver.class);
                   i.putExtra("title", title);
@@ -344,6 +354,9 @@ jobs:
           .tbl th{color:var(--mut);font-weight:normal}
           .tbl td:first-child,.tbl th:first-child{text-align:right}
           .tbl tr.best td{background:#2ecc7122}
+          .live{background:#e74c3c22;color:#ff6b6b;font-weight:bold;text-align:center;padding:7px;border-radius:8px;margin-bottom:8px}
+          .live.fin{background:#2ecc7122;color:var(--green)}
+          .live.na{background:none;color:var(--mut);font-weight:normal;font-size:12px}
           </style>
           </head>
           <body>
@@ -361,6 +374,25 @@ jobs:
           <div class="toast" id="toast"></div>
           <script>
           var API = 'https://api.the-odds-api.com/v4/sports/';
+          var ESPN_API = 'https://site.api.espn.com/apis/site/v2/sports/soccer/';
+          var ESPN = {
+            soccer_epl: 'eng.1', soccer_efl_champ: 'eng.2', soccer_england_league1: 'eng.3', soccer_england_league2: 'eng.4', soccer_fa_cup: 'eng.fa', soccer_england_efl_cup: 'eng.league_cup',
+            soccer_spain_la_liga: 'esp.1', soccer_spain_segunda_division: 'esp.2', soccer_spain_copa_del_rey: 'esp.copa_del_rey',
+            soccer_italy_serie_a: 'ita.1', soccer_italy_serie_b: 'ita.2', soccer_italy_coppa_italia: 'ita.coppa_italia',
+            soccer_germany_bundesliga: 'ger.1', soccer_germany_bundesliga2: 'ger.2', soccer_germany_dfb_pokal: 'ger.dfb_pokal',
+            soccer_france_ligue_one: 'fra.1', soccer_france_ligue_two: 'fra.2', soccer_france_coupe_de_france: 'fra.coupe_de_france',
+            soccer_uefa_champs_league: 'uefa.champions', soccer_uefa_europa_league: 'uefa.europa', soccer_uefa_europa_conference_league: 'uefa.europa.conf',
+            soccer_uefa_champs_league_qualification: 'uefa.champions_qual', soccer_uefa_nations_league: 'uefa.nations', soccer_uefa_european_championship: 'uefa.euro',
+            soccer_fifa_world_cup: 'fifa.world', soccer_fifa_world_cup_qualifiers_europe: 'fifa.worldq.uefa', soccer_fifa_world_cup_qualifiers_south_america: 'fifa.worldq.conmebol',
+            soccer_netherlands_eredivisie: 'ned.1', soccer_portugal_primeira_liga: 'por.1', soccer_turkey_super_league: 'tur.1', soccer_belgium_first_div: 'bel.1',
+            soccer_spl: 'sco.1', soccer_greece_super_league: 'gre.1', soccer_austria_bundesliga: 'aut.1', soccer_switzerland_superleague: 'sui.1',
+            soccer_denmark_superliga: 'den.1', soccer_norway_eliteserien: 'nor.1', soccer_sweden_allsvenskan: 'swe.1', soccer_poland_ekstraklasa: 'pol.1', soccer_russia_premier_league: 'rus.1',
+            soccer_brazil_campeonato: 'bra.1', soccer_brazil_serie_b: 'bra.2', soccer_argentina_primera_division: 'arg.1', soccer_chile_campeonato: 'chi.1',
+            soccer_usa_mls: 'usa.1', soccer_mexico_ligamx: 'mex.1', soccer_conmebol_copa_libertadores: 'conmebol.libertadores', soccer_conmebol_copa_sudamericana: 'conmebol.sudamericana',
+            soccer_conmebol_copa_america: 'conmebol.america', soccer_saudi_arabia_pro_league: 'ksa.1', soccer_japan_j_league: 'jpn.1', soccer_korea_kleague1: 'kor.1',
+            soccer_china_superleague: 'chn.1', soccer_australia_aleague: 'aus.1'
+          };
+          var LIVE = {}, LT = {}, LTRY = {};
           var POP = ['soccer_epl', 'soccer_spain_la_liga', 'soccer_italy_serie_a', 'soccer_germany_bundesliga', 'soccer_france_ligue_one', 'soccer_uefa_champs_league', 'soccer_uefa_europa_league'];
           var FA = {
             soccer_epl: '\ud83c\udff4 \u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0627\u0646\u06af\u0644\u06cc\u0633', soccer_efl_champ: '\ud83c\udff4 \u0686\u0645\u067e\u06cc\u0648\u0646\u0634\u06cc\u067e \u0627\u0646\u06af\u0644\u06cc\u0633', soccer_england_league1: '\ud83c\udff4 \u0644\u06cc\u06af \u06cc\u06a9 \u0627\u0646\u06af\u0644\u06cc\u0633',
@@ -505,7 +537,8 @@ jobs:
               $('n-' + x).classList.toggle('on', x == p);
             });
             if (p == 'slip') renderSlip();
-            if (p == 'bets') { settle(); renderBets(); }
+            if (p == 'bets') { settle(); renderBets(); liveTick(false); }
+            if (p == 'matches') setTimeout(function () { liveTick(false); }, 300);
             if (p == 'set') renderSet();
             if (p == 'matches') rerender();
             window.scrollTo(0, 0);
@@ -770,7 +803,7 @@ jobs:
           function card(m) {
             var ot = OT[m.lg], tag = started(m) ? '\ud83d\udd34 \u0634\u0631\u0648\u0639 \u0634\u062f\u0647 ' : '\ud83d\udd52 ', old = (ot && Date.now() - ot > ODDS_TTL) ? ' <span class="mut">\u23f3 ' + agoTxt(ot) + '</span>' : '';
             var h = '<div class="match"><div class="mt"><span>' + tag + hm(m.time) + old + ' <span class="bell" onclick="bell(\'' + m.id + '\')">' + (REM[m.id] ? '\ud83d\udd14' : '\ud83d\udd15') + '</span></span><span>' + lname(m.lg) + '</span></div>' +
-              '<div class="teams">' + esc(m.home) + '<br>' + esc(m.away) + '</div>' +
+              '<div class="teams">' + esc(m.home) + '<br>' + esc(m.away) + '</div>' + liveBox(m) +
               '<div class="odds">' + ob(m, '1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646') + ob(m, 'X', '\u0645\u0633\u0627\u0648\u06cc') + ob(m, '2', '\u06f2 \u0645\u0647\u0645\u0627\u0646') + '</div>';
           if (m.d) h += '<div class="lbl">\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 (\u0628\u0631\u062f \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc)</div><div class="odds">' + ob(m, '1X', '\u06f1 \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc') + ob(m, 'X2', '\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2') + ob(m, '12', '\u06f1 \u06cc\u0627 \u06f2') + '</div>';
             if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5 \u06af\u0644') + ob(m, 'U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5 \u06af\u0644') + '</div>';
@@ -870,11 +903,121 @@ jobs:
             toast('\u0634\u0631\u0637\u062a \u062b\u0628\u062a \u0634\u062f \u2705'); go('bets');
           }
 
+          /* ---------- live scores (ESPN, free) ---------- */
+          var STOP = ['fc', 'cf', 'afc', 'sc', 'ac', 'cd', 'ud', 'club', 'de', 'the', 'and', 'fk', 'sk', 'if', 'bk', 'cp', 'sd', 'rc', 'rcd', 'calcio', 'ec', 'se', 'cr', 'ca', 'cs'];
+          function nrm(s) {
+            s = String(s || '').toLowerCase();
+            try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+            return s.replace(/&/g, ' ').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(function (w) { return w && STOP.indexOf(w) < 0; });
+          }
+          function sim1(a, b) {
+            var A = nrm(a), B = nrm(b); if (!A.length || !B.length) return 0;
+            if (A.join(' ') == B.join(' ')) return 1;
+            var n = 0;
+            A.forEach(function (w) { if (B.some(function (v) { return v == w || (w.length >= 3 && v.length >= 3 && (v.indexOf(w) == 0 || w.indexOf(v) == 0)); })) n++; });
+            return n / Math.max(A.length, B.length);
+          }
+          function simT(name, t) {
+            if (!t) return 0;
+            return Math.max(sim1(name, t.displayName), sim1(name, t.shortDisplayName), sim1(name, t.name), sim1(name, t.location));
+          }
+          function ymd(t) { var d = new Date(t); return d.getUTCFullYear() + ('0' + (d.getUTCMonth() + 1)).slice(-2) + ('0' + d.getUTCDate()).slice(-2); }
+          function matchEv(m, evs) {
+            var t = new Date(m.time).getTime(), best = null, bs = 0;
+            evs.forEach(function (e) {
+              var c = e.competitions && e.competitions[0]; if (!c || !c.competitors) return;
+              var dt = Math.abs(new Date(e.date).getTime() - t); if (dt > 6 * 3600000) return;
+              var H = null, A = null; c.competitors.forEach(function (x) { if (x.homeAway == 'home') H = x; else A = x; });
+              if (!H || !A) return;
+              var s1 = simT(m.home, H.team) + simT(m.away, A.team), s2 = simT(m.home, A.team) + simT(m.away, H.team), sc = Math.max(s1, s2);
+              if (dt < 20 * 60000) sc += 0.3;
+              if (sc > bs) { bs = sc; best = { e: e, c: c, H: H, A: A, sw: s2 > s1 }; }
+            });
+            if (!best || bs < 1.2) return null;
+            var st = best.e.status || best.c.status || {}, ty = st.type || {};
+            var hs = parseInt((best.sw ? best.A : best.H).score, 10), as = parseInt((best.sw ? best.H : best.A).score, 10);
+            var state = ty.completed ? 'post' : (ty.state == 'in' ? 'in' : (ty.state == 'post' ? 'x' : 'pre'));
+            return { hs: isNaN(hs) ? 0 : hs, as: isNaN(as) ? 0 : as, st: state, clk: ty.shortDetail || st.displayClock || '', t: Date.now() };
+          }
+          function pageOn(p) { var e = $('p-' + p); return e && e.classList.contains('on'); }
+          function liveTargets() {
+            var now = Date.now(), out = {};
+            Object.keys(MATCHES).forEach(function (id) { var m = MATCHES[id]; if (started(m) && alive(m, now)) out[id] = m; });
+            BETS.forEach(function (b) {
+              if (b.st != 'p') return;
+              b.sel.forEach(function (x) { var k = new Date(x.time).getTime(); if (x.res == 'p' && k <= now && now - k < 84 * 3600000) out[x.id] = x; });
+            });
+            return out;
+          }
+          function liveTick(force, done) {
+            var T = liveTargets(), g = {}, now = Date.now();
+            Object.keys(T).forEach(function (id) {
+              var m = T[id], s = ESPN[m.lg]; if (!s) return;
+              var L = LIVE[id]; if (L && L.st == 'post') return;
+              var k = new Date(m.time).getTime();
+              if (!force && (!L || L.st != 'in') && now - k > END_MS) { LTRY[id] = (LTRY[id] || 0) + 1; if (LTRY[id] > 3) return; }
+              var o = g[s] = g[s] || { ms: [], a: k, b: k };
+              o.ms.push(m); if (k < o.a) o.a = k; if (k > o.b) o.b = k;
+            });
+            var ks = Object.keys(g).filter(function (s) { return force || now - (LT[s] || 0) > 50000; }), left = ks.length;
+            if (!left) { if (done) done(); return; }
+            ks.forEach(function (s) {
+              LT[s] = now; var o = g[s];
+              http(ESPN_API + s + '/scoreboard?limit=300&dates=' + ymd(o.a - 86400000) + '-' + ymd(o.b + 86400000), function (r) {
+                if (r.status == 200) {
+                  try { var evs = JSON.parse(r.body).events || []; o.ms.forEach(function (m) { var e = matchEv(m, evs); if (e) LIVE[m.id] = e; }); } catch (e) {}
+                }
+                if (--left == 0) { afterLive(); if (done) done(); }
+              });
+            });
+          }
+          function afterLive() {
+            var ch = false;
+            BETS.forEach(function (b) {
+              if (b.st != 'p') return;
+              b.sel.forEach(function (x) {
+                var L = LIVE[x.id];
+                if (x.res == 'p' && L && L.st == 'post') { x.score = L.hs + '-' + L.as; x.res = resOf(x.pick, L.hs, L.as) ? 'w' : 'l'; ch = true; }
+              });
+            });
+            if (ch) settle();
+            if (pageOn('bets')) renderBets(); else if (pageOn('matches') && reg != 'browse') rerender();
+          }
+          function liveBox(m) {
+            if (!started(m)) return '';
+            var L = LIVE[m.id];
+            if (!L) return '<div class="live na">' + (ESPN[m.lg] ? '\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647...' : '\u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0644\u06cc\u06af \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a') + '</div>';
+            if (L.st == 'post') return '<div class="live fin">\ud83c\udfc1 \u062a\u0645\u0648\u0645 \u0634\u062f <span class="ltr">' + fa(L.hs) + ' - ' + fa(L.as) + '</span></div>';
+            return '<div class="live">\ud83d\udd34 \u0632\u0646\u062f\u0647 <span class="ltr">' + fa(L.hs) + ' - ' + fa(L.as) + '</span>' + (L.clk ? ' | <span class="ltr">' + esc(L.clk) + '</span>' : '') + '</div>';
+          }
+          function liveTxt(x) {
+            var L = LIVE[x.id]; if (!L || x.res != 'p') return '';
+            return ' ' + (L.st == 'post' ? '\ud83c\udfc1' : '\ud83d\udd34') + ' (' + L.hs + '-' + L.as + (L.clk && L.st != 'post' ? ' ' + esc(L.clk) : '') + ')';
+          }
+          function resOf(p, hs, as) {
+            var g = hs + as;
+            if (p == '1') return hs > as; if (p == '2') return as > hs; if (p == 'X') return hs == as;
+            if (p == '1X') return hs >= as; if (p == 'X2') return as >= hs; if (p == '12') return hs != as;
+            if (p == 'BY') return hs > 0 && as > 0; if (p == 'BN') return !(hs > 0 && as > 0);
+            if (p.charAt(0) == 'O') return g > ptOf(p); return g < ptOf(p);
+          }
+
           /* ---------- results ---------- */
           function needCheck(b, now) {
             return b.st == 'p' && b.sel.some(function (x) { return x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now; });
           }
           function checkResults(betId) {
+            if (!BETS.some(function (b) { return b.st == 'p' && (!betId || b.id == betId); })) { toast('\u0634\u0631\u0637 \u0628\u0627\u0632 \u0646\u062f\u0627\u0631\u06cc'); return; }
+            toast('\u062f\u0631 \u062d\u0627\u0644 \u06af\u0631\u0641\u062a\u0646 \u0646\u062a\u0627\u06cc\u062c \u0631\u0627\u06cc\u06af\u0627\u0646...');
+            liveTick(true, function () {
+              settle(); renderBets();
+              var now = Date.now(), left = 0;
+              BETS.forEach(function (b) { if (b.st == 'p' && (!betId || b.id == betId)) b.sel.forEach(function (x) { if (x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now) left++; }); });
+              if (!left) { toast('\u0646\u062a\u0627\u06cc\u062c \u0628\u0631\u0648\u0632 \u0634\u062f \u2705 (\u0628\u062f\u0648\u0646 \u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631)'); return; }
+              if (key() && confirm(fa(left) + ' \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647 \u062a\u0648 \u0646\u062a\u0627\u06cc\u062c \u0631\u0627\u06cc\u06af\u0627\u0646 \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f. \u0628\u0627 \u0627\u0639\u062a\u0628\u0627\u0631 API \u0686\u06a9 \u0628\u0634\u0647\u061f (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0644\u06cc\u06af)')) paidCheck(betId);
+            });
+          }
+          function paidCheck(betId) {
             var now = Date.now(), lgs = {};
             if (!key()) { toast('\u0627\u0648\u0644 \u06a9\u0644\u06cc\u062f API \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
             var pend = BETS.filter(function (b) { return b.st == 'p' && (!betId || b.id == betId); });
@@ -913,13 +1056,8 @@ jobs:
                 var hs = null, as = null;
                 e.scores.forEach(function (s) { if (s.name == e.home_team) hs = parseInt(s.score, 10); else if (s.name == e.away_team) as = parseInt(s.score, 10); });
                 if (hs === null || as === null || isNaN(hs) || isNaN(as)) return;
-                var g = hs + as, p = x.pick, w;
                 x.score = hs + '-' + as;
-                if (p == '1') w = hs > as; else if (p == '2') w = as > hs; else if (p == 'X') w = hs == as;
-                else if (p == '1X') w = hs >= as; else if (p == 'X2') w = as >= hs; else if (p == '12') w = hs != as;
-                  else if (p == 'BY') w = hs > 0 && as > 0; else if (p == 'BN') w = !(hs > 0 && as > 0);
-                else if (p.charAt(0) == 'O') w = g > ptOf(p); else w = g < ptOf(p);
-                x.res = w ? 'w' : 'l';
+                x.res = resOf(x.pick, hs, as) ? 'w' : 'l';
               });
             });
           }
@@ -1008,7 +1146,7 @@ jobs:
               h += '<div class="box"><div class="row"><b>' + (b.sel.length > 1 ? '\u0645\u06cc\u06a9\u0633 ' + fmt(b.sel.length) + ' \u062a\u0627\u06cc\u06cc' : '\u062a\u06a9\u06cc') + '</b><span class="st ' + st[0] + '">' + st[1] + '</span></div>';
               b.sel.forEach(function (x) {
                 var ic = { p: '\u23f3', w: '\u2705', l: '\u274c', v: '\u21a9\ufe0f' }[x.res];
-                h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + (x.score ? ' (' + x.score + ')' : '') + '</span><span>' + ic + '</span></div>' +
+                h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + (x.score ? ' (' + x.score + ')' : liveTxt(x)) + '</span><span>' + ic + '</span></div>' +
                   '<div class="row"><span>' + esc(pl(x)) + '</span><b class="ltr">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div></div>';
               });
               var amt = b.st == 'l' ? '\u06f0' : (b.st == 'p' ? fc(b.stake * b.odd) : '+' + fc(b.win));
@@ -1035,7 +1173,7 @@ jobs:
               '<div class="box"><b>\ud83d\udd14 \u06cc\u0627\u062f\u0622\u0648\u0631 \u0628\u0627\u0632\u06cc</b><div class="mut">\u06cc\u06a9 \u0633\u0627\u0639\u062a \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0631\u0648\u0634\u0648\u0646 \u0634\u0631\u0637 \u0645\u06cc\u200c\u0628\u0646\u062f\u06cc (\u06cc\u0627 \u0632\u0646\u06af\u0648\u0644\u0647\u200c\u0634\u0648\u0646 \u0631\u0648 \u0631\u0648\u0634\u0646 \u0645\u06cc\u200c\u06a9\u0646\u06cc) \u0646\u0648\u062a\u06cc\u0641\u06cc\u06a9\u06cc\u0634\u0646 \u0645\u06cc\u0627\u062f.</div></div>' +
               '<div class="box"><b>\ud83c\udf81 \u062c\u0627\u06cc\u0632\u0647 \u0631\u0648\u0632\u0627\u0646\u0647</b><div class="mut">\u0647\u0631 \u06f2\u06f4 \u0633\u0627\u0639\u062a ' + fmt(BONUS) + ' \u0633\u06a9\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646</div><button class="btn" onclick="bonus()">\u062f\u0631\u06cc\u0627\u0641\u062a \u062c\u0627\u06cc\u0632\u0647</button></div>' +
               '<div class="box"><b>\u267b\ufe0f \u0634\u0631\u0648\u0639 \u062f\u0648\u0628\u0627\u0631\u0647</b><div class="mut">\u0633\u06a9\u0647\u200c\u0647\u0627 ' + fmt(START) + ' \u0645\u06cc\u0634\u0647 \u0648 \u062a\u0627\u0631\u06cc\u062e\u0686\u0647 \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0647</div><button class="btn sec" onclick="resetAll()">\u0631\u06cc\u0633\u062a</button></div>' +
-              '<div class="box mut">\u0627\u06cc\u0646 \u0627\u067e \u0641\u0642\u0637 \u0628\u0631\u0627\u06cc \u0633\u0631\u06af\u0631\u0645\u06cc\u0647 \u0648 \u0628\u0627 \u0633\u06a9\u0647 \u0645\u062c\u0627\u0632\u06cc \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647\u060c \u067e\u0648\u0644 \u0648\u0627\u0642\u0639\u06cc \u062f\u0631 \u06a9\u0627\u0631 \u0646\u06cc\u0633\u062a.<br>\u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631: \u0647\u06cc\u0686 \u0644\u06cc\u06af\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u062f\u0627\u0646\u0644\u0648\u062f \u0646\u0645\u06cc\u0634\u0647. \u062f\u0631\u06cc\u0627\u0641\u062a \u0647\u0631 \u0644\u06cc\u06af \u06f2 (\u062a\u0627 \u0622\u062e\u0631 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u062a\u0648 \u062d\u0627\u0641\u0638\u0647 \u0645\u06cc\u200c\u0645\u0648\u0646\u0647)\u060c \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 \u0647\u0631 \u0628\u0627\u0632\u06cc \u06f2\u060c \u0686\u06a9 \u0646\u062a\u0627\u06cc\u062c \u06f2 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0644\u06cc\u06af. \u0646\u062a\u0627\u06cc\u062c \u0641\u0642\u0637 \u0628\u0627 \u0632\u062f\u0646 \u062f\u06a9\u0645\u0647 \u0686\u06a9 \u0645\u06cc\u0634\u0646.</div>';
+              '<div class="box mut">\u0627\u06cc\u0646 \u0627\u067e \u0641\u0642\u0637 \u0628\u0631\u0627\u06cc \u0633\u0631\u06af\u0631\u0645\u06cc\u0647 \u0648 \u0628\u0627 \u0633\u06a9\u0647 \u0645\u062c\u0627\u0632\u06cc \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647\u060c \u067e\u0648\u0644 \u0648\u0627\u0642\u0639\u06cc \u062f\u0631 \u06a9\u0627\u0631 \u0646\u06cc\u0633\u062a.<br>\u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631: \u0647\u06cc\u0686 \u0644\u06cc\u06af\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u062f\u0627\u0646\u0644\u0648\u062f \u0646\u0645\u06cc\u0634\u0647. \u062f\u0631\u06cc\u0627\u0641\u062a \u0647\u0631 \u0644\u06cc\u06af \u06f2 (\u062a\u0627 \u0622\u062e\u0631 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u062a\u0648 \u062d\u0627\u0641\u0638\u0647 \u0645\u06cc\u200c\u0645\u0648\u0646\u0647)\u060c \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 \u0647\u0631 \u0628\u0627\u0632\u06cc \u06f2\u060c \u0686\u06a9 \u0646\u062a\u0627\u06cc\u062c \u06f2 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0644\u06cc\u06af. \u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0648 \u0628\u0633\u062a\u0646 \u0634\u0631\u0637\u200c\u0647\u0627 \u0627\u0632 ESPN \u0648 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647 (\u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0627\u067e \u0628\u0627\u0632\u0647). \u0627\u06af\u0647 ESPN \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0631\u0648 \u067e\u06cc\u062f\u0627 \u0646\u06a9\u0646\u0647\u060c \u0642\u0628\u0644 \u0627\u0632 \u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631 \u0627\u0632\u062a \u0645\u06cc\u200c\u067e\u0631\u0633\u0647.</div>';
           }
           function saveKey() {
             sv('key', $('k').value.trim()); sv('sports2', null); toast('\u06a9\u0644\u06cc\u062f \u0630\u062e\u06cc\u0631\u0647 \u0634\u062f'); renderSet();
@@ -1108,6 +1246,8 @@ jobs:
           }
 
           renderBal(); updateCnt(); syncRem();
+          setTimeout(function () { liveTick(false); }, 2500);
+          setInterval(function () { if (pageOn('matches') || pageOn('bets')) liveTick(false); }, 60000);
           loadSports(function () { renderLeagues(); loadOdds(false); });
           setTimeout(function () { checkUpdate(false); }, 1200);
           </script>
