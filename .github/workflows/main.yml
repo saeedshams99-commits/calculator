@@ -367,6 +367,13 @@ jobs:
           .sc.fin{color:var(--green)}
           .lv{color:#ff6b6b;font-size:12px;font-weight:normal;margin-right:6px}
           .live.na{background:none;color:var(--mut);font-weight:normal;font-size:12px}
+          .lr{background:var(--card2);margin:3px 26px 0 12px;padding:6px 12px;border-radius:8px;font-size:13px;border-right:3px solid #ff6b6b}
+          .lr .row{padding:2px 0;direction:ltr}
+          .lvh{margin:6px 12px 0;padding:10px 14px;border-radius:10px;background:#e74c3c22;color:#ff6b6b;font-weight:bold;display:flex;justify-content:space-between}
+          .ob.man{border:1px dashed #3d6a9a}
+          .pf{font-size:11px;color:#cfe3ff;font-weight:normal;margin-left:8px}
+          .pr1{display:flex;justify-content:space-between;align-items:center;background:var(--card2);border-radius:8px;padding:9px 10px;margin-top:6px}
+          .pr1.on{border:1px solid var(--green)}
           </style>
           </head>
           <body>
@@ -403,6 +410,9 @@ jobs:
             soccer_china_superleague: 'chn.1', soccer_australia_aleague: 'aus.1'
           };
           var LIVE = {}, LT = {}, LTRY = {}, LERR = {}, FX_TTL = 30 * 60000, FXTRY = {}, LIVEC = null, LCT = 0, REVE = {};
+          var LIVEM = [], ESN = ld('esn', {}), DAY = null, DAYT = 0, DAYF = 0, DAYTRY = 0, DAYU = true, DAY_TTL = 10 * 60000, OPENL = {}, MEDIT = {};
+          var MAN = ld('man', {});
+          (function () { var n = Date.now(), ch = false; for (var k in MAN) { if (!MAN[k] || !MAN[k]._t || new Date(MAN[k]._t).getTime() + 3 * 86400000 < n) { delete MAN[k]; ch = true; } } if (ch) sv('man', MAN); })();
           (function () { for (var k in ESPN) REVE[ESPN[k]] = k; })();
           var PFX = { eng: 'england', esp: 'spain', ita: 'italy', ger: 'germany', fra: 'france', ned: 'netherlands', por: 'portugal', tur: 'turkey', bel: 'belgium', sco: 'scotland',
             aut: 'austria', sui: 'switzerland', gre: 'greece', rus: 'russia', ukr: 'ukraine', den: 'denmark', nor: 'norway', swe: 'sweden', pol: 'poland', cze: 'czech', cro: 'croatia',
@@ -540,12 +550,17 @@ jobs:
           function toast(t) { var e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(e._t); e._t = setTimeout(function () { e.style.display = 'none'; }, 2500); }
           function chip(t, on, act, cls) { return '<span class="chip' + (on ? ' on' : '') + (cls ? ' ' + cls : '') + '" onclick="' + act + '">' + t + '</span>'; }
 
-          var W = ld('wallet', null); if (!W) { W = { coins: START, last: 0 }; sv('wallet', W); }
-          var BETS = ld('bets', []);
-          var slip = ld('slip', []);
+          /* profiles (update 14) */
+          var PR = ld('profs', null); if (!PR || !PR.l || !PR.l.length) { PR = { cur: 'p0', l: [{ id: 'p0', n: '\ud83e\udd16 \u0628\u0627 \u06a9\u0645\u06a9 Brain' }] }; sv('profs', PR); }
+          function pk2(id, k) { return id == 'p0' ? k : k + '_' + id; }
+          function pk(k) { return pk2(PR.cur, k); }
+          function pn(id) { id = id || PR.cur; for (var i = 0; i < PR.l.length; i++) if (PR.l[i].id == id) return PR.l[i].n; return '?'; }
+          var W = ld(pk('wallet'), null); if (!W) { W = { coins: START, last: 0 }; sv(pk('wallet'), W); }
+          var BETS = ld(pk('bets'), []);
+          var slip = ld(pk('slip'), []);
           var NOTE = '', FAVT = 0.55;
-          function saveAll() { sv('wallet', W); sv('bets', BETS); renderBal(); }
-          function renderBal() { $('bal').textContent = '\ud83e\ude99 ' + fc(W.coins); }
+          function saveAll() { sv(pk('wallet'), W); sv(pk('bets'), BETS); renderBal(); }
+          function renderBal() { $('bal').innerHTML = '<span class="pf" onclick="go(\'set\')">' + esc(pn()) + '</span>\ud83e\ude99 ' + fc(W.coins); }
           function updateCnt() { $('cnt').innerHTML = slip.length ? '<span class="badge">' + fmt(slip.length) + '</span>' : ''; }
 
           function go(p) {
@@ -578,12 +593,20 @@ jobs:
               fb();
             });
           }
+          function esl(lg) { return ESPN[lg] || (String(lg).indexOf('es_') == 0 ? lg.slice(3) : null); }
+          function isES(lg) { return String(lg).indexOf('es_') == 0; }
           function lname(k) {
             if (FA[k]) return FA[k];
+            if (isES(k)) return cinfo(k).f + ' ' + esc(ESN[k.slice(3)] || k.slice(3));
             for (var i = 0; i < SPORTS.length; i++) if (SPORTS[i].key == k) return '\u26bd ' + esc(SPORTS[i].title);
             return k;
           }
           function cinfo(k) {
+            if (isES(k)) {
+              var pf = PFX[k.slice(3).split('.')[0]];
+              for (var j = 0; j < COUNTRIES.length; j++) if (COUNTRIES[j][0] == pf) return { id: pf, f: COUNTRIES[j][1], fa: COUNTRIES[j][2], c: COUNTRIES[j][3], o: j };
+              return { id: 'x', f: '\u26bd', fa: '\u0633\u0627\u06cc\u0631', c: 'other', o: 999 };
+            }
             for (var i = 0; i < COUNTRIES.length; i++) {
               var c = COUNTRIES[i];
               if (c[4].test(k)) return { id: c[0], f: c[1], fa: c[2], c: c[3], o: i };
@@ -603,14 +626,15 @@ jobs:
           }
           function renderLeagues() {
             var h = '<div class="leagues">' + chip('\ud83d\udcc2 \u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627 \u0648 \u0644\u06cc\u06af\u200c\u0647\u0627', reg == 'browse', "pickReg('browse')") +
-              chip('\u2b50 \u0645\u062d\u0628\u0648\u0628', reg == 'pop', "pickReg('pop')") + chip('\u23f0 \u0628\u0647 \u062a\u0631\u062a\u06cc\u0628 \u0633\u0627\u0639\u062a', reg == 'all', "pickReg('all')") + '</div>';
+              chip('\u2b50 \u0645\u062d\u0628\u0648\u0628', reg == 'pop', "pickReg('pop')") + chip('\u23f0 \u0628\u0647 \u062a\u0631\u062a\u06cc\u0628 \u0633\u0627\u0639\u062a', reg == 'all', "pickReg('all')") + chip('\ud83d\udcc5 \u0627\u0645\u0631\u0648\u0632 (\u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f)', reg == 'day', "pickReg('day')") + '</div>';
             if (reg == 'pop') {
               h += '<div class="leagues">';
               leaguesFor('pop').forEach(function (s) { h += chip(lname(s.key), s.key == cur, "pickLeague('" + s.key + "')", 'sm'); });
               h += '</div>';
             }
             if (reg == 'lg') h += '<div class="leagues">' + chip('\ud83d\udccd ' + lname(cur), true, '', 'sm') + chip('\u21a9\ufe0f \u0628\u0631\u06af\u0634\u062a \u0628\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627', false, "pickReg('browse')", 'sm') + '</div>';
-            if (reg != 'browse') {
+            if (reg == 'day') h += '<div class="leagues">' + chip('\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647', DAYU, 'DAYU=true;renderLeagues();renderDay(true)', 'sm') + chip('\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632', !DAYU, 'DAYU=false;renderLeagues();renderDay(true)', 'sm') + '</div>';
+            if (reg != 'browse' && reg != 'day') {
               h += '<div class="leagues">';
               DFS.forEach(function (d) { h += chip(d[1], DF == d[0], "pickDF('" + d[0] + "')", 'sm'); });
               h += '</div>';
@@ -621,24 +645,36 @@ jobs:
             reg = g; renderLeagues();
             if (g == 'browse') { renderTree(); return; }
             if (g == 'all') { renderAll(); return; }
+            if (g == 'day') { renderDay(false); return; }
             if (POP.indexOf(cur) < 0) cur = leaguesFor('pop')[0].key;
             loadOdds(false);
           }
           function pickLeague(k) { cur = k; renderLeagues(); loadOdds(false); }
           function openLeague(k) { cur = k; reg = POP.indexOf(k) >= 0 ? 'pop' : 'lg'; renderLeagues(); loadOdds(false); window.scrollTo(0, 0); }
           function pickDF(d) { DF = d; renderLeagues(); rerender(); }
-          function rerender() { if (reg == 'browse') renderTree(); else if (reg == 'all') renderAll(); else if (CUR) renderMatches(CUR, false); }
+          function rerender() { if (reg == 'browse') renderTree(); else if (reg == 'day') renderDay(true); else if (reg == 'all') renderAll(); else if (CUR) renderMatches(CUR, false); }
           function tgl(o, k) { o[k] = !o[k]; renderTree(); }
+          function dayFresh() { return DAY && Date.now() - DAYT < DAY_TTL; }
           function renderTree() {
             CUR = null;
-            var groups = {};
-            SPORTS.forEach(function (s) {
+            var groups = {}, have = {}, now = Date.now(), today = dk(now), DC = {};
+            if (!dayFresh() && !DAYF && now - DAYTRY > 120000) fetchDay(function () { if (reg == 'browse' && pageOn('matches')) renderTree(); });
+            if (DAY) DAY.d.forEach(function (m) { if (!m.pp && dk(m.time) == today && !started(m)) DC[m.lg] = (DC[m.lg] || 0) + 1; });
+            var ls = SPORTS.slice();
+            ls.forEach(function (s) { have[s.key] = 1; });
+            var addK = function (k) { if (have[k]) return; have[k] = 1; ls.push({ key: k, title: isES(k) ? (ESN[k.slice(3)] || k.slice(3)) : k, active: true }); };
+            Object.keys(DC).forEach(addK); LIVEM.forEach(function (m) { addK(m.lg); });
+            ls.forEach(function (s) {
               var ci = cinfo(s.key), g = groups[ci.c] = groups[ci.c] || {};
               var cc = g[ci.id] = g[ci.id] || { ci: ci, ls: [] };
               cc.ls.push(s);
             });
             liveCounts();
-            var h = '<div class="mut" style="padding:4px 14px 8px">\u062f\u06cc\u062f\u0646 \u0644\u06cc\u0633\u062a \u0648 \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647. \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0636\u0631\u0627\u06cc\u0628 \u06cc\u0647 \u0644\u06cc\u06af \u0631\u0648 \u0628\u06af\u06cc\u0631\u06cc \u0627\u0639\u062a\u0628\u0627\u0631 \u0645\u0635\u0631\u0641 \u0645\u06cc\u0634\u0647.' + (LIVEC ? ' \ud83d\udd34 \u0627\u0644\u0627\u0646 ' + fa(LIVEC.tot) + ' \u0628\u0627\u0632\u06cc \u0632\u0646\u062f\u0647 \u062f\u0631 \u062c\u0631\u06cc\u0627\u0646\u0647.' : '') + '</div>';
+            var h = '<div class="mut" style="padding:4px 14px 8px">\u062f\u06cc\u062f\u0646 \u0644\u06cc\u0633\u062a \u0648 \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647. \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0636\u0631\u0627\u06cc\u0628 \u06cc\u0647 \u0644\u06cc\u06af \u0631\u0648 \u0628\u06af\u06cc\u0631\u06cc \u0627\u0639\u062a\u0628\u0627\u0631 \u0645\u0635\u0631\u0641 \u0645\u06cc\u0634\u0647. \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0636\u0631\u06cc\u0628 \u0646\u062f\u0627\u0631\u0646 \u0631\u0648 \u0628\u0627 \u270d\ufe0f \u062f\u0633\u062a\u06cc \u0636\u0631\u06cc\u0628 \u0628\u062f\u0647.</div>';
+            if (LIVEM.length) {
+              h += '<div class="lvh" onclick="tgl(OPENL,\'all\')"><span>\ud83d\udd34 \u0627\u0644\u0627\u0646 ' + fa(LIVEM.length) + ' \u0628\u0627\u0632\u06cc \u0632\u0646\u062f\u0647 \u062f\u0631 \u062c\u0631\u06cc\u0627\u0646\u0647</span><span>' + (OPENL.all ? '\u25b2' : '\u25bc \u0628\u0628\u06cc\u0646') + '</span></div>';
+              if (OPENL.all) h += liveRows(LIVEM, true);
+            } else if (!LIVEC) h += '<div class="mut" style="padding:0 14px">\u062f\u0631 \u062d\u0627\u0644 \u06af\u0631\u0641\u062a\u0646 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0632\u0646\u062f\u0647...</div>';
             CONT.forEach(function (c) {
               var g = groups[c[0]]; if (!g) return;
               var cs = Object.keys(g).map(function (k) { return g[k]; }).sort(function (a, b) { return a.ci.o - b.ci.o; });
@@ -649,13 +685,25 @@ jobs:
                 var id = x.ci.id + '_' + c[0], n = 0; x.ls.forEach(function (s) { if (s.active) n++; });
                 h += '<div class="tk" onclick="tgl(OPENK,\'' + id + '\')"><span>' + x.ci.f + ' ' + x.ci.fa + lvc(id) + '</span><span class="mut">' + (n ? fa(n) + ' \u0644\u06cc\u06af' : '\u062e\u0627\u0631\u062c \u0627\u0632 \u0641\u0635\u0644') + ' ' + (OPENK[id] ? '\u25b2' : '\u25bc') + '</span></div>';
                 if (!OPENK[id]) return;
+                var lm = LIVEM.filter(function (m) { return m.cid == id; });
+                if (lm.length) h += liveRows(lm, true);
                 x.ls.sort(function (a, b) { return (rank(a.key) - rank(b.key)) || (a.title < b.title ? -1 : 1); }).forEach(function (s) {
-                  h += s.active ? '<div class="tl" onclick="openLeague(\'' + s.key + '\')"><span>' + lname(s.key) + lvc('L' + s.key) + '</span><span class="gold">\u203a</span></div>'
+                  var dc = DC[s.key] ? '<span class="mut"> \ud83d\udcc5 ' + fa(DC[s.key]) + ' \u0627\u0645\u0631\u0648\u0632</span>' : '';
+                  h += s.active ? '<div class="tl" onclick="openLeague(\'' + s.key + '\')"><span>' + lname(s.key) + lvc('L' + s.key) + dc + '</span><span class="gold">\u203a</span></div>'
                     : '<div class="tl off"><span>' + lname(s.key) + '</span><span class="mut">\u062e\u0627\u0631\u062c \u0627\u0632 \u0641\u0635\u0644</span></div>';
                 });
               });
             });
             $('list').innerHTML = h;
+          }
+          function liveRows(a, lg) {
+            var h = '';
+            a.forEach(function (m) {
+              var L = LIVE[m.id] || {};
+              h += '<div class="lr" onclick="openLeague(\'' + m.lg + '\')"><div class="row"><span>' + esc(m.home) + '</span><b class="sc">' + (L.hs || 0) + '</b></div><div class="row"><span>' + esc(m.away) + '</span><b class="sc">' + (L.as || 0) + '</b></div>' +
+                '<div class="mut">\ud83d\udd34 <span class="ltr">' + esc(L.clk || '') + '</span>' + (lg ? ' | ' + lname(m.lg) : '') + '</div></div>';
+            });
+            return h;
           }
 
           /* ---------- odds ---------- */
@@ -710,7 +758,7 @@ jobs:
             var hr = Math.floor(mn / 60); if (hr < 24) return fmt(hr) + ' \u0633\u0627\u0639\u062a \u067e\u06cc\u0634'; return fmt(Math.floor(hr / 24)) + ' \u0631\u0648\u0632 \u067e\u06cc\u0634';
           }
           function fetchFx(lg, cb) {
-            var s = ESPN[lg]; if (!s) { cb(null); return; }
+            var s = esl(lg); if (!s) { cb(null); return; }
             FXTRY[lg] = Date.now();
             var ds = [], now = Date.now(); for (var i = -1; i < 7; i++) ds.push(ymd(now + i * 86400000));
             espnFetch(s, ds, function (evs, err) {
@@ -748,35 +796,109 @@ jobs:
             return out;
           }
           function ccont(id) { for (var i = 0; i < COUNTRIES.length; i++) if (COUNTRIES[i][0] == id) return COUNTRIES[i][3]; return 'other'; }
-          function liveCounts() {
-            if (Date.now() - LCT < 55000) return; LCT = Date.now();
+          /* all-leagues ESPN feed (update 14) */
+          function espnLM(j) {
+            var lm = {}, ch = false;
+            (j.leagues || []).forEach(function (l) { lm[String(l.id)] = l.slug; if (l.slug && l.name && ESN[l.slug] != l.name) { ESN[l.slug] = l.name; ch = true; } });
+            if (ch) sv('esn', ESN);
+            return lm;
+          }
+          function evM(e, lm) {
+            var c = e.competitions && e.competitions[0]; if (!c || !c.competitors) return null;
+            var H = null, A = null; c.competitors.forEach(function (x) { if (x.homeAway == 'home') H = x; else A = x; });
+            if (!H || !A) return null;
+            var sl = (e.league && e.league.slug) || '';
+            if (!sl) { var mm = /~l:(\d+)/.exec(e.uid || ''); if (mm) sl = lm[mm[1]] || ''; }
+            if (!sl) return null;
+            var ty = ((e.status || c.status || {}).type) || {};
+            var tn = function (x) { return (x.team && (x.team.displayName || x.team.name)) || '?'; };
+            var m = { id: 'e' + e.id, lg: REVE[sl] || ('es_' + sl), home: tn(H), away: tn(A), time: e.date, h: null, d: null, a: null, ov: null, un: null, fx: 1, st: ty.state || 'pre' };
+            if (/POSTPON|CANCEL|ABANDON/i.test(String(ty.name || ''))) m.pp = 1;
+            if (ty.state == 'in' || ty.completed) {
+              var hs = parseInt(H.score, 10), as = parseInt(A.score, 10);
+              LIVE[m.id] = { hs: isNaN(hs) ? 0 : hs, as: isNaN(as) ? 0 : as, st: ty.completed ? 'post' : 'in', clk: ty.shortDetail || '', t: Date.now() };
+            }
+            return m;
+          }
+          function liveCounts(force) {
+            if (!force && Date.now() - LCT < 55000) return; LCT = Date.now();
             var go = function (url, fb) {
               http(url, function (r) {
-                if (r.status != 200) { if (fb) go(fb, null); return; }
+                if (r.status != 200) { if (fb) go(fb, null); else if (!LIVEC) LIVEC = { tot: 0 }; return; }
                 try {
-                  var j = JSON.parse(r.body), lm = {}, C = { tot: 0 };
-                  (j.leagues || []).forEach(function (l) { lm[String(l.id)] = l.slug; });
+                  var j = JSON.parse(r.body), lm = espnLM(j), C = { tot: 0 }, LM = [];
                   (j.events || []).forEach(function (e) {
-                    var c = e.competitions && e.competitions[0], ty = ((e.status || (c && c.status) || {}).type) || {};
-                    if (ty.state != 'in') return;
-                    var sl = (e.league && e.league.slug) || '';
-                    if (!sl) { var mm = /~l:(\d+)/.exec(e.uid || ''); if (mm) sl = lm[mm[1]] || ''; }
-                    var ok = REVE[sl], cid, ct;
-                    if (ok) { var ci = cinfo(ok); cid = ci.id; ct = ci.c; C['L' + ok] = (C['L' + ok] || 0) + 1; }
-                    else { var k = PFX[String(sl).split('.')[0]]; if (k) { cid = k; ct = ccont(k); } else { cid = 'x'; ct = 'other'; } }
-                    C[cid + '_' + ct] = (C[cid + '_' + ct] || 0) + 1; C['c_' + ct] = (C['c_' + ct] || 0) + 1; C.tot++;
+                    var m = evM(e, lm); if (!m || m.st != 'in') return;
+                    var ci = cinfo(m.lg), k = ci.id + '_' + ci.c;
+                    m.cid = k; LM.push(m);
+                    C['L' + m.lg] = (C['L' + m.lg] || 0) + 1; C[k] = (C[k] || 0) + 1; C['c_' + ci.c] = (C['c_' + ci.c] || 0) + 1; C.tot++;
                   });
-                  LIVEC = C; if (reg == 'browse' && pageOn('matches')) renderTree();
+                  LIVEC = C; LIVEM = LM.sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
+                  if (BETS.some(function (b) { return b.st == 'p' && b.sel.some(function (x) { return x.res == 'p' && LIVE[x.id] && LIVE[x.id].st == 'post'; }); })) afterLive();
+                  if (pageOn('matches')) { if (reg == 'browse') renderTree(); else if (reg == 'day') renderDay(true); }
                 } catch (e) {}
               });
             };
             go(ESPN_API + 'all/scoreboard?limit=500', ESPN_API + 'all/scoreboard');
           }
+          function espnJ(url, cb) {
+            http(url, function (r) {
+              if (r.status != 200) { cb(null, r.status); return; }
+              try { cb(JSON.parse(r.body), null); } catch (e) { cb(null, 'JSON'); }
+            });
+          }
+          function fetchDay(cb) {
+            if (DAYF) return; DAYF = 1; DAYTRY = Date.now();
+            var now = Date.now(), ds = [dk(now - 86400000), dk(now)].map(function (d) { return d.replace(/-/g, ''); });
+            var all = [], seen = {}, left = ds.length, ok = 0, er = null;
+            var eat = function (j) { ok++; var lm = espnLM(j); (j.events || []).forEach(function (e) { if (seen[e.id]) return; seen[e.id] = 1; var m = evM(e, lm); if (m) all.push(m); }); };
+            var fin = function () { DAYF = 0; if (ok) { DAY = { d: all }; DAYT = Date.now(); } cb(!!ok, er); };
+            ds.forEach(function (d) {
+              var u = ESPN_API + 'all/scoreboard?dates=' + d;
+              espnJ(u + '&limit=500', function (j) {
+                var next = function (j2, e2) {
+                  if (j2) eat(j2); else er = e2;
+                  if (--left == 0) { if (ok) fin(); else espnJ(ESPN_API + 'all/scoreboard', function (j3, e3) { if (j3) eat(j3); else er = e3; fin(); }); }
+                };
+                if (j) next(j); else espnJ(u, next);
+              });
+            });
+          }
+          function renderDay(soft, force) {
+            CUR = null;
+            if (soft || (!force && dayFresh())) { if (DAY) { showDay(); return; } if (soft) return; }
+            if (DAYF) { if (!DAY) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632...</div>'; return; }
+            if (!DAY) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 (\u0631\u0627\u06cc\u06af\u0627\u0646\u060c \u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f)...</div>';
+            else toast('\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc...');
+            fetchDay(function (ok, er) {
+              if (reg != 'day' || !pageOn('matches')) return;
+              if (DAY) { showDay(); if (!ok) toast('\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f (' + er + ')'); }
+              else $('list').innerHTML = '<div class="empty">\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (er ? ' (\u062e\u0637\u0627 ' + esc(er) + ')' : '') + '<br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u0648 VPN \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br><br>' + chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646', false, 'renderDay(false,1)') + '</div>';
+            });
+            liveCounts();
+          }
+          function showDay() {
+            var now = Date.now(), today = dk(now), oc = {}, out = [], used = {}, lgs = {};
+            DAY.d.forEach(function (m) {
+              if (m.pp || dk(m.time) != today || !alive(m, now)) return;
+              if (DAYU && started(m)) return;
+              if (!isES(m.lg)) {
+                if (!(m.lg in oc)) { var c = ld('odds_' + m.lg, null); oc[m.lg] = (c && c.d) ? c.d : []; }
+                var hit = null; oc[m.lg].forEach(function (o) { if (!hit && !used[o.id] && sameM(o, m)) hit = o; });
+                if (hit) { used[hit.id] = 1; m = hit; }
+              }
+              out.push(m); lgs[m.lg] = 1;
+            });
+            NL = Object.keys(lgs).length; ALLK = [];
+            if (!out.length) { $('list').innerHTML = '<div class="empty">' + (DAYU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u0645\u0648\u0646\u062f\u0647.<br>\u00ab\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632\u00bb \u0631\u0648 \u0628\u0632\u0646\u060c \u06cc\u0627 \u0628\u0631\u0627\u06cc \u0641\u0631\u062f\u0627 \u0628\u0631\u0648 \u0633\u0631\u0627\u063a \u00ab\u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627\u00bb.' : '\u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f') + '<br><br>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)') + '</div>'; return; }
+            renderMatches(out, true);
+          }
+
           function lvc(k) { var n = LIVEC && LIVEC[k]; return n ? '<span class="lv">\ud83d\udd34 ' + fa(n) + ' \u0632\u0646\u062f\u0647</span>' : ''; }
           function noFx(lg, err) {
-            $('list').innerHTML = '<div class="empty">' + (ESPN[lg] ? '\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc ' + lname(lg) + ' \u0627\u0632 \u0645\u0646\u0628\u0639 \u0631\u0627\u06cc\u06af\u0627\u0646 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (err && err.e ? ' (\u062e\u0637\u0627 ' + esc(err.e) + ')' : '') + '.' : '\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646 \u0628\u0631\u0627\u06cc ' + lname(lg) + ' \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a.') + '<br><br>' +
-              (ESPN[lg] ? chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646 (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'FXTRY={};loadOdds(false,1)') + '<br><br>' : '') +
-              chip('\ud83d\udce5 \u062f\u0631\u06cc\u0627\u0641\u062a \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af', false, 'loadOdds(true)') + '<div class="mut">(\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0644\u06cc\u06af)</div></div>';
+            $('list').innerHTML = '<div class="empty">' + (esl(lg) ? '\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc ' + lname(lg) + ' \u0627\u0632 \u0645\u0646\u0628\u0639 \u0631\u0627\u06cc\u06af\u0627\u0646 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (err && err.e ? ' (\u062e\u0637\u0627 ' + esc(err.e) + ')' : '') + '.' : '\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646 \u0628\u0631\u0627\u06cc ' + lname(lg) + ' \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a.') + '<br><br>' +
+              (esl(lg) ? chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646 (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'FXTRY={};loadOdds(false,1)') + '<br><br>' : '') +
+              (isES(lg) ? '<div class="mut">\u0627\u06cc\u0646 \u0644\u06cc\u06af \u062a\u0648 The Odds API \u0646\u06cc\u0633\u062a. \u0636\u0631\u0627\u06cc\u0628\u0634 \u0631\u0648 \u062f\u0633\u062a\u06cc \u0627\u0632 1xBet \u0648\u0627\u0631\u062f \u06a9\u0646.</div></div>' : chip('\ud83d\udce5 \u062f\u0631\u06cc\u0627\u0641\u062a \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af', false, 'loadOdds(true)') + '<div class="mut">(\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0644\u06cc\u06af)</div></div>');
           }
           function errBox(r, retry) {
             return '<div class="empty">\u062e\u0637\u0627 \u062f\u0631 \u062f\u0631\u06cc\u0627\u0641\u062a \u0627\u0637\u0644\u0627\u0639\u0627\u062a (' + r.status + ')<br><span class="ltr">' + esc(r.body).slice(0, 200) + '</span><br><br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a\u060c VPN \u0648 \u06a9\u0644\u06cc\u062f API \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br>' + chip('\u062a\u0644\u0627\u0634 \u062f\u0648\u0628\u0627\u0631\u0647', false, retry) + '</div>';
@@ -787,7 +909,7 @@ jobs:
             if (!force) {
               var f = ld('fx_' + lg, null), fresh = f && Date.now() - f.t < FX_TTL;
               if (c || f) renderMatches(leagueList(lg, Date.now()), false);
-              if (ESPN[lg] && (!fresh || fxForce) && (fxForce || Date.now() - (FXTRY[lg] || 0) > 120000)) {
+              if (esl(lg) && (!fresh || fxForce) && (fxForce || Date.now() - (FXTRY[lg] || 0) > 120000)) {
                 if (!c && !f) list.innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 (\u0631\u0627\u06cc\u06af\u0627\u0646)...</div>';
                 fetchFx(lg, function (d, err) {
                   if (lg != cur || reg == 'all' || reg == 'browse') return;
@@ -798,6 +920,7 @@ jobs:
               if (!c && !f) noFx(lg);
               return;
             }
+            if (isES(lg)) { toast('\u0627\u06cc\u0646 \u0644\u06cc\u06af \u062a\u0648 The Odds API \u0646\u06cc\u0633\u062a\u060c \u0631\u0648\u06cc \u270d\ufe0f \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628 \u0631\u0648 \u062f\u0633\u062a\u06cc \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
             if (!key()) { toast('\u0628\u0631\u0627\u06cc \u06af\u0631\u0641\u062a\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0627\u0648\u0644 \u0627\u0632 \u0628\u062e\u0634 \u2699\ufe0f \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u06a9\u0644\u06cc\u062f API \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
             list.innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627...</div>';
             fetchOdds(lg, function (d, r) {
@@ -817,7 +940,7 @@ jobs:
                 all = all.concat(a); n++; ALLK.push(k);
                 if (oi.indexOf(k) >= 0) ko.push(k); if (fi.indexOf(k) >= 0) kf.push(k);
                 var f = ld('fx_' + k, null);
-                if (ESPN[k] && (!f || now - f.t > FX_TTL) && now - (FXTRY[k] || 0) > 300000) stale.push(k);
+                if (esl(k) && (!f || now - f.t > FX_TTL) && now - (FXTRY[k] || 0) > 300000) stale.push(k);
               } else { sv('odds_' + k, null); sv('fx_' + k, null); }
             });
             if (ko.length != oi.length) sv('oddsIdx', ko);
@@ -890,7 +1013,7 @@ jobs:
                 x.cl = o; x.clt = now; ch = true;
               });
             });
-            if (ch) sv('bets', BETS);
+            if (ch) sv(pk('bets'), BETS);
           }
           function clMk(p) {
             if (p == 'BY' || p == 'BN') return 'btts';
@@ -918,7 +1041,7 @@ jobs:
                 } else { var t = totals(bs, mk, ptOf(p)); if (t) o = p.charAt(0) == 'O' ? t[0] : t[1]; }
               } catch (er) {}
               if (!o) { toast('\u0636\u0631\u06cc\u0628 \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f'); return; }
-              x.cl = o; x.clt = Date.now(); sv('bets', BETS); renderBets(); toast('\u0636\u0631\u06cc\u0628 \u0627\u0644\u0627\u0646 \u062b\u0628\u062a \u0634\u062f: ' + o.toFixed(2));
+              x.cl = o; x.clt = Date.now(); sv(pk('bets'), BETS); renderBets(); toast('\u0636\u0631\u06cc\u0628 \u0627\u0644\u0627\u0646 \u062b\u0628\u062a \u0634\u062f: ' + o.toFixed(2));
             });
           }
           function setCL(bid, j) {
@@ -927,7 +1050,7 @@ jobs:
             if (v === null) return;
             v = parseFloat(String(v).replace(/[\u06f0-\u06f9]/g, function (d) { return '\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9'.indexOf(d); }).replace('\u066b', '.'));
             if (!(v > 1)) { toast('\u06cc\u0647 \u0636\u0631\u06cc\u0628 \u062f\u0631\u0633\u062a \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
-            x.cl = r2(v); x.clt = Date.now(); sv('bets', BETS); renderBets(); toast('\u0630\u062e\u06cc\u0631\u0647 \u0634\u062f \u2705');
+            x.cl = r2(v); x.clt = Date.now(); sv(pk('bets'), BETS); renderBets(); toast('\u0630\u062e\u06cc\u0631\u0647 \u0634\u062f \u2705');
           }
           function exRef(id) { if (MATCHES[id] && !started(MATCHES[id])) fetchEx(MATCHES[id]); }
           function more(id) {
@@ -937,13 +1060,15 @@ jobs:
           }
 
           /* ---------- match list ---------- */
+          function od(m, k) { if (m[k]) return m[k]; var mn = MAN[m.id]; return mn ? (mn[{ h: '1', d: 'X', a: '2' }[k]] || null) : null; }
           function getOdd(m, p) {
+            var mn = MAN[m.id]; if (mn && mn[p]) return mn[p];
             if (p == '1X' || p == 'X2' || p == '12') {
-              var oa = p == 'X2' ? m.d : m.h, obb = p == '1X' ? m.d : m.a;
+              var oa = p == 'X2' ? od(m, 'd') : od(m, 'h'), obb = p == '1X' ? od(m, 'd') : od(m, 'a');
               if (!oa || !obb) return null;
               return Math.max(1.01, r2(1 / (1 / oa + 1 / obb)));
             }
-            if (p == '1') return m.h; if (p == 'X') return m.d; if (p == '2') return m.a;
+            if (p == '1') return od(m, 'h'); if (p == 'X') return od(m, 'd'); if (p == '2') return od(m, 'a');
             if (p == 'O25' && m.ov) return m.ov; if (p == 'U25' && m.un) return m.un;
             var x = exOf(m.id); return x && x.o && x.o[p] ? x.o[p] : null;
           }
@@ -956,10 +1081,11 @@ jobs:
           function nv(m, p) {
             if (!m) return null;
             if (p == '1' || p == 'X' || p == '2' || p == '1X' || p == 'X2' || p == '12') {
-              if (!m.h || !m.a) return null;
-              var qh = 1 / m.h, qa = 1 / m.a, qd = m.d ? 1 / m.d : 0, s = qh + qa + qd;
+              var oh = od(m, 'h'), oa2 = od(m, 'a'), odd2 = od(m, 'd');
+              if (!oh || !oa2 || (m.fx && !odd2)) return null;
+              var qh = 1 / oh, qa = 1 / oa2, qd = odd2 ? 1 / odd2 : 0, s = qh + qa + qd;
               var P = { '1': qh / s, 'X': qd / s, '2': qa / s };
-              if (p.length == 1) return (p == 'X' && !m.d) ? null : P[p];
+              if (p.length == 1) return (p == 'X' && !odd2) ? null : P[p];
               return P[p.charAt(0)] + P[p.charAt(1)];
             }
             var o = oppP(p); if (!o) return null;
@@ -997,7 +1123,7 @@ jobs:
             var h = '<div class="match"><div class="mt"><span>' + tag + hm(m.time) + old + ' <span class="bell" onclick="bell(\'' + m.id + '\')">' + (REM[m.id] ? '\ud83d\udd14' : '\ud83d\udd15') + '</span></span><span>' + lname(m.lg) + '</span></div>' +
               '<div class="teams"><div class="tm"><span>' + esc(m.home) + '</span>' + (scc ? scc + L.hs + '</b>' : '') + '</div>' +
               '<div class="tm"><span>' + esc(m.away) + '</span>' + (scc ? scc + L.as + '</b>' : '') + '</div></div>' + liveBox(m);
-            if (m.fx) return h + (st ? '' : '<div class="mut" style="text-align:center;padding:6px">\u0636\u0631\u0627\u06cc\u0628 \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0647\u0646\u0648\u0632 \u06af\u0631\u0641\u062a\u0647 \u0646\u0634\u062f\u0647. \u0627\u0632 \u062f\u06a9\u0645\u0647 \u0628\u0627\u0644\u0627 \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af \u0631\u0648 \u0628\u06af\u06cc\u0631 (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)</div>') + '</div>';
+            if (m.fx) return h + (st ? '' : manBox(m)) + '</div>';
             h += '<div class="odds">' + ob(m, '1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646') + ob(m, 'X', '\u0645\u0633\u0627\u0648\u06cc') + ob(m, '2', '\u06f2 \u0645\u0647\u0645\u0627\u0646') + '</div>';
           if (m.d) h += '<div class="lbl">\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 (\u0628\u0631\u062f \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc)</div><div class="odds">' + ob(m, '1X', '\u06f1 \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc') + ob(m, 'X2', '\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2') + ob(m, '12', '\u06f1 \u06cc\u0627 \u06f2') + '</div>';
             if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5 \u06af\u0644') + ob(m, 'U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5 \u06af\u0644') + '</div>';
@@ -1016,16 +1142,59 @@ jobs:
             } else h += '<div class="more" onclick="more(\'' + m.id + '\')">\u2795 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 (\u06af\u0644 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645\u060c \u06f1.\u06f5\u060c \u06f3.\u06f5)</div>';
             return h + '</div>';
           }
+          /* manual odds (update 14) */
+          function num(v) { return parseFloat(String(v).replace(/[\u06f0-\u06f9]/g, function (d) { return '\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9'.indexOf(d); }).replace(/[\u066b,]/g, '.')); }
+          function mb(m, p, label) {
+            var odd = getOdd(m, p), ed = MEDIT[m.id], q = odd ? nv(m, p) : null, pr = q === null ? '' : '<i class="pr">' + pct(q) + '</i>';
+            var s = !ed && slip.some(function (x) { return x.id == m.id && x.pick == p; });
+            var act = (ed || !odd) ? 'setMan' : 'tog';
+            return '<div class="ob man' + (s ? ' sel' : '') + '" onclick="' + act + '(\'' + m.id + '\',\'' + p + '\')"><small>' + label + '</small><b>' + (odd ? odd.toFixed(2) : '\u270d\ufe0f') + '</b>' + pr + '</div>';
+          }
+          function manBox(m) {
+            var mn = MAN[m.id], n = mn ? Object.keys(mn).filter(function (k) { return k != '_t'; }).length : 0, ed = MEDIT[m.id];
+            var tip = isES(m.lg) ? '' : '<div class="mut" style="text-align:center;padding:4px">\u06cc\u0627 \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af \u0631\u0648 \u0627\u0632 \u062f\u06a9\u0645\u0647 \u0628\u0627\u0644\u0627 \u0628\u06af\u06cc\u0631 (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)</div>';
+            if (!n && !ed) return '<div class="more" onclick="medit(\'' + m.id + '\')">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647 (\u0627\u0632 1xBet)</div>' + tip;
+            var h = '<div class="odds">' + mb(m, '1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646') + mb(m, 'X', '\u0645\u0633\u0627\u0648\u06cc') + mb(m, '2', '\u06f2 \u0645\u0647\u0645\u0627\u0646') + '</div>';
+            h += '<div class="lbl">\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647</div><div class="odds">' + mb(m, '1X', '\u06f1 \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc') + mb(m, 'X2', '\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2') + mb(m, '12', '\u06f1 \u06cc\u0627 \u06f2') + '</div>';
+            h += '<div class="lbl">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f2.\u06f5</div><div class="odds two">' + mb(m, 'O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5') + mb(m, 'U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5') + '</div>';
+            if (ed || (mn && (mn.BY || mn.BN || mn.O15 || mn.U15 || mn.O35 || mn.U35))) {
+              h += '<div class="lbl">\u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0646\u061f</div><div class="odds two">' + mb(m, 'BY', '\u0628\u0644\u0647') + mb(m, 'BN', '\u062e\u06cc\u0631') + '</div>';
+              h += '<div class="lbl">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f1.\u06f5</div><div class="odds two">' + mb(m, 'O15', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1.\u06f5') + mb(m, 'U15', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f1.\u06f5') + '</div>';
+              h += '<div class="lbl">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f3.\u06f5</div><div class="odds two">' + mb(m, 'O35', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f3.\u06f5') + mb(m, 'U35', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f3.\u06f5') + '</div>';
+            }
+            h += '<div class="mut" style="text-align:center;padding:4px">' + (ed ? '\u270d\ufe0f \u0631\u0648\u06cc \u0647\u0631 \u062e\u0648\u0646\u0647 \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628 1xBet \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633. \u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 \u0627\u06af\u0647 \u062e\u0627\u0644\u06cc \u0628\u0645\u0648\u0646\u0647 \u0627\u0632 \u06f1\u060c \u0645\u0633\u0627\u0648\u06cc \u0648 \u06f2 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647.' : '\u270d\ufe0f \u0636\u0631\u0627\u06cc\u0628 \u062f\u0633\u062a\u06cc. \u0631\u0648\u06cc \u0636\u0631\u06cc\u0628 \u0628\u0632\u0646 \u062a\u0627 \u0628\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637') + '</div>';
+            h += '<div class="more" onclick="medit(\'' + m.id + '\')">' + (ed ? '\u2705 \u062a\u0645\u0648\u0645 \u0634\u062f' : '\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u0627\u06cc\u0628 \u0648 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631') + '</div>';
+            return h;
+          }
+          function medit(id) { MEDIT[id] = !MEDIT[id]; rerender(); }
+          function setMan(id, p) {
+            var m = MATCHES[id]; if (!m) return;
+            if (started(m)) { toast('\u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0634\u062f\u0647'); return; }
+            var mn = MAN[id] || { _t: m.time };
+            var v = prompt('\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u00ab' + pl({ pick: p, home: m.home, away: m.away }) + '\u00bb \u0631\u0648 \u0627\u0632 1xBet \u0648\u0627\u0631\u062f \u06a9\u0646\n' + m.home + ' - ' + m.away + '\n(\u062e\u0627\u0644\u06cc \u0628\u0630\u0627\u0631\u06cc \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0647)', mn[p] || '');
+            if (v === null) return;
+            v = String(v).trim();
+            if (!v) delete mn[p];
+            else { var n = num(v); if (!(n >= 1.01 && n < 1000)) { toast('\u0636\u0631\u06cc\u0628 \u0628\u0627\u06cc\u062f \u0639\u062f\u062f\u06cc \u0645\u062b\u0644 \u06f1.\u06f8\u06f5 \u0628\u0627\u0634\u0647'); return; } mn[p] = r2(n); }
+            mn._t = m.time; MAN[id] = mn; sv('man', MAN);
+            var ch = false;
+            slip.forEach(function (x) { if (x.id != id) return; var o = getOdd(m, x.pick); if (o && o != x.odd) { x.odd = o; var q = nv(m, x.pick); x.nv = q === null ? null : Math.round(q * 1000) / 1000; ch = true; } });
+            if (ch) { sv(pk('slip'), slip); toast('\u0636\u0631\u06cc\u0628 \u062a\u0648 \u0628\u0644\u06cc\u0637 \u0647\u0645 \u0628\u0631\u0648\u0632 \u0634\u062f'); }
+            rerender();
+          }
+
           function renderMatches(d, multi) {
             CUR = d; CURM = !!multi;
             var now = Date.now(), list = $('list'), remn = ld('remaining', '');
             OT = {}; d.forEach(function (m) { if (!(m.lg in OT)) { var c = ld('odds_' + m.lg, null); OT[m.lg] = c ? c.t : 0; } });
             if (!multi && !(cur in OT)) { var oc = ld('odds_' + cur, null); OT[cur] = oc ? oc.t : 0; }
-            var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return alive(m, now) && inDF(t); })
+            var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return alive(m, now) && (reg == 'day' || inDF(t)); })
               .sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
+            var hc = reg == 'day' ? chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)', 'sm') : ((!multi && isES(cur)) ? '<span class="mut">\u270d\ufe0f \u0636\u0631\u0627\u06cc\u0628 \u0627\u06cc\u0646 \u0644\u06cc\u06af \u062f\u0633\u062a\u06cc\u0647</span>' : '');
             var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(ms.length) + ' \u0628\u0627\u0632\u06cc' + (multi ? ' \u0627\u0632 ' + fmt(NL) + ' \u0644\u06cc\u06af' : '') +
-              (!multi && OT[cur] ? ' | \u062f\u0631\u06cc\u0627\u0641\u062a: ' + agoTxt(OT[cur]) : '') + (remn ? ' | \u0627\u0639\u062a\u0628\u0627\u0631: ' + esc(remn) : '') + '</span>' +
-              chip(multi ? '\ud83d\udcb0 \u0636\u0631\u0627\u06cc\u0628 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 (' + fmt(ALLK.length * 2) + ' \u0627\u0639\u062a\u0628\u0627\u0631)' : (OT[cur] ? '\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)' : '\ud83d\udcb0 \u062f\u0631\u06cc\u0627\u0641\u062a \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)'), false, multi ? 'loadMany(ALLK.slice())' : 'loadOdds(true)', 'sm') + '</div>';
+              (!multi && OT[cur] ? ' | \u062f\u0631\u06cc\u0627\u0641\u062a: ' + agoTxt(OT[cur]) : '') + (remn && reg != 'day' ? ' | \u0627\u0639\u062a\u0628\u0627\u0631: ' + esc(remn) : '') + '</span>' +
+              (hc ? hc : chip(multi ? '\ud83d\udcb0 \u0636\u0631\u0627\u06cc\u0628 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 (' + fmt(ALLK.length * 2) + ' \u0627\u0639\u062a\u0628\u0627\u0631)' : (OT[cur] ? '\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)' : '\ud83d\udcb0 \u062f\u0631\u06cc\u0627\u0641\u062a \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)'), false, multi ? 'loadMany(ALLK.slice())' : 'loadOdds(true)', 'sm')) + '</div>';
+            if (reg == 'day') h += '<div class="mut" style="padding:0 14px 4px">\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646 ESPN\u060c \u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f \u0648 \u0628\u062f\u0648\u0646 \u0627\u0639\u062a\u0628\u0627\u0631. \u0647\u0631 \u0644\u06cc\u06af\u06cc \u0636\u0631\u06cc\u0628 \u0646\u062f\u0627\u0634\u062a\u060c \u0631\u0648\u06cc \u270d\ufe0f \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628\u0634 \u0631\u0648 \u0627\u0632 1xBet \u0648\u0627\u0631\u062f \u06a9\u0646.</div>';
             if (!ms.length) { list.innerHTML = h + '<div class="empty">\u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0641\u06cc\u0644\u062a\u0631 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0646\u06cc\u0633\u062a</div>'; return; }
             var last = '';
             ms.forEach(function (m) {
@@ -1062,15 +1231,15 @@ jobs:
               if (others.length >= 2) { toast('\u0645\u06cc\u06a9\u0633 \u062d\u062f\u0627\u06a9\u062b\u0631 \u06f2 \u067e\u0627\u06cc\u0647 \u062f\u0627\u0631\u0647'); return; }
               var goalP = { O15: 1, U15: 1, O25: 1, U25: 1, O35: 1, U35: 1, BY: 1, BN: 1 };
               if (goalP[p] && others.some(function (x) { return goalP[x.pick]; })) { toast('\u0641\u0642\u0637 \u06cc\u06a9 \u067e\u0627\u06cc\u0647 \u0627\u0632 \u0628\u0627\u0632\u0627\u0631 \u06af\u0644 \u062f\u0631 \u0645\u06cc\u06a9\u0633'); return; }
-              others.push({ id: id, lg: m.lg, home: m.home, away: m.away, time: m.time, pick: p, odd: odd, nv: q === null ? null : Math.round(q * 1000) / 1000, ctr: ag ? 1 : 0, my: null });
+              others.push({ id: id, lg: m.lg, home: m.home, away: m.away, time: m.time, pick: p, odd: odd, nv: q === null ? null : Math.round(q * 1000) / 1000, ctr: ag ? 1 : 0, my: null, man: m.fx ? 1 : 0 });
               slip = others;
               toast(replaced ? '\u0627\u0632 \u0647\u0631 \u0628\u0627\u0632\u06cc \u0641\u0642\u0637 \u06cc\u0647 \u0627\u0646\u062a\u062e\u0627\u0628\u060c \u062c\u0627\u06cc\u06af\u0632\u06cc\u0646 \u0634\u062f' : (slip.length > 1 ? '\u0627\u0636\u0627\u0641\u0647 \u0634\u062f\u060c \u0645\u06cc\u06a9\u0633 ' + fmt(slip.length) + ' \u062a\u0627\u06cc\u06cc' : '\u0628\u0647 \u0628\u0644\u06cc\u0637 \u0627\u0636\u0627\u0641\u0647 \u0634\u062f'));
             }
-            sv('slip', slip); updateCnt(); rerender();
+            sv(pk('slip'), slip); updateCnt(); rerender();
           }
           function totalOdd() { return slip.reduce(function (a, x) { return a * x.odd; }, 1); }
-          function rm(i) { slip.splice(i, 1); sv('slip', slip); updateCnt(); renderSlip(); }
-          function clearSlip() { slip = []; sv('slip', slip); updateCnt(); renderSlip(); }
+          function rm(i) { slip.splice(i, 1); sv(pk('slip'), slip); updateCnt(); renderSlip(); }
+          function clearSlip() { slip = []; sv(pk('slip'), slip); updateCnt(); renderSlip(); }
           function renderSlip() {
             var el = $('slip');
             if (!slip.length) { el.innerHTML = '<div class="empty">\u0628\u0644\u06cc\u0637\u062a \u062e\u0627\u0644\u06cc\u0647 \ud83c\udfab<br>\u0627\u0632 \u0628\u062e\u0634 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0648\u06cc \u0636\u0631\u06cc\u0628\u200c\u0647\u0627 \u0628\u0632\u0646.<br>\u0627\u06af\u0647 \u0686\u0646\u062f \u0628\u0627\u0632\u06cc \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0646\u06cc\u060c \u0634\u0631\u0637\u062a \u0645\u06cc\u06a9\u0633 \u0645\u06cc\u0634\u0647.</div>'; return; }
@@ -1078,6 +1247,7 @@ jobs:
             slip.forEach(function (x, i) {
               h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + '</span><span class="x" onclick="rm(' + i + ')">\u2715</span></div>' +
                 '<div class="row"><span>' + esc(pl(x)) + '</span><b class="gold">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div>' +
+                (x.man ? '<div class="mut">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u062f\u0633\u062a\u06cc (\u0627\u0632 1xBet)</div>' : '') +
                 (x.nv ? '<div class="mut">\ud83d\udcca \u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0627\u0632\u0627\u0631 (\u0628\u062f\u0648\u0646 \u062d\u0627\u0634\u06cc\u0647 \u0633\u0648\u062f): ' + pct(x.nv) + '</div>' : '') +
                 (x.ctr ? '<div class="warn">\u26a0\ufe0f \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u0628\u0627\u0632\u0627\u0631\u0647. \u0627\u06cc\u0646 \u0646\u0648\u0639 \u0634\u0631\u0637 \u062a\u0627 \u0627\u0644\u0627\u0646 \u06f0 \u0627\u0632 \u06f4 \u0628\u0648\u062f\u0647</div>' : '') +
                 '<input type="number" step="1" inputmode="decimal" placeholder="\ud83c\udfaf \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646 (\u066a)\u060c \u0645\u062b\u0644\u0627\u064b \u06f6\u06f0" value="' + (x.my || '') + '" oninput="setMy(' + i + ',this.value)">' +
@@ -1104,7 +1274,7 @@ jobs:
           function setMy(i, v) {
             var x = slip[i]; if (!x) return;
             v = parseFloat(String(v).replace(/[\u06f0-\u06f9]/g, function (d) { return '\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9'.indexOf(d); }));
-            x.my = (v > 0 && v < 100) ? v : null; sv('slip', slip);
+            x.my = (v > 0 && v < 100) ? v : null; sv(pk('slip'), slip);
             var e = $('ev' + i); if (e) e.innerHTML = evTxt(x);
           }
           function qs(v) { $('stake').value = v < 0 ? r2(W.coins) : v; calc(); }
@@ -1121,7 +1291,7 @@ jobs:
             });
             W.coins = r2(W.coins - s);
             slip.forEach(function (x) { if (!REM[x.id]) setRem(x, true, true); });
-            slip = []; NOTE = ''; sv('slip', slip); saveAll(); updateCnt();
+            slip = []; NOTE = ''; sv(pk('slip'), slip); saveAll(); updateCnt();
             toast('\u0634\u0631\u0637\u062a \u062b\u0628\u062a \u0634\u062f \u2705'); go('bets');
           }
 
@@ -1165,7 +1335,7 @@ jobs:
           function pageOn(p) { var e = $('p-' + p); return e && e.classList.contains('on'); }
           function liveTargets() {
             var now = Date.now(), out = {};
-            Object.keys(MATCHES).forEach(function (id) { var m = MATCHES[id]; if (started(m) && alive(m, now)) out[id] = m; });
+            if (reg != 'browse') Object.keys(MATCHES).forEach(function (id) { var m = MATCHES[id]; if (reg == 'day' && m.fx) return; if (started(m) && alive(m, now)) out[id] = m; });
             BETS.forEach(function (b) {
               if (b.st != 'p') return;
               b.sel.forEach(function (x) { var k = new Date(x.time).getTime(); if (x.res == 'p' && k <= now && now - k < 84 * 3600000) out[x.id] = x; });
@@ -1175,7 +1345,7 @@ jobs:
           function liveTick(force, done) {
             var T = liveTargets(), g = {}, now = Date.now();
             Object.keys(T).forEach(function (id) {
-              var m = T[id], s = ESPN[m.lg]; if (!s) return;
+              var m = T[id], s = esl(m.lg); if (!s) return;
               var L = LIVE[id]; if (L && L.st == 'post') return;
               var k = new Date(m.time).getTime();
               if (!force && (!L || L.st != 'in') && now - k > END_MS) { LTRY[id] = (LTRY[id] || 0) + 1; if (LTRY[id] > 3) return; }
@@ -1232,7 +1402,7 @@ jobs:
             if (!started(m)) return '';
             var L = LIVE[m.id];
             if (!L) {
-              var s = ESPN[m.lg], er = s ? LERR[s] : null, t;
+              var s = esl(m.lg), er = s ? LERR[s] : null, t;
               if (!s) t = '\u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0644\u06cc\u06af \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a';
               else if (er && er.e !== undefined) t = '\u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f (\u062e\u0637\u0627 <span class="ltr">' + esc(er.e) + (er.b ? ' ' + esc(er.b) : '') + '</span>). \u0628\u0632\u0646 \u062a\u0627 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646\u0647';
               else if (LERR['m' + m.id] !== undefined) t = '\u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u062a\u0648 ESPN \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f (' + fa(LERR['m' + m.id]) + ' \u0628\u0627\u0632\u06cc \u062f\u0631\u06cc\u0627\u0641\u062a \u0634\u062f). \u0628\u0632\u0646 \u062a\u0627 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646\u0647';
@@ -1263,7 +1433,7 @@ jobs:
             liveTick(true, function () {
               settle(); renderBets();
               var now = Date.now(), left = 0;
-              BETS.forEach(function (b) { if (b.st == 'p' && (!betId || b.id == betId)) b.sel.forEach(function (x) { if (x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now) left++; }); });
+              BETS.forEach(function (b) { if (b.st == 'p' && (!betId || b.id == betId)) b.sel.forEach(function (x) { if (x.res == 'p' && !x.man && !isES(x.lg) && new Date(x.time).getTime() + 105 * 60000 < now) left++; }); });
               if (!left) { toast('\u0646\u062a\u0627\u06cc\u062c \u0628\u0631\u0648\u0632 \u0634\u062f \u2705 (\u0628\u062f\u0648\u0646 \u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631)'); return; }
               if (key() && confirm(fa(left) + ' \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647 \u062a\u0648 \u0646\u062a\u0627\u06cc\u062c \u0631\u0627\u06cc\u06af\u0627\u0646 \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f. \u0628\u0627 \u0627\u0639\u062a\u0628\u0627\u0631 API \u0686\u06a9 \u0628\u0634\u0647\u061f (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0644\u06cc\u06af)')) paidCheck(betId);
             });
@@ -1275,7 +1445,7 @@ jobs:
             if (!pend.length) { toast('\u0634\u0631\u0637 \u0628\u0627\u0632 \u0646\u062f\u0627\u0631\u06cc'); return; }
             pend.forEach(function (b) {
               b.sel.forEach(function (x) {
-                if (x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now) { (lgs[x.lg] = lgs[x.lg] || {})[x.id] = 1; }
+                if (x.res == 'p' && !x.man && !isES(x.lg) && new Date(x.time).getTime() + 105 * 60000 < now) { (lgs[x.lg] = lgs[x.lg] || {})[x.id] = 1; }
               });
             });
             var ks = Object.keys(lgs);
@@ -1403,15 +1573,15 @@ jobs:
             var b = null; BETS.forEach(function (x) { if (x.id == id) b = x; }); if (!b) return;
             var v = prompt(f == 'note' ? '\ud83d\udcdd \u0686\u0631\u0627 \u0627\u06cc\u0646 \u0634\u0631\u0637 \u0631\u0648 \u0628\u0633\u062a\u06cc\u061f' : '\ud83d\udcda \u0628\u0639\u062f \u0627\u0632 \u0628\u0627\u0632\u06cc \u0686\u06cc \u06cc\u0627\u062f \u06af\u0631\u0641\u062a\u06cc\u061f \u06a9\u062f\u0648\u0645 \u0627\u0633\u062a\u062f\u0644\u0627\u0644\u062a \u062f\u0631\u0633\u062a \u0628\u0648\u062f \u0648 \u06a9\u062f\u0648\u0645 \u063a\u0644\u0637\u061f', b[f] || '');
             if (v === null) return;
-            b[f] = String(v).trim(); sv('bets', BETS); renderBets(); toast('\u0630\u062e\u06cc\u0631\u0647 \u0634\u062f \u2705');
+            b[f] = String(v).trim(); sv(pk('bets'), BETS); renderBets(); toast('\u0630\u062e\u06cc\u0631\u0647 \u0634\u062f \u2705');
           }
           function cell(t, v, col) { return '<div class="cell"><span class="mut">' + t + '</span><b' + (col ? ' style="color:' + col + '"' : '') + '>' + v + '</b></div>'; }
           function pickBF(f) { BF = f; renderBets(); }
           function renderBets() {
             var el = $('bets');
-            if (!BETS.length) { el.innerHTML = '<div class="empty">\u0647\u0646\u0648\u0632 \u0634\u0631\u0637\u06cc \u0646\u0628\u0633\u062a\u06cc</div>'; return; }
+            if (!BETS.length) { el.innerHTML = '<div class="empty">\u0647\u0646\u0648\u0632 \u0634\u0631\u0637\u06cc \u062a\u0648 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + esc(pn()) + '\u00bb \u0646\u0628\u0633\u062a\u06cc</div>'; return; }
             var s = stats(), pr = r2(s.ret - s.stk), rate = (s.w + s.l) ? Math.round(s.w * 100 / (s.w + s.l)) : 0;
-            var h = '<div class="box"><b>\ud83d\udcca \u0622\u0645\u0627\u0631 \u0645\u0646</b><div class="grid" style="margin-top:8px">' +
+            var h = '<div class="box"><b>\ud83d\udcca \u0622\u0645\u0627\u0631 ' + esc(pn()) + '</b><div class="grid" style="margin-top:8px">' +
               cell('\u06a9\u0644 \u0634\u0631\u0637\u200c\u0647\u0627', fa(s.n)) + cell('\u062f\u0631\u0635\u062f \u0628\u0631\u062f', fa(rate) + '\u066a', rate >= 50 ? 'var(--green)' : 'var(--red)') +
               cell('\u0628\u0631\u062f\u0647', fa(s.w), 'var(--green)') + cell('\u0628\u0627\u062e\u062a\u0647', fa(s.l), 'var(--red)') +
               cell('\u062f\u0631 \u0627\u0646\u062a\u0638\u0627\u0631', fa(s.p), 'var(--gold)') + cell('\u0644\u063a\u0648 \u0634\u062f\u0647', fa(s.v)) +
@@ -1431,12 +1601,12 @@ jobs:
               b.sel.forEach(function (x, j) {
                 var ic = { p: '\u23f3', w: '\u2705', l: '\u274c', v: '\u21a9\ufe0f' }[x.res];
                 var clv = x.cl ? (x.odd / x.cl - 1) * 100 : null, nst = new Date(x.time).getTime() > Date.now();
-                var inf = (x.my ? '\u0645\u0646 ' + fa(x.my) + '\u066a | ' : '') + (x.nv ? '\u0628\u0627\u0632\u0627\u0631 ' + pct(x.nv) + ' | ' : '') +
+                var inf = (x.man ? '\u270d\ufe0f \u062f\u0633\u062a\u06cc | ' : '') + (x.my ? '\u0645\u0646 ' + fa(x.my) + '\u066a | ' : '') + (x.nv ? '\u0628\u0627\u0632\u0627\u0631 ' + pct(x.nv) + ' | ' : '') +
                   (x.cl ? '\u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc <span class="ltr">' + x.cl.toFixed(2) + '</span> (CLV <b class="ltr" style="color:' + (clv >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (clv >= 0 ? '+' : '') + clv.toFixed(1) + '\u066a</b>)' : '\u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u062b\u0628\u062a \u0646\u0634\u062f\u0647');
                 h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + (x.score ? ' (' + esc(x.score) + ')' : liveTxt(x)) + '</span><span>' + ic + '</span></div>' +
                   '<div class="row"><span>' + esc(pl(x)) + '</span><b class="ltr">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div>' +
                   '<div class="mut">' + inf + '</div>' + (x.ctr ? '<div class="warn">\u26a0\ufe0f \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u0628\u0627\u0632\u0627\u0631 \u0628\u0633\u062a\u0647 \u0634\u062f</div>' : '') +
-                  '<div>' + (x.res == 'p' && nst ? '<span class="lnk" onclick="fetchCL(\'' + b.id + '\',' + j + ')">\ud83d\udcc8 \u0636\u0631\u06cc\u0628 \u0627\u0644\u0627\u0646 (\u06f1 \u0627\u0639\u062a\u0628\u0627\u0631)</span>' : '') +
+                  '<div>' + (x.res == 'p' && nst && !x.man ? '<span class="lnk" onclick="fetchCL(\'' + b.id + '\',' + j + ')">\ud83d\udcc8 \u0636\u0631\u06cc\u0628 \u0627\u0644\u0627\u0646 (\u06f1 \u0627\u0639\u062a\u0628\u0627\u0631)</span>' : '') +
                   '<span class="lnk" onclick="setCL(\'' + b.id + '\',' + j + ')">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u062f\u0633\u062a\u06cc</span></div></div>';
               });
               var amt = b.st == 'l' ? '\u06f0' : (b.st == 'p' ? fc(b.stake * b.odd) : '+' + fc(b.win));
@@ -1454,7 +1624,7 @@ jobs:
           /* ---------- settings ---------- */
           function renderSet() {
             var r = ld('remaining', '');
-            $('set').innerHTML =
+            $('set').innerHTML = profBox() +
               '<div class="box"><b>\ud83d\udd11 \u06a9\u0644\u06cc\u062f API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">\u0630\u062e\u06cc\u0631\u0647 \u06a9\u0644\u06cc\u062f</button>' +
               (r ? '<div class="mut" style="margin-top:8px">\u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647 \u0627\u06cc\u0646 \u0645\u0627\u0647: ' + esc(r) + '</div>' : '') + '</div>' +
               '<div class="box"><b>\ud83d\udd04 \u0622\u067e\u062f\u06cc\u062a \u0628\u0631\u0646\u0627\u0645\u0647</b><div class="mut">\u0646\u0633\u062e\u0647 \u0641\u0639\u0644\u06cc: ' + (BUILD ? 'v' + fa(BUILD) : '-') + '</div><button class="btn blue" onclick="checkUpdate(true)">\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a</button></div>' +
@@ -1462,9 +1632,49 @@ jobs:
               '<div class="quick"><button onclick="coins(1)">\u2795 \u0627\u0636\u0627\u0641\u0647 \u06a9\u0646</button><button onclick="coins(0)">\u270f\ufe0f \u062a\u0646\u0638\u06cc\u0645 \u0645\u0648\u062c\u0648\u062f\u06cc</button></div></div>' +
               '<div class="box"><b>\ud83d\udd14 \u06cc\u0627\u062f\u0622\u0648\u0631 \u0628\u0627\u0632\u06cc</b><div class="mut">\u06cc\u06a9 \u0633\u0627\u0639\u062a \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0631\u0648\u0634\u0648\u0646 \u0634\u0631\u0637 \u0645\u06cc\u200c\u0628\u0646\u062f\u06cc (\u06cc\u0627 \u0632\u0646\u06af\u0648\u0644\u0647\u200c\u0634\u0648\u0646 \u0631\u0648 \u0631\u0648\u0634\u0646 \u0645\u06cc\u200c\u06a9\u0646\u06cc) \u0646\u0648\u062a\u06cc\u0641\u06cc\u06a9\u06cc\u0634\u0646 \u0645\u06cc\u0627\u062f.</div></div>' +
               '<div class="box"><b>\ud83c\udf81 \u062c\u0627\u06cc\u0632\u0647 \u0631\u0648\u0632\u0627\u0646\u0647</b><div class="mut">\u0647\u0631 \u06f2\u06f4 \u0633\u0627\u0639\u062a ' + fmt(BONUS) + ' \u0633\u06a9\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646</div><button class="btn" onclick="bonus()">\u062f\u0631\u06cc\u0627\u0641\u062a \u062c\u0627\u06cc\u0632\u0647</button></div>' +
-              '<div class="box"><b>\u267b\ufe0f \u0634\u0631\u0648\u0639 \u062f\u0648\u0628\u0627\u0631\u0647</b><div class="mut">\u0633\u06a9\u0647\u200c\u0647\u0627 ' + fmt(START) + ' \u0645\u06cc\u0634\u0647 \u0648 \u062a\u0627\u0631\u06cc\u062e\u0686\u0647 \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0647</div><button class="btn sec" onclick="resetAll()">\u0631\u06cc\u0633\u062a</button></div>' +
+              '<div class="box"><b>\u267b\ufe0f \u0634\u0631\u0648\u0639 \u062f\u0648\u0628\u0627\u0631\u0647</b><div class="mut">\u0641\u0642\u0637 \u0628\u0631\u0627\u06cc \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0641\u0639\u0644\u06cc: \u0633\u06a9\u0647\u200c\u0647\u0627 ' + fmt(START) + ' \u0645\u06cc\u0634\u0647 \u0648 \u062a\u0627\u0631\u06cc\u062e\u0686\u0647\u200c\u0627\u0634 \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0647</div><button class="btn sec" onclick="resetAll()">\u0631\u06cc\u0633\u062a</button></div>' +
               '<div class="box mut">\u0627\u06cc\u0646 \u0627\u067e \u0641\u0642\u0637 \u0628\u0631\u0627\u06cc \u0633\u0631\u06af\u0631\u0645\u06cc\u0647 \u0648 \u0628\u0627 \u0633\u06a9\u0647 \u0645\u062c\u0627\u0632\u06cc \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647\u060c \u067e\u0648\u0644 \u0648\u0627\u0642\u0639\u06cc \u062f\u0631 \u06a9\u0627\u0631 \u0646\u06cc\u0633\u062a.<br>\u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631: \u0647\u06cc\u0686 \u0644\u06cc\u06af\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u062f\u0627\u0646\u0644\u0648\u062f \u0646\u0645\u06cc\u0634\u0647. \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647. \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u06cc\u0647 \u0644\u06cc\u06af \u06f2 (\u062a\u0627 \u0622\u062e\u0631 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u062a\u0648 \u062d\u0627\u0641\u0638\u0647 \u0645\u06cc\u200c\u0645\u0648\u0646\u0647)\u060c \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 \u0647\u0631 \u0628\u0627\u0632\u06cc \u06f2\u060c \u0686\u06a9 \u0646\u062a\u0627\u06cc\u062c \u06f2 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0644\u06cc\u06af. \u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0648 \u0628\u0633\u062a\u0646 \u0634\u0631\u0637\u200c\u0647\u0627 \u0627\u0632 ESPN \u0648 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647 (\u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0627\u067e \u0628\u0627\u0632\u0647). \u0627\u06af\u0647 ESPN \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0631\u0648 \u067e\u06cc\u062f\u0627 \u0646\u06a9\u0646\u0647\u060c \u0642\u0628\u0644 \u0627\u0632 \u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631 \u0627\u0632\u062a \u0645\u06cc\u200c\u067e\u0631\u0633\u0647.</div>';
           }
+          /* profiles UI (update 14) */
+          function profBox() {
+            var h = '<div class="box"><b>\ud83d\udc64 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644\u200c\u0647\u0627</b><div class="mut">\u0647\u0631 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0633\u06a9\u0647\u060c \u0634\u0631\u0637\u200c\u0647\u0627 \u0648 \u0622\u0645\u0627\u0631 \u062c\u062f\u0627 \u062f\u0627\u0631\u0647. \u0645\u062b\u0644\u0627\u064b \u06cc\u06a9\u06cc \u0628\u0627 \u06a9\u0645\u06a9 Brain \u0648 \u06cc\u06a9\u06cc \u0628\u0627 \u0639\u0642\u0644 \u062e\u0648\u062f\u062a\u060c \u0628\u0639\u062f \u0622\u0645\u0627\u0631\u0634\u0648\u0646 \u0631\u0648 \u06a9\u0646\u0627\u0631 \u0647\u0645 \u0645\u0642\u0627\u06cc\u0633\u0647 \u06a9\u0646.</div>';
+            PR.l.forEach(function (p) {
+              var on = p.id == PR.cur, w = on ? W : ld(pk2(p.id, 'wallet'), null), bs = on ? BETS : ld(pk2(p.id, 'bets'), []), wn = 0, ls = 0, stk = 0, ret = 0;
+              bs.forEach(function (b) { if (b.st == 'w') wn++; if (b.st == 'l') ls++; if (b.st == 'w' || b.st == 'l') { stk += b.stake; ret += b.win; } });
+              var roi = stk ? Math.round((ret - stk) * 100 / stk) : null;
+              h += '<div class="pr1' + (on ? ' on' : '') + '" onclick="switchProf(\'' + p.id + '\')"><div><b>' + esc(p.n) + '</b>' + (on ? ' <span class="mut">(\u0641\u0639\u0627\u0644)</span>' : '') +
+                '<div class="mut">\ud83e\ude99 ' + fc(w ? w.coins : START) + ' | ' + fa(bs.length) + ' \u0634\u0631\u0637 | \u0628\u0631\u062f ' + fa(wn) + ' \u0628\u0627\u062e\u062a ' + fa(ls) + (roi !== null ? ' | \u0628\u0627\u0632\u062f\u0647 <span class="ltr">' + (roi >= 0 ? '+' : '') + roi + '\u066a</span>' : '') + '</div></div><span class="gold">' + (on ? '\u2705' : '\u203a') + '</span></div>';
+            });
+            h += '<div class="quick" style="margin-top:8px"><button onclick="newProf()">\u2795 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u062c\u062f\u06cc\u062f</button><button onclick="renProf()">\u270f\ufe0f \u062a\u063a\u06cc\u06cc\u0631 \u0627\u0633\u0645</button>' + (PR.cur != 'p0' ? '<button onclick="delProf()">\ud83d\uddd1\ufe0f \u062d\u0630\u0641</button>' : '') + '</div></div>';
+            return h;
+          }
+          function loadProf() {
+            W = ld(pk('wallet'), null); if (!W) { W = { coins: START, last: 0 }; sv(pk('wallet'), W); }
+            BETS = ld(pk('bets'), []); slip = ld(pk('slip'), []); NOTE = '';
+            renderBal(); updateCnt();
+          }
+          function switchProf(id) {
+            if (id == PR.cur) return;
+            PR.cur = id; sv('profs', PR); loadProf(); settle(); renderSet(); liveTick(false);
+            toast('\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0641\u0639\u0627\u0644: ' + pn());
+          }
+          function newProf() {
+            var n = prompt('\u0627\u0633\u0645 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u062c\u062f\u06cc\u062f:', PR.l.length == 1 ? '\ud83e\udde0 \u0628\u0627 \u0639\u0642\u0644 \u062e\u0648\u062f\u0645' : '\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 ' + fa(PR.l.length + 1));
+            if (n === null) return; n = String(n).trim().slice(0, 30); if (!n) return;
+            var id = 'p' + Date.now(); PR.l.push({ id: id, n: n }); PR.cur = id; sv('profs', PR);
+            loadProf(); renderSet(); toast('\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + n + '\u00bb \u0628\u0627 ' + fmt(START) + ' \u0633\u06a9\u0647 \u0633\u0627\u062e\u062a\u0647 \u0634\u062f');
+          }
+          function renProf() {
+            var n = prompt('\u0627\u0633\u0645 \u062c\u062f\u06cc\u062f \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0641\u0639\u0644\u06cc:', pn()); if (n === null) return; n = String(n).trim().slice(0, 30); if (!n) return;
+            PR.l.forEach(function (p) { if (p.id == PR.cur) p.n = n; }); sv('profs', PR); renderBal(); renderSet();
+          }
+          function delProf() {
+            if (PR.cur == 'p0') return;
+            if (!confirm('\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + pn() + '\u00bb \u0628\u0627 \u0647\u0645\u0647 \u0634\u0631\u0637\u200c\u0647\u0627\u0634 \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return;
+            var id = PR.cur; ['wallet', 'bets', 'slip'].forEach(function (k) { sv(pk2(id, k), null); });
+            PR.l = PR.l.filter(function (p) { return p.id != id; }); PR.cur = 'p0'; sv('profs', PR); loadProf(); renderSet(); toast('\u067e\u0627\u06a9 \u0634\u062f');
+          }
+
           function saveKey() {
             sv('key', $('k').value.trim()); sv('sports2', null); toast('\u06a9\u0644\u06cc\u062f \u0630\u062e\u06cc\u0631\u0647 \u0634\u062f'); renderSet();
             loadSports(function () { renderLeagues(); if (reg != 'all') loadOdds(false); });
@@ -1531,13 +1741,13 @@ jobs:
             W.last = n; W.coins = r2(W.coins + BONUS); saveAll(); toast('\ud83c\udf81 ' + fmt(BONUS) + ' \u0633\u06a9\u0647 \u06af\u0631\u0641\u062a\u06cc');
           }
           function resetAll() {
-            if (!confirm('\u0645\u0637\u0645\u0626\u0646\u06cc\u061f \u0647\u0645\u0647 \u0634\u0631\u0637\u200c\u0647\u0627 \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0646')) return;
-            W = { coins: START, last: 0 }; BETS = []; slip = []; sv('slip', slip); saveAll(); updateCnt(); renderSet(); toast('\u0631\u06cc\u0633\u062a \u0634\u062f');
+            if (!confirm('\u0645\u0637\u0645\u0626\u0646\u06cc\u061f \u0647\u0645\u0647 \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + pn() + '\u00bb \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0646')) return;
+            W = { coins: START, last: 0 }; BETS = []; slip = []; sv(pk('slip'), slip); saveAll(); updateCnt(); renderSet(); toast('\u0631\u06cc\u0633\u062a \u0634\u062f');
           }
 
           renderBal(); updateCnt(); syncRem();
           setTimeout(function () { liveTick(false); }, 2500);
-          setInterval(function () { if (pageOn('matches') || pageOn('bets')) liveTick(false); if (pageOn('matches') && reg == 'browse') liveCounts(); }, 60000);
+          setInterval(function () { if (pageOn('matches') || pageOn('bets')) liveTick(false); if (pageOn('matches') && (reg == 'browse' || reg == 'day')) liveCounts(); }, 60000);
           loadSports(function () { renderLeagues(); loadOdds(false); });
           setTimeout(function () { checkUpdate(false); }, 1200);
           </script>
