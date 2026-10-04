@@ -700,27 +700,32 @@ jobs:
           var ESV = ld('esv', null), ESVR = 0, ESVP = 0;
           function probeES(force) {
             if (ESVR) return;
-            if (!force && ESV && ESV.v == 15 && Date.now() - ESV.t < 7 * 86400000) return;
-            var list = ESX.filter(function (x) { return !REVE[x[0]]; }), ok = {}, i = 0, net = 0;
+            if (!force && ESV && ESV.v == 16 && Date.now() - ESV.t < 7 * 86400000) return;
+            var list = ESX.filter(function (x) { return !REVE[x[0]]; }), ok = {}, i = 0, done = 0, net = 0, run = 0;
+            var ds = [], now = Date.now(); for (var k = -1; k < 7; k++) ds.push(ymd(now + k * 86400000));
             ESVR = 1; ESVP = 0;
-            var next = function () {
-              if (i >= list.length) {
-                ESVR = 0;
-                if (net > 0) { ESV = { v: 15, t: Date.now(), ok: ok }; sv('esv', ESV); }
-                if (force) toast(net > 0 ? '\u2705 ' + fa(Object.keys(ok).length) + ' ' + '\u0644\u06cc\u06af \u062c\u062f\u06cc\u062f \u0627\u0632 ESPN \u067e\u06cc\u062f\u0627 \u0634\u062f' : '\u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u0648\u0635\u0644 \u0646\u06cc\u0633\u062a\u060c \u0628\u0639\u062f\u0627\u064b \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646');
-                if (reg == 'browse' && pageOn('matches')) renderTree();
-                if (pageOn('set')) renderSet();
-                return;
-              }
-              var s = list[i++][0];
-              http(ESPN_API + s + '/scoreboard', function (r) {
-                ESVP = i;
-                if (r.status > 0) net++;
-                try { if (r.status == 200) { var j = JSON.parse(r.body), l = j.leagues && j.leagues[0]; if (l && l.slug) { ok[s] = 1; if (l.name && !ESN[s]) { ESN[s] = l.name; sv('esn', ESN); } } } } catch (e) {}
-                next();
-              });
+            var fin = function () {
+              ESVR = 0;
+              if (net > 0) { ESV = { v: 16, t: Date.now(), ok: ok }; sv('esv', ESV); }
+              if (force) toast(net > 0 ? '\u2705 ' + fa(Object.keys(ok).length) + ' ' + '\u0644\u06cc\u06af \u0627\u0632 \u0644\u06cc\u0633\u062a\u062a \u062a\u0648 ESPN \u0628\u0627\u0632\u06cc \u062f\u0627\u0631\u0647' : '\u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u0648\u0635\u0644 \u0646\u06cc\u0633\u062a\u060c \u0628\u0639\u062f\u0627\u064b \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646');
+              if (reg == 'browse' && pageOn('matches')) renderTree();
+              if (pageOn('set')) renderSet();
             };
-            next();
+            var pump = function () {
+              while (run < 4 && i < list.length) {
+                (function (s) {
+                  run++;
+                  espnFetch(s, ds, function (evs, err) {
+                    run--; done++; ESVP = done;
+                    if (evs || (err && err.e != 0)) net++;
+                    if (evs && evs.length) ok[s] = 1;
+                    if (reg == 'browse' && pageOn('matches') && done % 8 == 0) renderTree();
+                    if (done >= list.length) fin(); else pump();
+                  });
+                })(list[i++][0]);
+              }
+            };
+            if (!list.length) fin(); else pump();
           }
           function esl(lg) { return ESPN[lg] || (String(lg).indexOf('es_') == 0 ? lg.slice(3) : null); }
           function isES(lg) { return String(lg).indexOf('es_') == 0; }
@@ -1044,6 +1049,10 @@ jobs:
                 if (!c && !f) list.innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 (\u0631\u0627\u06cc\u06af\u0627\u0646)...</div>';
                 fetchFx(lg, function (d, err) {
                   if (lg != cur || reg == 'all' || reg == 'browse') return;
+                  if (d && !d.length && isES(lg) && !c) {
+                    var s5 = lg.slice(3); if (ESV && ESV.ok && ESV.ok[s5]) { delete ESV.ok[s5]; sv('esv', ESV); }
+                    if (!leagueList(lg, Date.now()).length) { noFx(lg, { e: 'ESPN \u0628\u0631\u0627\u06cc \u06f8 \u0631\u0648\u0632 \u0647\u06cc\u0686 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0627\u0632 \u0627\u06cc\u0646 \u0644\u06cc\u06af \u0646\u062f\u0627\u062f' }); return; }
+                  }
                   if (d || c || f) renderMatches(leagueList(lg, Date.now()), false); else noFx(lg, err);
                 });
                 return;
