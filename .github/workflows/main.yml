@@ -419,7 +419,8 @@ jobs:
             srb: 'serbia', rou: 'romania', fin: 'finland', irl: 'ireland', ksa: 'saudi', irn: 'iran', jpn: 'japan', kor: 'korea', chn: 'china', aus: 'australia', qat: 'qatar', uae: 'uae',
             ind: 'india', tha: 'thailand', bra: 'brazil', arg: 'argentina', mex: 'mexico', usa: 'usa', col: 'colombia', chi: 'chile', uru: 'uruguay', per: 'peru', ecu: 'ecuador',
             par: 'paraguay', can: 'canada', egy: 'egypt', mar: 'morocco', rsa: 'south_africa', tun: 'tunisia', alg: 'algeria', nga: 'nigeria', uefa: 'uefa', conmebol: 'conmebol',
-            concacaf: 'concacaf', afc: 'afc', caf: 'caf', fifa: 'national' };
+            concacaf: 'concacaf', afc: 'afc', caf: 'caf', fifa: 'national',
+            blr: 'belarus', ben: 'benin', bol: 'bolivia', bul: 'bulgaria', bfa: 'burkina', bdi: 'burundi', crc: 'costa_rica', civ: 'ivory', dom: 'dominican', slv: 'el_salvador', geo: 'georgia', gha: 'ghana', gua: 'guatemala', hon: 'honduras', hun: 'hungary', isl: 'iceland', idn: 'indonesia', isr: 'israel', jam: 'jamaica', ken: 'kenya', kos: 'kosovo', lux: 'luxembourg', mys: 'malaysia', mas: 'malaysia', mda: 'moldova', mng: 'mongolia', mne: 'montenegro', nca: 'nicaragua', nig: 'niger', nir: 'n_ireland', pan: 'panama', phi: 'philippines', sen: 'senegal', svk: 'slovakia', svn: 'slovenia', uzb: 'uzbekistan', ven: 'venezuela', wal: 'wales', zam: 'zambia', club: 'national', global: 'national' };
           var POP = ['soccer_epl', 'soccer_spain_la_liga', 'soccer_italy_serie_a', 'soccer_germany_bundesliga', 'soccer_france_ligue_one', 'soccer_uefa_champs_league', 'soccer_uefa_europa_league'];
           var FA = {
             soccer_epl: '\ud83c\udff4 \u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0627\u0646\u06af\u0644\u06cc\u0633', soccer_efl_champ: '\ud83c\udff4 \u0686\u0645\u067e\u06cc\u0648\u0646\u0634\u06cc\u067e \u0627\u0646\u06af\u0644\u06cc\u0633', soccer_england_league1: '\ud83c\udff4 \u0644\u06cc\u06af \u06cc\u06a9 \u0627\u0646\u06af\u0644\u06cc\u0633',
@@ -505,7 +506,45 @@ jobs:
             ['south_africa', '\ud83c\uddff\ud83c\udde6', '\u0622\u0641\u0631\u06cc\u0642\u0627\u06cc \u062c\u0646\u0648\u0628\u06cc', 'af', /south_africa/],
             ['tunisia', '\ud83c\uddf9\ud83c\uddf3', '\u062a\u0648\u0646\u0633', 'af', /tunisia/],
             ['algeria', '\ud83c\udde9\ud83c\uddff', '\u0627\u0644\u062c\u0632\u0627\u06cc\u0631', 'af', /algeria/],
-            ['nigeria', '\ud83c\uddf3\ud83c\uddec', '\u0646\u06cc\u062c\u0631\u06cc\u0647', 'af', /nigeria/]
+            ['nigeria', '\ud83c\uddf3\ud83c\uddec', '\u0646\u06cc\u062c\u0631\u06cc\u0647', 'af', /nigeria/],
+            ['belarus', '\ud83c\udde7\ud83c\uddfe', '\u0628\u0644\u0627\u0631\u0648\u0633', 'eu', /^belarus_x$/],
+            ['benin', '\ud83c\udde7\ud83c\uddef', '\u0628\u0646\u06cc\u0646', 'af', /^benin_x$/],
+            ['bolivia', '\ud83c\udde7\ud83c\uddf4', '\u0628\u0648\u0644\u06cc\u0648\u06cc', 'am', /^bolivia_x$/],
+            ['bulgaria', '\ud83c\udde7\ud83c\uddec', '\u0628\u0644\u063a\u0627\u0631\u0633\u062a\u0627\u0646', 'eu', /^bulgaria_x$/],
+            ['burkina', '\ud83c\udde7\ud83c\uddeb', '\u0628\u0648\u0631\u06a9\u06cc\u0646\u0627\u0641\u0627\u0633\u0648', 'af', /^burkina_x$/],
+            ['burundi', '\ud83c\udde7\ud83c\uddee', '\u0628\u0648\u0631\u0648\u0646\u062f\u06cc', 'af', /^burundi_x$/],
+            ['costa_rica', '\ud83c\udde8\ud83c\uddf7', '\u06a9\u0627\u0633\u062a\u0627\u0631\u06cc\u06a9\u0627', 'am', /^costa_rica_x$/],
+            ['ivory', '\ud83c\udde8\ud83c\uddee', '\u0633\u0627\u062d\u0644 \u0639\u0627\u062c', 'af', /^ivory_x$/],
+            ['dominican', '\ud83c\udde9\ud83c\uddf4', '\u062c\u0645\u0647\u0648\u0631\u06cc \u062f\u0648\u0645\u06cc\u0646\u06cc\u06a9\u0646', 'am', /^dominican_x$/],
+            ['el_salvador', '\ud83c\uddf8\ud83c\uddfb', '\u0627\u0644\u0633\u0627\u0644\u0648\u0627\u062f\u0648\u0631', 'am', /^el_salvador_x$/],
+            ['georgia', '\ud83c\uddec\ud83c\uddea', '\u06af\u0631\u062c\u0633\u062a\u0627\u0646', 'eu', /^georgia_x$/],
+            ['ghana', '\ud83c\uddec\ud83c\udded', '\u063a\u0646\u0627', 'af', /^ghana_x$/],
+            ['guatemala', '\ud83c\uddec\ud83c\uddf9', '\u06af\u0648\u0627\u062a\u0645\u0627\u0644\u0627', 'am', /^guatemala_x$/],
+            ['honduras', '\ud83c\udded\ud83c\uddf3', '\u0647\u0646\u062f\u0648\u0631\u0627\u0633', 'am', /^honduras_x$/],
+            ['hungary', '\ud83c\udded\ud83c\uddfa', '\u0645\u062c\u0627\u0631\u0633\u062a\u0627\u0646', 'eu', /^hungary_x$/],
+            ['iceland', '\ud83c\uddee\ud83c\uddf8', '\u0627\u06cc\u0633\u0644\u0646\u062f', 'eu', /^iceland_x$/],
+            ['indonesia', '\ud83c\uddee\ud83c\udde9', '\u0627\u0646\u062f\u0648\u0646\u0632\u06cc', 'asia', /^indonesia_x$/],
+            ['israel', '\ud83c\uddee\ud83c\uddf1', '\u0627\u0633\u0631\u0627\u0626\u06cc\u0644', 'eu', /^israel_x$/],
+            ['jamaica', '\ud83c\uddef\ud83c\uddf2', '\u062c\u0627\u0645\u0627\u0626\u06cc\u06a9\u0627', 'am', /^jamaica_x$/],
+            ['kenya', '\ud83c\uddf0\ud83c\uddea', '\u06a9\u0646\u06cc\u0627', 'af', /^kenya_x$/],
+            ['kosovo', '\ud83c\uddfd\ud83c\uddf0', '\u06a9\u0648\u0632\u0648\u0648', 'eu', /^kosovo_x$/],
+            ['luxembourg', '\ud83c\uddf1\ud83c\uddfa', '\u0644\u0648\u06a9\u0632\u0627\u0645\u0628\u0648\u0631\u06af', 'eu', /^luxembourg_x$/],
+            ['malaysia', '\ud83c\uddf2\ud83c\uddfe', '\u0645\u0627\u0644\u0632\u06cc', 'asia', /^malaysia_x$/],
+            ['moldova', '\ud83c\uddf2\ud83c\udde9', '\u0645\u0648\u0644\u062f\u0627\u0648\u06cc', 'eu', /^moldova_x$/],
+            ['mongolia', '\ud83c\uddf2\ud83c\uddf3', '\u0645\u063a\u0648\u0644\u0633\u062a\u0627\u0646', 'asia', /^mongolia_x$/],
+            ['montenegro', '\ud83c\uddf2\ud83c\uddea', '\u0645\u0648\u0646\u062a\u0647\u200c\u0646\u06af\u0631\u0648', 'eu', /^montenegro_x$/],
+            ['nicaragua', '\ud83c\uddf3\ud83c\uddee', '\u0646\u06cc\u06a9\u0627\u0631\u0627\u06af\u0648\u0626\u0647', 'am', /^nicaragua_x$/],
+            ['niger', '\ud83c\uddf3\ud83c\uddea', '\u0646\u06cc\u062c\u0631', 'af', /^niger_x$/],
+            ['n_ireland', '\ud83c\uddec\ud83c\udde7', '\u0627\u06cc\u0631\u0644\u0646\u062f \u0634\u0645\u0627\u0644\u06cc', 'eu', /^n_ireland_x$/],
+            ['panama', '\ud83c\uddf5\ud83c\udde6', '\u067e\u0627\u0646\u0627\u0645\u0627', 'am', /^panama_x$/],
+            ['philippines', '\ud83c\uddf5\ud83c\udded', '\u0641\u06cc\u0644\u06cc\u067e\u06cc\u0646', 'asia', /^philippines_x$/],
+            ['senegal', '\ud83c\uddf8\ud83c\uddf3', '\u0633\u0646\u06af\u0627\u0644', 'af', /^senegal_x$/],
+            ['slovakia', '\ud83c\uddf8\ud83c\uddf0', '\u0627\u0633\u0644\u0648\u0627\u06a9\u06cc', 'eu', /^slovakia_x$/],
+            ['slovenia', '\ud83c\uddf8\ud83c\uddee', '\u0627\u0633\u0644\u0648\u0648\u0646\u06cc', 'eu', /^slovenia_x$/],
+            ['uzbekistan', '\ud83c\uddfa\ud83c\uddff', '\u0627\u0632\u0628\u06a9\u0633\u062a\u0627\u0646', 'asia', /^uzbekistan_x$/],
+            ['venezuela', '\ud83c\uddfb\ud83c\uddea', '\u0648\u0646\u0632\u0648\u0626\u0644\u0627', 'am', /^venezuela_x$/],
+            ['wales', '\ud83c\udff4', '\u0648\u0644\u0632', 'eu', /^wales_x$/],
+            ['zambia', '\ud83c\uddff\ud83c\uddf2', '\u0632\u0627\u0645\u0628\u06cc\u0627', 'af', /^zambia_x$/]
           ];
           var PRI = ['soccer_uefa_champs_league', 'soccer_uefa_europa_league', 'soccer_uefa_europa_conference_league', 'soccer_uefa_champs_league_qualification',
             'soccer_epl', 'soccer_efl_champ', 'soccer_fa_cup', 'soccer_england_efl_cup', 'soccer_england_league1', 'soccer_england_league2',
@@ -593,11 +632,101 @@ jobs:
               fb();
             });
           }
+          /* ESPN leagues from Saeed's list (update 15): probed once a week, only ones ESPN really has are shown */
+          var ESX = [
+            ['arg.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u0627\u0648\u0644 \u0622\u0631\u0698\u0627\u0646\u062a\u06cc\u0646 (Primera Nacional)'],
+            ['bol.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0628\u0648\u0644\u06cc\u0648\u06cc'],
+            ['can.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u06a9\u0627\u0646\u0627\u062f\u0627'],
+            ['can.w.nsl', '\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u06a9\u0627\u0646\u0627\u062f\u0627 (NSL)'],
+            ['chi.2', '\u0644\u06cc\u06af \u0622\u0633\u0646\u0633\u0648 \u0634\u06cc\u0644\u06cc'],
+            ['col.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u06a9\u0644\u0645\u0628\u06cc\u0627'],
+            ['col.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u062f\u0648\u0645 \u06a9\u0644\u0645\u0628\u06cc\u0627 (BetPlay)'],
+            ['gua.1', '\u0644\u06cc\u06af \u0645\u0644\u06cc \u06af\u0648\u0627\u062a\u0645\u0627\u0644\u0627'],
+            ['slv.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0627\u0644\u0633\u0627\u0644\u0648\u0627\u062f\u0648\u0631'],
+            ['jam.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u062c\u0627\u0645\u0627\u0626\u06cc\u06a9\u0627'],
+            ['pan.1', '\u0644\u06cc\u06af \u067e\u0627\u0646\u0627\u0645\u0627'],
+            ['mex.2', '\u0644\u06cc\u06af \u0627\u06a9\u0633\u067e\u0627\u0646\u0633\u06cc\u0648\u0646 \u0645\u06a9\u0632\u06cc\u06a9'],
+            ['mex.w.1', '\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u0645\u06a9\u0632\u06cc\u06a9'],
+            ['usa.usl.1', 'USL \u0686\u0645\u067e\u06cc\u0648\u0646\u0634\u06cc\u067e'],
+            ['usa.usl.l1', 'USL \u0644\u06cc\u06af \u0648\u0627\u0646'],
+            ['usa.usl.cup', '\u062c\u0627\u0645 USL'],
+            ['usa.usl.l1.cup', '\u062c\u0627\u0645 USL \u0644\u06cc\u06af \u0648\u0627\u0646'],
+            ['usa.nwsl', 'NWSL \u0632\u0646\u0627\u0646 \u0622\u0645\u0631\u06cc\u06a9\u0627'],
+            ['usa.w.usl.1', '\u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 USL'],
+            ['uru.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0627\u0631\u0648\u06af\u0648\u0626\u0647'],
+            ['uru.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u062f\u0648\u0645 \u0627\u0631\u0648\u06af\u0648\u0626\u0647'],
+            ['ven.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u062f\u0648\u0645 \u0648\u0646\u0632\u0648\u0626\u0644\u0627'],
+            ['concacaf.nations.league', '\u0644\u06cc\u06af \u0645\u0644\u062a\u200c\u0647\u0627\u06cc \u06a9\u0648\u0646\u06a9\u0627\u06a9\u0627\u0641'],
+            ['fifa.friendly', '\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u062f\u0648\u0633\u062a\u0627\u0646\u0647 \u0645\u0644\u06cc'],
+            ['club.friendly', '\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u062f\u0648\u0633\u062a\u0627\u0646\u0647 \u0628\u0627\u0634\u06af\u0627\u0647\u06cc'],
+            ['eng.w.1', '\u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u0627\u0646\u06af\u0644\u06cc\u0633'],
+            ['eng.w.2', '\u062f\u0633\u062a\u0647 \u062f\u0648\u0645 \u0632\u0646\u0627\u0646 \u0627\u0646\u06af\u0644\u06cc\u0633'],
+            ['fra.w.1', '\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u0647'],
+            ['ger.w.1', '\u0628\u0648\u0646\u062f\u0633\u0644\u06cc\u06af\u0627\u06cc \u0632\u0646\u0627\u0646 \u0622\u0644\u0645\u0627\u0646'],
+            ['ger.w.2', '\u0628\u0648\u0646\u062f\u0633\u0644\u06cc\u06af\u0627\u06cc \u06f2 \u0632\u0646\u0627\u0646 \u0622\u0644\u0645\u0627\u0646'],
+            ['esp.3', '\u067e\u0631\u06cc\u0645\u0631\u0627 \u0641\u062f\u0631\u0627\u0633\u06cc\u0648\u0646 \u0627\u0633\u067e\u0627\u0646\u06cc\u0627'],
+            ['esp.w.1', '\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u0627\u0633\u067e\u0627\u0646\u06cc\u0627 (Liga F)'],
+            ['ita.3', '\u0633\u0631\u06cc C \u0627\u06cc\u062a\u0627\u0644\u06cc\u0627'],
+            ['ita.w.1', '\u0633\u0631\u06cc \u0622 \u0632\u0646\u0627\u0646 \u0627\u06cc\u062a\u0627\u0644\u06cc\u0627'],
+            ['ned.2', '\u0627\u0631\u0633\u062a\u0647 \u062f\u06cc\u0648\u06cc\u0632\u06cc\u0647 \u0647\u0644\u0646\u062f'],
+            ['ned.w.1', '\u0627\u0631\u062f\u06cc\u0648\u06cc\u0632\u06cc\u0647 \u0632\u0646\u0627\u0646 \u0647\u0644\u0646\u062f'],
+            ['nor.2', '\u062f\u0633\u062a\u0647 \u0627\u0648\u0644 \u0646\u0631\u0648\u0698'],
+            ['nor.w.1', '\u062a\u0648\u067e\u0633\u0631\u06cc\u06cc\u0646 \u0632\u0646\u0627\u0646 \u0646\u0631\u0648\u0698'],
+            ['swe.w.1', '\u062f\u0627\u0645\u0627\u0644\u0633\u0648\u0646\u0633\u06a9\u0627\u0646 \u0632\u0646\u0627\u0646 \u0633\u0648\u0626\u062f'],
+            ['por.2', '\u0644\u06cc\u06af \u06f2 \u067e\u0631\u062a\u063a\u0627\u0644'],
+            ['gre.2', '\u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u06f2 \u06cc\u0648\u0646\u0627\u0646'],
+            ['rus.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u0627\u0648\u0644 \u0631\u0648\u0633\u06cc\u0647'],
+            ['ukr.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u0627\u0648\u0644 \u0627\u0648\u06a9\u0631\u0627\u06cc\u0646'],
+            ['srb.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u0627\u0648\u0644 \u0635\u0631\u0628\u0633\u062a\u0627\u0646'],
+            ['svk.2', '\u0644\u06cc\u06af \u06f2 \u0627\u0633\u0644\u0648\u0627\u06a9\u06cc'],
+            ['svn.2', '\u0644\u06cc\u06af \u06f2 \u0627\u0633\u0644\u0648\u0648\u0646\u06cc'],
+            ['sco.w.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0632\u0646\u0627\u0646 \u0627\u0633\u06a9\u0627\u062a\u0644\u0646\u062f'],
+            ['bel.w.1', '\u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u0628\u0644\u0698\u06cc\u06a9'],
+            ['jpn.2', '\u062c\u06cc\u200c\u0644\u06cc\u06af \u06f2 \u0698\u0627\u067e\u0646'],
+            ['jpn.3', '\u062c\u06cc\u200c\u0644\u06cc\u06af \u06f3 \u0698\u0627\u067e\u0646'],
+            ['irn.2', '\u0644\u06cc\u06af \u0622\u0632\u0627\u062f\u06af\u0627\u0646 \u0627\u06cc\u0631\u0627\u0646'],
+            ['phi.1', '\u0644\u06cc\u06af \u0641\u0648\u062a\u0628\u0627\u0644 \u0641\u06cc\u0644\u06cc\u067e\u06cc\u0646'],
+            ['gha.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u063a\u0646\u0627'],
+            ['nga.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0646\u06cc\u062c\u0631\u06cc\u0647'],
+            ['zam.1', '\u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u0632\u0627\u0645\u0628\u06cc\u0627'],
+            ['mar.2', '\u0628\u0637\u0648\u0644\u0647 \u06f2 \u0645\u0631\u0627\u06a9\u0634'],
+            ['tun.2', '\u0644\u06cc\u06af \u06f2 \u062a\u0648\u0646\u0633'],
+            ['sen.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0633\u0646\u06af\u0627\u0644'],
+            ['geo.1', '\u0627\u0631\u0648\u0648\u0646\u0648\u0644\u06cc \u0644\u06cc\u06af\u0627\u06cc \u06af\u0631\u062c\u0633\u062a\u0627\u0646'],
+            ['mng.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0645\u063a\u0648\u0644\u0633\u062a\u0627\u0646'],
+            ['uae.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0627\u0645\u0627\u0631\u0627\u062a']
+          ];
+          var ESXN = {}; ESX.forEach(function (x) { ESXN[x[0]] = x[1]; });
+          var ESV = ld('esv', null), ESVR = 0, ESVP = 0;
+          function probeES(force) {
+            if (ESVR) return;
+            if (!force && ESV && ESV.v == 15 && Date.now() - ESV.t < 7 * 86400000) return;
+            var list = ESX.filter(function (x) { return !REVE[x[0]]; }), ok = {}, i = 0, net = 0;
+            ESVR = 1; ESVP = 0;
+            var next = function () {
+              if (i >= list.length) {
+                ESVR = 0;
+                if (net > 0) { ESV = { v: 15, t: Date.now(), ok: ok }; sv('esv', ESV); }
+                if (force) toast(net > 0 ? '\u2705 ' + fa(Object.keys(ok).length) + ' ' + '\u0644\u06cc\u06af \u062c\u062f\u06cc\u062f \u0627\u0632 ESPN \u067e\u06cc\u062f\u0627 \u0634\u062f' : '\u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u0648\u0635\u0644 \u0646\u06cc\u0633\u062a\u060c \u0628\u0639\u062f\u0627\u064b \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646');
+                if (reg == 'browse' && pageOn('matches')) renderTree();
+                if (pageOn('set')) renderSet();
+                return;
+              }
+              var s = list[i++][0];
+              http(ESPN_API + s + '/scoreboard', function (r) {
+                ESVP = i;
+                if (r.status > 0) net++;
+                try { if (r.status == 200) { var j = JSON.parse(r.body), l = j.leagues && j.leagues[0]; if (l && l.slug) { ok[s] = 1; if (l.name && !ESN[s]) { ESN[s] = l.name; sv('esn', ESN); } } } } catch (e) {}
+                next();
+              });
+            };
+            next();
+          }
           function esl(lg) { return ESPN[lg] || (String(lg).indexOf('es_') == 0 ? lg.slice(3) : null); }
           function isES(lg) { return String(lg).indexOf('es_') == 0; }
           function lname(k) {
             if (FA[k]) return FA[k];
-            if (isES(k)) return cinfo(k).f + ' ' + esc(ESN[k.slice(3)] || k.slice(3));
+            if (isES(k)) return cinfo(k).f + ' ' + esc(ESXN[k.slice(3)] || ESN[k.slice(3)] || k.slice(3));
             for (var i = 0; i < SPORTS.length; i++) if (SPORTS[i].key == k) return '\u26bd ' + esc(SPORTS[i].title);
             return k;
           }
@@ -662,8 +791,9 @@ jobs:
             if (DAY) DAY.d.forEach(function (m) { if (!m.pp && dk(m.time) == today && !started(m)) DC[m.lg] = (DC[m.lg] || 0) + 1; });
             var ls = SPORTS.slice();
             ls.forEach(function (s) { have[s.key] = 1; });
-            var addK = function (k) { if (have[k]) return; have[k] = 1; ls.push({ key: k, title: isES(k) ? (ESN[k.slice(3)] || k.slice(3)) : k, active: true }); };
+            var addK = function (k) { if (have[k]) return; have[k] = 1; ls.push({ key: k, title: isES(k) ? (ESXN[k.slice(3)] || ESN[k.slice(3)] || k.slice(3)) : k, active: true }); };
             Object.keys(DC).forEach(addK); LIVEM.forEach(function (m) { addK(m.lg); });
+            probeES(false); if (ESV && ESV.ok) Object.keys(ESV.ok).forEach(function (s) { addK(REVE[s] || ('es_' + s)); });
             ls.forEach(function (s) {
               var ci = cinfo(s.key), g = groups[ci.c] = groups[ci.c] || {};
               var cc = g[ci.id] = g[ci.id] || { ci: ci, ls: [] };
@@ -671,6 +801,7 @@ jobs:
             });
             liveCounts();
             var h = '<div class="mut" style="padding:4px 14px 8px">\u062f\u06cc\u062f\u0646 \u0644\u06cc\u0633\u062a \u0648 \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647. \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0636\u0631\u0627\u06cc\u0628 \u06cc\u0647 \u0644\u06cc\u06af \u0631\u0648 \u0628\u06af\u06cc\u0631\u06cc \u0627\u0639\u062a\u0628\u0627\u0631 \u0645\u0635\u0631\u0641 \u0645\u06cc\u0634\u0647. \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0636\u0631\u06cc\u0628 \u0646\u062f\u0627\u0631\u0646 \u0631\u0648 \u0628\u0627 \u270d\ufe0f \u062f\u0633\u062a\u06cc \u0636\u0631\u06cc\u0628 \u0628\u062f\u0647.</div>';
+            if (ESVR) h += '<div class="mut" style="padding:0 14px 6px">\ud83d\udd0e \u062f\u0627\u0631\u0645 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062c\u062f\u06cc\u062f \u0631\u0648 \u062a\u0648 ESPN \u0686\u06a9 \u0645\u06cc\u200c\u06a9\u0646\u0645 (\u0631\u0627\u06cc\u06af\u0627\u0646)... ' + fa(ESVP) + '/' + fa(ESX.length) + '</div>';
             if (LIVEM.length) {
               h += '<div class="lvh" onclick="tgl(OPENL,\'all\')"><span>\ud83d\udd34 \u0627\u0644\u0627\u0646 ' + fa(LIVEM.length) + ' \u0628\u0627\u0632\u06cc \u0632\u0646\u062f\u0647 \u062f\u0631 \u062c\u0631\u06cc\u0627\u0646\u0647</span><span>' + (OPENL.all ? '\u25b2' : '\u25bc \u0628\u0628\u06cc\u0646') + '</span></div>';
               if (OPENL.all) h += liveRows(LIVEM, true);
@@ -1628,6 +1759,7 @@ jobs:
               '<div class="box"><b>\ud83d\udd11 \u06a9\u0644\u06cc\u062f API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">\u0630\u062e\u06cc\u0631\u0647 \u06a9\u0644\u06cc\u062f</button>' +
               (r ? '<div class="mut" style="margin-top:8px">\u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647 \u0627\u06cc\u0646 \u0645\u0627\u0647: ' + esc(r) + '</div>' : '') + '</div>' +
               '<div class="box"><b>\ud83d\udd04 \u0622\u067e\u062f\u06cc\u062a \u0628\u0631\u0646\u0627\u0645\u0647</b><div class="mut">\u0646\u0633\u062e\u0647 \u0641\u0639\u0644\u06cc: ' + (BUILD ? 'v' + fa(BUILD) : '-') + '</div><button class="btn blue" onclick="checkUpdate(true)">\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a</button></div>' +
+              '<div class="box"><b>\ud83c\udf0d \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc ESPN</b><div class="mut">' + (ESV && ESV.ok ? fa(Object.keys(ESV.ok).length) + ' \u0644\u06cc\u06af \u0627\u0632 \u0644\u06cc\u0633\u062a\u062a \u062a\u0648 ESPN \u067e\u06cc\u062f\u0627 \u0634\u062f. \u0647\u0641\u062a\u0647\u200c\u0627\u06cc \u06cc\u0647 \u0628\u0627\u0631 \u062e\u0648\u062f\u06a9\u0627\u0631 \u0686\u06a9 \u0645\u06cc\u0634\u0647.' : '\u0647\u0646\u0648\u0632 \u0686\u06a9 \u0646\u0634\u062f\u0647.') + '</div><button class="btn" onclick="probeES(true)">' + (ESVR ? '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc...' : '\ud83d\udd04 \u0628\u0631\u0631\u0633\u06cc \u062f\u0648\u0628\u0627\u0631\u0647 (\u0631\u0627\u06cc\u06af\u0627\u0646)') + '</button></div>' +
               '<div class="box"><b>\ud83e\ude99 \u0645\u062f\u06cc\u0631\u06cc\u062a \u0633\u06a9\u0647</b><div class="mut">\u0645\u0648\u062c\u0648\u062f\u06cc \u0641\u0639\u0644\u06cc: ' + fc(W.coins) + '</div><input id="coin" type="number" step="0.01" inputmode="decimal" placeholder="\u062a\u0639\u062f\u0627\u062f \u0633\u06a9\u0647">' +
               '<div class="quick"><button onclick="coins(1)">\u2795 \u0627\u0636\u0627\u0641\u0647 \u06a9\u0646</button><button onclick="coins(0)">\u270f\ufe0f \u062a\u0646\u0638\u06cc\u0645 \u0645\u0648\u062c\u0648\u062f\u06cc</button></div></div>' +
               '<div class="box"><b>\ud83d\udd14 \u06cc\u0627\u062f\u0622\u0648\u0631 \u0628\u0627\u0632\u06cc</b><div class="mut">\u06cc\u06a9 \u0633\u0627\u0639\u062a \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0631\u0648\u0634\u0648\u0646 \u0634\u0631\u0637 \u0645\u06cc\u200c\u0628\u0646\u062f\u06cc (\u06cc\u0627 \u0632\u0646\u06af\u0648\u0644\u0647\u200c\u0634\u0648\u0646 \u0631\u0648 \u0631\u0648\u0634\u0646 \u0645\u06cc\u200c\u06a9\u0646\u06cc) \u0646\u0648\u062a\u06cc\u0641\u06cc\u06a9\u06cc\u0634\u0646 \u0645\u06cc\u0627\u062f.</div></div>' +
