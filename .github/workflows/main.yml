@@ -464,7 +464,7 @@ jobs:
             soccer_china_superleague: 'chn.1', soccer_australia_aleague: 'aus.1'
           };
           var LIVE = {}, LT = {}, LTRY = {}, LERR = {}, FX_TTL = 30 * 60000, FXTRY = {}, LIVEC = null, LCT = 0, REVE = {};
-          var LIVEM = [], ESN = ld('esn', {}), DAY = null, DAYT = 0, DAYF = 0, DAYTRY = 0, DAYU = true, DAY_TTL = 10 * 60000, OPENL = {}, MEDIT = {};
+          var LIVEM = [], ESN = ld('esn', {}), DAY = null, DAYT = 0, DAYF = 0, DAYTRY = 0, DAYU = true, DAYE = false, DAYN = 0, RMALL = false, AFE = false, AFOP = { t: 0, d: [] }, DAY_TTL = 10 * 60000, OPENL = {}, MEDIT = {};
           var MAN = ld('man', {});
           (function () { var n = Date.now(), ch = false; for (var k in MAN) { if (!MAN[k] || !MAN[k]._t || new Date(MAN[k]._t).getTime() + 3 * 86400000 < n) { delete MAN[k]; ch = true; } } if (ch) sv('man', MAN); })();
           (function () { for (var k in ESPN) REVE[ESPN[k]] = k; })();
@@ -816,15 +816,15 @@ jobs:
           }
           function renderLeagues() {
             var h = '<div class="leagues">' + chip('\ud83d\udcc2 \u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627 \u0648 \u0644\u06cc\u06af\u200c\u0647\u0627', reg == 'browse', "pickReg('browse')") +
-              chip('\u2b50 \u0645\u062d\u0628\u0648\u0628', reg == 'pop', "pickReg('pop')") + chip('\u23f0 \u0628\u0647 \u062a\u0631\u062a\u06cc\u0628 \u0633\u0627\u0639\u062a', reg == 'all', "pickReg('all')") + chip('\ud83d\udcc5 \u0627\u0645\u0631\u0648\u0632 (\u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f)', reg == 'day', "pickReg('day')") + chip('\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627', reg == 'af', "pickReg('af')") + '</div>';
+              chip('\u2b50 \u0645\u062d\u0628\u0648\u0628', reg == 'pop', "pickReg('pop')") + chip('\u23f0 \u0628\u0647 \u062a\u0631\u062a\u06cc\u0628 \u0633\u0627\u0639\u062a', reg == 'all', "pickReg('all')") + chip('\ud83d\udcc5 \u0627\u0645\u0631\u0648\u0632', reg == 'day', "pickReg('day')") + chip('\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627', reg == 'af', "pickReg('af')") + '</div>';
             if (reg == 'pop') {
               h += '<div class="leagues">';
               leaguesFor('pop').forEach(function (s) { h += chip(lname(s.key), s.key == cur, "pickLeague('" + s.key + "')", 'sm'); });
               h += '</div>';
             }
             if (reg == 'lg') h += '<div class="leagues">' + chip('\ud83d\udccd ' + lname(cur), true, '', 'sm') + chip('\u21a9\ufe0f \u0628\u0631\u06af\u0634\u062a \u0628\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627', false, "pickReg('browse')", 'sm') + '</div>';
-            if (reg == 'day') h += '<div class="leagues">' + chip('\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647', DAYU, 'DAYU=true;renderLeagues();renderDay(true)', 'sm') + chip('\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632', !DAYU, 'DAYU=false;renderLeagues();renderDay(true)', 'sm') + '</div>';
-            if (reg == 'af') h += '<div class="leagues">' + chip('\u0627\u0645\u0631\u0648\u0632', AFD == 0, 'AFD=0;AFL=null;renderLeagues();renderAF(false)', 'sm') + chip('\u0641\u0631\u062f\u0627', AFD == 1, 'AFD=1;AFL=null;renderLeagues();renderAF(false)', 'sm') + chip('\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647', AFU, 'AFU=!AFU;renderLeagues();renderAF(false)', 'sm') + (AFL ? chip('\u21a9\ufe0f \u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627', false, 'AFL=null;renderLeagues();renderAF(false)', 'sm') : '') + '</div>';
+            if (reg == 'day') h += '<div class="leagues">' + chip('\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647', DAYU && !DAYE, 'DAYU=true;DAYE=false;renderLeagues();renderDay(true)', 'sm') + chip('\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632', !DAYU && !DAYE, 'DAYU=false;DAYE=false;renderLeagues();renderDay(true)', 'sm') + chip('\ud83c\udfc1 \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632', DAYE, 'DAYE=true;renderLeagues();renderDay(true)', 'sm') + '<span class="mut" style="padding:0 6px">\u0645\u0646\u0628\u0639: ' + (afKey() ? 'API-Football' : 'ESPN') + '</span></div>';
+            if (reg == 'af') h += '<div class="leagues">' + chip('\u0627\u0645\u0631\u0648\u0632', AFD == 0, 'AFD=0;AFL=null;renderLeagues();renderAF(false)', 'sm') + chip('\u0641\u0631\u062f\u0627', AFD == 1, 'AFD=1;AFL=null;renderLeagues();renderAF(false)', 'sm') + chip('\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647', AFU && !AFE, 'AFU=!AFU;AFE=false;renderLeagues();renderAF(false)', 'sm') + chip('\ud83c\udfc1 \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0647\u0627', AFE, 'AFE=!AFE;AFL=null;renderLeagues();renderAF(false)', 'sm') + (AFL ? chip('\u21a9\ufe0f \u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627', false, 'AFL=null;renderLeagues();renderAF(false)', 'sm') : '') + '</div>';
             if (reg != 'browse' && reg != 'day' && reg != 'af') {
               h += '<div class="leagues">';
               DFS.forEach(function (d) { h += chip(d[1], DF == d[0], "pickDF('" + d[0] + "')", 'sm'); });
@@ -1060,13 +1060,14 @@ jobs:
           }
           function renderDay(soft, force) {
             CUR = null;
+            if (afKey()) { dayAF(soft, force); return; }
             if (soft || (!force && dayFresh())) { if (DAY) { showDay(); return; } if (soft) return; }
             if (DAYF) { if (!DAY) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632...</div>'; return; }
             if (!DAY) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 (\u0631\u0627\u06cc\u06af\u0627\u0646\u060c \u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f)...</div>';
             else toast('\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc...');
             fetchDay(function (ok, er) {
               if (reg != 'day' || !pageOn('matches')) return;
-              if (DAY) { showDay(); if (!ok) toast('\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f (' + er + ')'); }
+              if (DAY) { showDay(); if (!ok) toast('\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f (' + er + ')');  else if (force) toast('\u2705 \u0628\u0631\u0648\u0632 \u0634\u062f\u060c ' + fa(DAYN) + ' \u0628\u0627\u0632\u06cc'); }
               else $('list').innerHTML = '<div class="empty">\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (er ? ' (\u062e\u0637\u0627 ' + esc(er) + ')' : '') + '<br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u0648 VPN \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br><br>' + chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646', false, 'renderDay(false,1)') + '</div>';
             });
             liveCounts();
@@ -1074,8 +1075,8 @@ jobs:
           function showDay() {
             var now = Date.now(), today = dk(now), oc = {}, out = [], used = {}, lgs = {};
             DAY.d.forEach(function (m) {
-              if (m.pp || dk(m.time) != today || !alive(m, now)) return;
-              if (DAYU && started(m)) return;
+              if (m.pp || dk(m.time) != today) return;
+              if (DAYE) { if (!dayFin(m, now)) return; } else { if (!alive(m, now)) return; if (DAYU && started(m)) return; }
               if (!isES(m.lg)) {
                 if (!(m.lg in oc)) { var c = ld('odds_' + m.lg, null); oc[m.lg] = (c && c.d) ? c.d : []; }
                 var hit = null; oc[m.lg].forEach(function (o) { if (!hit && !used[o.id] && sameM(o, m)) hit = o; });
@@ -1083,11 +1084,45 @@ jobs:
               }
               out.push(m); lgs[m.lg] = 1;
             });
-            NL = Object.keys(lgs).length; ALLK = [];
-            if (!out.length) { $('list').innerHTML = '<div class="empty">' + (DAYU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u0645\u0648\u0646\u062f\u0647.<br>\u00ab\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632\u00bb \u0631\u0648 \u0628\u0632\u0646\u060c \u06cc\u0627 \u0628\u0631\u0627\u06cc \u0641\u0631\u062f\u0627 \u0628\u0631\u0648 \u0633\u0631\u0627\u063a \u00ab\u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627\u00bb.' : '\u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f') + '<br><br>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)') + '</div>'; return; }
-            renderMatches(out, true);
+            NL = Object.keys(lgs).length; ALLK = []; DAYN = out.length;
+            if (!out.length) { $('list').innerHTML = '<div class="empty">' + (DAYE ? '\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u06cc\u0633\u062a.' : DAYU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u0645\u0648\u0646\u062f\u0647.<br>\u00ab\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632\u00bb \u0631\u0648 \u0628\u0632\u0646\u060c \u06cc\u0627 \u0628\u0631\u0627\u06cc \u0641\u0631\u062f\u0627 \u0628\u0631\u0648 \u0633\u0631\u0627\u063a \u00ab\u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627\u00bb.' : '\u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f') + '<br><br>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)') + '</div>'; return; }
+            RMALL = DAYE; renderMatches(out, true); RMALL = false;
           }
 
+          /* today tab from API-Football + finished games (update 25) */
+          function dayFin(m, now) { var L = LIVE[m.id]; return started(m) && ((L && L.st == 'post') || m.st == 'post' || !alive(m, now || Date.now())); }
+          function afOddsPool(now) {
+            if (now - AFOP.t < 60000) return AFOP.d;
+            var d = [];
+            SPORTS.forEach(function (s) { var c = ld('odds_' + s.key, null); if (c && c.d) c.d.forEach(function (o) { if (Math.abs(new Date(o.time).getTime() - now) < 2 * 86400000) d.push(o); }); });
+            AFOP = { t: now, d: d }; return d;
+          }
+          function dayAF(soft, force) {
+            var ds = afDate(0), c = ld('af_' + ds, null);
+            if (soft) { if (c) showDayAF(c); return; }
+            if (!c) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 \u0627\u0632 API-Football...</div>';
+            else if (force) toast('\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc...');
+            afGet(ds, force ? 0 : 0.75 * 3600000, function (d, er) {
+              if (reg != 'day' || !pageOn('matches')) return;
+              if (!d) { $('list').innerHTML = '<div class="empty">\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (er ? '<br><span class="ltr">' + esc(er) + '</span>' : '') + '<br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a\u060c VPN \u0648 \u06a9\u0644\u06cc\u062f API-Football \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br><br>' + chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646', false, 'renderDay(false,1)') + '</div>'; return; }
+              showDayAF(d);
+              if (force) toast(er ? '\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f: ' + er : '\u2705 \u0628\u0631\u0648\u0632 \u0634\u062f\u060c ' + fa(DAYN) + ' \u0628\u0627\u0632\u06cc');
+            });
+          }
+          function showDayAF(d) {
+            var now = Date.now(), today = dk(now), out = [], lgs = {}, used = {}, oc = afOddsPool(now);
+            d.d.forEach(function (m) {
+              if (m.pp || dk(m.time) != today) return;
+              if (started(m)) afLive(m);
+              if (DAYE) { if (!dayFin(m, now)) return; } else { if (!alive(m, now)) return; if (DAYU && started(m)) return; }
+              var hit = null; oc.forEach(function (o) { if (!hit && !used[o.id] && sameM(o, m)) hit = o; });
+              if (hit) { used[hit.id] = 1; if (LIVE[m.id] && !LIVE[hit.id]) LIVE[hit.id] = LIVE[m.id]; m = hit; }
+              MATCHES[m.id] = m; out.push(m); lgs[m.lg] = 1;
+            });
+            NL = Object.keys(lgs).length; ALLK = []; DAYN = out.length;
+            if (!out.length) { $('list').innerHTML = '<div class="empty">' + (DAYE ? '\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u06cc\u0633\u062a.' : (DAYU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u0645\u0648\u0646\u062f\u0647. \u00ab\u0641\u0631\u062f\u0627\u00bb \u0631\u0648 \u062a\u0648 \u062a\u0628 \u00ab\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627\u00bb \u0628\u0628\u06cc\u0646.' : '\u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f')) + '<br><br>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)', false, 'renderDay(false,1)') + '</div>'; return; }
+            RMALL = DAYE; renderMatches(out, true); RMALL = false;
+          }
           /* API-Football, all leagues of the world (update 24) */
           var AF_API = 'https://v3.football.api-sports.io/', AFD = 0, AFU = true, AFL = null, AFO = {}, AFB = {}, AFCS = [], AFLG = ld('aflg', {});
           function afKey() { return ld('afkey', ''); }
@@ -1173,6 +1208,7 @@ jobs:
             if (!c) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc ' + (AFD ? '\u0641\u0631\u062f\u0627' : '\u0627\u0645\u0631\u0648\u0632') + ' \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627...</div>';
             afGet(ds, force ? 0 : (AFD ? 3 : 0.75) * 3600000, function (d, er) {
               if (reg != 'af' || !pageOn('matches')) return;
+              if (force && d && !er) toast('\u2705 \u0628\u0631\u0648\u0632 \u0634\u062f\u060c ' + fa(d.d.length) + ' \u0628\u0627\u0632\u06cc');
               if (er && d) toast('\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f: ' + er);
               if (!d) { $('list').innerHTML = '<div class="empty">\u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (er ? '<br><span class="ltr">' + esc(er) + '</span>' : '') + '<br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a\u060c VPN \u0648 \u06a9\u0644\u06cc\u062f API-Football \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br><br>' + chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646', false, 'renderAF(1)') + '</div>'; return; }
               showAF(d);
@@ -1181,11 +1217,11 @@ jobs:
           function afTog(i) { var c = AFCS[i]; AFO[c] = !AFO[c]; showAF(ld('af_' + afDate(AFD), { t: 0, d: [] })); }
           function afPick(k) { AFL = k; renderLeagues(); showAF(ld('af_' + afDate(AFD), { t: 0, d: [] })); window.scrollTo(0, 0); }
           function showAF(d) {
-            var now = Date.now(), ms = d.d.filter(function (m) { return !m.pp && alive(m, now) && (!AFU || !started(m)); });
+            var now = Date.now(), ms = d.d.filter(function (m) { if (started(m)) afLive(m); return !m.pp && (AFE ? dayFin(m, now) : (alive(m, now) && (!AFU || !started(m)))); });
             ms.forEach(function (m) { MATCHES[m.id] = m; if (started(m)) afLive(m); });
             if (AFL) {
               var L = ms.filter(function (m) { return m.lg == AFL; });
-              if (L.length) { NL = 1; ALLK = []; renderMatches(L, true); return; }
+              if (L.length) { NL = 1; ALLK = []; RMALL = AFE; renderMatches(L, true); RMALL = false; return; }
               AFL = null; renderLeagues();
             }
             var g = {}, n = 0;
@@ -1193,7 +1229,7 @@ jobs:
             AFCS = Object.keys(g).sort(function (a, b) { if (a == 'World') return -1; if (b == 'World') return 1; return g[b].n - g[a].n; });
             var rr = ld('afrem', null);
             var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(n) + ' \u0628\u0627\u0632\u06cc \u0627\u0632 ' + fmt(AFCS.length) + ' \u06a9\u0634\u0648\u0631' + (d.t ? ' | \u062f\u0631\u06cc\u0627\u0641\u062a: ' + agoTxt(d.t) : '') + (rr ? ' | \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647: ' + fa(rr.n) : '') + '</span>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)', false, 'renderAF(1)', 'sm') + '</div>';
-            if (!n) h += '<div class="empty">' + (AFU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0646\u0645\u0648\u0646\u062f\u0647. \u00ab\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u00bb \u0631\u0648 \u062e\u0627\u0645\u0648\u0634 \u06a9\u0646 \u06cc\u0627 \u0628\u0631\u0648 \u0633\u0631\u0627\u063a \u0641\u0631\u062f\u0627.' : '\u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f') + '</div>';
+            if (!n) h += '<div class="empty">' + (AFE ? '\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0627\u06cc \u0646\u06cc\u0633\u062a.' : AFU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0646\u0645\u0648\u0646\u062f\u0647. \u00ab\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u00bb \u0631\u0648 \u062e\u0627\u0645\u0648\u0634 \u06a9\u0646 \u06cc\u0627 \u0628\u0631\u0648 \u0633\u0631\u0627\u063a \u0641\u0631\u062f\u0627.' : '\u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f') + '</div>';
             AFCS.forEach(function (c, i) {
               var o = AFO[c], cc = g[c], ci = afCty(c);
               h += '<div class="box" style="margin:6px 14px;padding:10px"><div class="row" onclick="afTog(' + i + ')"><b>' + (o ? '\u25be ' : '\u25b8 ') + ci.f + ' ' + esc(ci.n) + '</b><span class="mut">' + fa(cc.n) + ' \u0628\u0627\u0632\u06cc</span></div>';
@@ -1596,13 +1632,13 @@ jobs:
             var now = Date.now(), list = $('list'), remn = ld('remaining', '');
             OT = {}; d.forEach(function (m) { if (!(m.lg in OT)) { var c = ld('odds_' + m.lg, null); OT[m.lg] = c ? c.t : 0; } });
             if (!multi && !(cur in OT)) { var oc = ld('odds_' + cur, null); OT[cur] = oc ? oc.t : 0; }
-            var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return alive(m, now) && (reg == 'day' || reg == 'af' || inDF(t)); })
+            var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return (RMALL || alive(m, now)) && (reg == 'day' || reg == 'af' || inDF(t)); })
               .sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
-            var hc = reg == 'af' ? chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)', false, 'renderAF(1)', 'sm') : reg == 'day' ? chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)', 'sm') : ((!multi && isES(cur)) ? '<span class="mut">\u270d\ufe0f \u0636\u0631\u0627\u06cc\u0628 \u0627\u06cc\u0646 \u0644\u06cc\u06af \u062f\u0633\u062a\u06cc\u0647</span>' : '');
+            var hc = reg == 'af' ? chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)', false, 'renderAF(1)', 'sm') : reg == 'day' ? chip(afKey() ? '\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)' : '\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)', 'sm') : ((!multi && isES(cur)) ? '<span class="mut">\u270d\ufe0f \u0636\u0631\u0627\u06cc\u0628 \u0627\u06cc\u0646 \u0644\u06cc\u06af \u062f\u0633\u062a\u06cc\u0647</span>' : '');
             var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(ms.length) + ' \u0628\u0627\u0632\u06cc' + (multi ? ' \u0627\u0632 ' + fmt(NL) + ' \u0644\u06cc\u06af' : '') +
               (!multi && OT[cur] ? ' | \u062f\u0631\u06cc\u0627\u0641\u062a: ' + agoTxt(OT[cur]) : '') + (remn && reg != 'day' && reg != 'af' ? ' | \u0627\u0639\u062a\u0628\u0627\u0631: ' + esc(remn) : '') + '</span>' +
               (hc ? hc : chip(multi ? '\ud83d\udcb0 \u0636\u0631\u0627\u06cc\u0628 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 (' + fmt(ALLK.length * 2) + ' \u0627\u0639\u062a\u0628\u0627\u0631)' : (OT[cur] ? '\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)' : '\ud83d\udcb0 \u062f\u0631\u06cc\u0627\u0641\u062a \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)'), false, multi ? 'loadMany(ALLK.slice())' : 'loadOdds(true)', 'sm')) + '</div>';
-            if (reg == 'day') h += '<div class="mut" style="padding:0 14px 4px">\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646 ESPN\u060c \u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f \u0648 \u0628\u062f\u0648\u0646 \u0627\u0639\u062a\u0628\u0627\u0631. \u0647\u0631 \u0644\u06cc\u06af\u06cc \u0636\u0631\u06cc\u0628 \u0646\u062f\u0627\u0634\u062a\u060c \u0631\u0648\u06cc \u270d\ufe0f \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628\u0634 \u0631\u0648 \u0627\u0632 1xBet \u0648\u0627\u0631\u062f \u06a9\u0646.</div>';
+            if (reg == 'day' && !afKey()) h += '<div class="mut" style="padding:0 14px 4px">\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646 ESPN\u060c \u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f \u0648 \u0628\u062f\u0648\u0646 \u0627\u0639\u062a\u0628\u0627\u0631. \u0647\u0631 \u0644\u06cc\u06af\u06cc \u0636\u0631\u06cc\u0628 \u0646\u062f\u0627\u0634\u062a\u060c \u0631\u0648\u06cc \u270d\ufe0f \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628\u0634 \u0631\u0648 \u0627\u0632 1xBet \u0648\u0627\u0631\u062f \u06a9\u0646.</div>';
             if (!ms.length) { list.innerHTML = h + '<div class="empty">\u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0641\u06cc\u0644\u062a\u0631 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0646\u06cc\u0633\u062a</div>'; return; }
             var last = '';
             ms.forEach(function (m) {
