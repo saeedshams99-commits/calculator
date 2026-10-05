@@ -212,6 +212,40 @@ jobs:
                   }
 
                   @JavascriptInterface
+                  public void get2(final String url, final String hk, final String hv, final String cb) {
+                      new Thread(new Runnable() {
+                          public void run() {
+                              JSONObject r = new JSONObject();
+                              try {
+                                  HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                                  c.setConnectTimeout(15000);
+                                  c.setReadTimeout(30000);
+                                  c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36");
+                                  c.setRequestProperty("Accept", "application/json");
+                                  if (hk != null && hk.length() > 0) c.setRequestProperty(hk, hv);
+                                  int code = c.getResponseCode();
+                                  InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+                                  r.put("status", code);
+                                  r.put("body", read(in));
+                                  r.put("remaining", String.valueOf(c.getHeaderField("x-ratelimit-requests-remaining")));
+                              } catch (Exception e) {
+                                  try {
+                                      r.put("status", 0);
+                                      r.put("body", String.valueOf(e.getMessage()));
+                                  } catch (Exception ignored) {
+                                  }
+                              }
+                              final String js = "window.__cb(" + JSONObject.quote(cb) + "," + JSONObject.quote(r.toString()) + ")";
+                              runOnUiThread(new Runnable() {
+                                  public void run() {
+                                      web.evaluateJavascript(js, null);
+                                  }
+                              });
+                          }
+                      }).start();
+                  }
+
+                  @JavascriptInterface
                   public void openUrl(String url) {
                       try {
                           Intent i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
@@ -752,6 +786,7 @@ jobs:
           function isES(lg) { return String(lg).indexOf('es_') == 0; }
           function lname(k) {
             if (FA[k]) return FA[k];
+            if (isAF(k)) { var af = AFLG[k]; return af ? afCty(af.c).f + ' ' + esc(af.n) : '\u26bd'; }
             if (isES(k)) return cinfo(k).f + ' ' + esc(ESXN[k.slice(3)] || ESN[k.slice(3)] || k.slice(3));
             for (var i = 0; i < SPORTS.length; i++) if (SPORTS[i].key == k) return '\u26bd ' + esc(SPORTS[i].title);
             return k;
@@ -781,7 +816,7 @@ jobs:
           }
           function renderLeagues() {
             var h = '<div class="leagues">' + chip('\ud83d\udcc2 \u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627 \u0648 \u0644\u06cc\u06af\u200c\u0647\u0627', reg == 'browse', "pickReg('browse')") +
-              chip('\u2b50 \u0645\u062d\u0628\u0648\u0628', reg == 'pop', "pickReg('pop')") + chip('\u23f0 \u0628\u0647 \u062a\u0631\u062a\u06cc\u0628 \u0633\u0627\u0639\u062a', reg == 'all', "pickReg('all')") + chip('\ud83d\udcc5 \u0627\u0645\u0631\u0648\u0632 (\u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f)', reg == 'day', "pickReg('day')") + '</div>';
+              chip('\u2b50 \u0645\u062d\u0628\u0648\u0628', reg == 'pop', "pickReg('pop')") + chip('\u23f0 \u0628\u0647 \u062a\u0631\u062a\u06cc\u0628 \u0633\u0627\u0639\u062a', reg == 'all', "pickReg('all')") + chip('\ud83d\udcc5 \u0627\u0645\u0631\u0648\u0632 (\u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f)', reg == 'day', "pickReg('day')") + chip('\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627', reg == 'af', "pickReg('af')") + '</div>';
             if (reg == 'pop') {
               h += '<div class="leagues">';
               leaguesFor('pop').forEach(function (s) { h += chip(lname(s.key), s.key == cur, "pickLeague('" + s.key + "')", 'sm'); });
@@ -789,7 +824,8 @@ jobs:
             }
             if (reg == 'lg') h += '<div class="leagues">' + chip('\ud83d\udccd ' + lname(cur), true, '', 'sm') + chip('\u21a9\ufe0f \u0628\u0631\u06af\u0634\u062a \u0628\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627', false, "pickReg('browse')", 'sm') + '</div>';
             if (reg == 'day') h += '<div class="leagues">' + chip('\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647', DAYU, 'DAYU=true;renderLeagues();renderDay(true)', 'sm') + chip('\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632', !DAYU, 'DAYU=false;renderLeagues();renderDay(true)', 'sm') + '</div>';
-            if (reg != 'browse' && reg != 'day') {
+            if (reg == 'af') h += '<div class="leagues">' + chip('\u0627\u0645\u0631\u0648\u0632', AFD == 0, 'AFD=0;AFL=null;renderLeagues();renderAF(false)', 'sm') + chip('\u0641\u0631\u062f\u0627', AFD == 1, 'AFD=1;AFL=null;renderLeagues();renderAF(false)', 'sm') + chip('\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647', AFU, 'AFU=!AFU;renderLeagues();renderAF(false)', 'sm') + (AFL ? chip('\u21a9\ufe0f \u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627', false, 'AFL=null;renderLeagues();renderAF(false)', 'sm') : '') + '</div>';
+            if (reg != 'browse' && reg != 'day' && reg != 'af') {
               h += '<div class="leagues">';
               DFS.forEach(function (d) { h += chip(d[1], DF == d[0], "pickDF('" + d[0] + "')", 'sm'); });
               h += '</div>';
@@ -801,13 +837,14 @@ jobs:
             if (g == 'browse') { renderTree(); return; }
             if (g == 'all') { renderAll(); return; }
             if (g == 'day') { renderDay(false); return; }
+            if (g == 'af') { renderAF(false); return; }
             if (POP.indexOf(cur) < 0) cur = leaguesFor('pop')[0].key;
             loadOdds(false);
           }
           function pickLeague(k) { cur = k; renderLeagues(); loadOdds(false); }
           function openLeague(k) { cur = k; reg = POP.indexOf(k) >= 0 ? 'pop' : 'lg'; renderLeagues(); loadOdds(false); window.scrollTo(0, 0); }
           function pickDF(d) { DF = d; renderLeagues(); rerender(); }
-          function rerender() { if (reg == 'browse') renderTree(); else if (reg == 'day') renderDay(true); else if (reg == 'all') renderAll(); else if (CUR) renderMatches(CUR, false); }
+          function rerender() { if (reg == 'browse') renderTree(); else if (reg == 'day') renderDay(true); else if (reg == 'af') renderAF(false); else if (reg == 'all') renderAll(); else if (CUR) renderMatches(CUR, false); }
           function tgl(o, k) { o[k] = !o[k]; renderTree(); }
           function dayFresh() { return DAY && Date.now() - DAYT < DAY_TTL; }
           function renderTree() {
@@ -1051,6 +1088,139 @@ jobs:
             renderMatches(out, true);
           }
 
+          /* API-Football, all leagues of the world (update 24) */
+          var AF_API = 'https://v3.football.api-sports.io/', AFD = 0, AFU = true, AFL = null, AFO = {}, AFB = {}, AFCS = [], AFLG = ld('aflg', {});
+          function afKey() { return ld('afkey', ''); }
+          function isAF(lg) { return String(lg).indexOf('af_') == 0; }
+          function afHttp(path, f) { var id = 'c' + (cbn++); cbs[id] = f; Android.get2(AF_API + path, 'x-apisports-key', afKey(), id); }
+          function afRem(r) { if (r.remaining && r.remaining != 'null' && !isNaN(+r.remaining)) sv('afrem', { n: +r.remaining, t: Date.now() }); }
+          function afErr(j) { var e = j && j.errors; if (!e || e.length === 0) return ''; var s = []; for (var k in e) s.push(e[k]); return s.join(' '); }
+          var AFP = { FT: 'post', AET: 'post', PEN: 'post', '1H': 'in', HT: 'in', '2H': 'in', ET: 'in', BT: 'in', P: 'in', LIVE: 'in', INT: 'in', SUSP: 'in' }, AFX = { PST: 1, CANC: 1, ABD: 1, AWD: 1, WO: 1 };
+          function afDate(off) { return dk(Date.now() + off * 86400000); }
+          function afCty(c) {
+            if (!c || c == 'World') return { f: '\ud83c\udf0d', n: '\u062c\u0647\u0627\u0646\u06cc' };
+            var id = String(c).toLowerCase().replace(/-/g, '_');
+            for (var j = 0; j < COUNTRIES.length; j++) if (COUNTRIES[j][0] == id) return { f: COUNTRIES[j][1], n: COUNTRIES[j][2] };
+            return { f: '\u26bd', n: c };
+          }
+          function afM(f) {
+            var fx = f.fixture || {}, lg = f.league || {}, t = f.teams || {}, st = (fx.status || {}).short || 'NS';
+            if (!fx.id || !t.home || !t.away) return null;
+            var k = 'af_' + lg.id;
+            if (!AFLG[k] || AFLG[k].n != lg.name) AFLG[k] = { n: lg.name || '?', c: lg.country || 'World' };
+            var m = { id: 'af' + fx.id, lg: k, home: t.home.name, away: t.away.name, time: fx.date, h: null, d: null, a: null, ov: null, un: null, fx: 1, st: AFP[st] || 'pre', ss: st };
+            if (AFX[st]) m.pp = 1;
+            var g = f.goals || {}, ft = (f.score || {}).fulltime || {}, hs = g.home, as = g.away;
+            if ((st == 'AET' || st == 'PEN') && ft.home !== null && ft.home !== undefined) { hs = ft.home; as = ft.away; }
+            if (m.st != 'pre' && hs !== null && hs !== undefined) { m.hs = hs; m.as = as; m.el = (fx.status || {}).elapsed; }
+            return m;
+          }
+          function afLive(m) {
+            if (m.pp) { LIVE[m.id] = { hs: 0, as: 0, st: 'post', pp: 1, clk: '', t: Date.now() }; return; }
+            if (m.st == 'pre' || m.hs === undefined) return;
+            LIVE[m.id] = { hs: m.hs, as: m.as, st: m.st, clk: m.st == 'post' ? 'FT' : (m.el ? m.el + "'" : m.ss), t: Date.now() };
+          }
+          function afGet(ds, ttl, cb) {
+            var c = ld('af_' + ds, null);
+            if (c && Date.now() - c.t < ttl) { cb(c, null); return; }
+            if (!afKey()) { cb(c, 'nokey'); return; }
+            if (AFB[ds]) { AFB[ds].push(cb); return; }
+            AFB[ds] = [cb];
+            afHttp('fixtures?date=' + ds + '&timezone=Asia/Tehran', function (r) {
+              afRem(r);
+              var out = c, er = null;
+              if (r.status != 200) er = 'HTTP ' + r.status + ' ' + String(r.body || '').slice(0, 80);
+              else {
+                try {
+                  var j = JSON.parse(r.body), e = afErr(j);
+                  if (e) er = e;
+                  else {
+                    var d = []; (j.response || []).forEach(function (f) { var m = afM(f); if (m) d.push(m); });
+                    out = { t: Date.now(), d: d }; sv('af_' + ds, out); sv('aflg', AFLG);
+                    var ks = ld('afks', []), now = Date.now();
+                    if (ks.indexOf(ds) < 0) ks.push(ds);
+                    ks = ks.filter(function (x) { var keep = now - new Date(x + 'T12:00:00').getTime() < 5 * 86400000; if (!keep) sv('af_' + x, null); return keep; });
+                    sv('afks', ks);
+                  }
+                } catch (x) { er = 'JSON'; }
+              }
+              if (out) out.d.forEach(afLive);
+              var q = AFB[ds]; delete AFB[ds];
+              q.forEach(function (f) { f(out, er); });
+              if (out && !er) afterLive();
+            });
+          }
+          function afSync(force, done) {
+            if (!afKey()) { if (done) done(); return; }
+            var now = Date.now(), ds = {};
+            BETS.forEach(function (b) {
+              if (b.st != 'p') return;
+              b.sel.forEach(function (x) {
+                if (x.res != 'p' || !isAF(x.lg)) return;
+                var k = new Date(x.time).getTime(); if (k > now || now - k > 84 * 3600000) return;
+                var L = LIVE[x.id]; if (L && L.st == 'post') return;
+                ds[dk(k)] = 1;
+              });
+            });
+            var ks = Object.keys(ds), left = ks.length;
+            if (!left) { if (done) done(); return; }
+            ks.forEach(function (d) { afGet(d, force ? 120000 : 15 * 60000, function (c) { if (c) c.d.forEach(afLive); if (--left == 0) { afterLive(); if (done) done(); } }); });
+          }
+          function renderAF(force) {
+            CUR = null;
+            if (!afKey()) { $('list').innerHTML = '<div class="empty">\ud83c\udf10 \u0628\u0631\u0627\u06cc \u062f\u06cc\u062f\u0646 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627\u060c \u06a9\u0644\u06cc\u062f \u0631\u0627\u06cc\u06af\u0627\u0646 API-Football \u0631\u0648 \u062a\u0648 \u2699\ufe0f \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0648\u0627\u0631\u062f \u06a9\u0646.<br><br>' + chip('\u2699\ufe0f \u0631\u0641\u062a\u0646 \u0628\u0647 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a', false, "go('set')") + '</div>'; return; }
+            var ds = afDate(AFD), c = ld('af_' + ds, null);
+            if (!c) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc ' + (AFD ? '\u0641\u0631\u062f\u0627' : '\u0627\u0645\u0631\u0648\u0632') + ' \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627...</div>';
+            afGet(ds, force ? 0 : (AFD ? 3 : 0.75) * 3600000, function (d, er) {
+              if (reg != 'af' || !pageOn('matches')) return;
+              if (er && d) toast('\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f: ' + er);
+              if (!d) { $('list').innerHTML = '<div class="empty">\u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (er ? '<br><span class="ltr">' + esc(er) + '</span>' : '') + '<br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a\u060c VPN \u0648 \u06a9\u0644\u06cc\u062f API-Football \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br><br>' + chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646', false, 'renderAF(1)') + '</div>'; return; }
+              showAF(d);
+            });
+          }
+          function afTog(i) { var c = AFCS[i]; AFO[c] = !AFO[c]; showAF(ld('af_' + afDate(AFD), { t: 0, d: [] })); }
+          function afPick(k) { AFL = k; renderLeagues(); showAF(ld('af_' + afDate(AFD), { t: 0, d: [] })); window.scrollTo(0, 0); }
+          function showAF(d) {
+            var now = Date.now(), ms = d.d.filter(function (m) { return !m.pp && alive(m, now) && (!AFU || !started(m)); });
+            ms.forEach(function (m) { MATCHES[m.id] = m; if (started(m)) afLive(m); });
+            if (AFL) {
+              var L = ms.filter(function (m) { return m.lg == AFL; });
+              if (L.length) { NL = 1; ALLK = []; renderMatches(L, true); return; }
+              AFL = null; renderLeagues();
+            }
+            var g = {}, n = 0;
+            ms.forEach(function (m) { var li = AFLG[m.lg] || { n: '?', c: 'World' }, c = g[li.c] = g[li.c] || { n: 0, l: {} }; c.n++; c.l[m.lg] = (c.l[m.lg] || 0) + 1; n++; });
+            AFCS = Object.keys(g).sort(function (a, b) { if (a == 'World') return -1; if (b == 'World') return 1; return g[b].n - g[a].n; });
+            var rr = ld('afrem', null);
+            var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(n) + ' \u0628\u0627\u0632\u06cc \u0627\u0632 ' + fmt(AFCS.length) + ' \u06a9\u0634\u0648\u0631' + (d.t ? ' | \u062f\u0631\u06cc\u0627\u0641\u062a: ' + agoTxt(d.t) : '') + (rr ? ' | \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647: ' + fa(rr.n) : '') + '</span>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)', false, 'renderAF(1)', 'sm') + '</div>';
+            if (!n) h += '<div class="empty">' + (AFU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0646\u0645\u0648\u0646\u062f\u0647. \u00ab\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u00bb \u0631\u0648 \u062e\u0627\u0645\u0648\u0634 \u06a9\u0646 \u06cc\u0627 \u0628\u0631\u0648 \u0633\u0631\u0627\u063a \u0641\u0631\u062f\u0627.' : '\u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f') + '</div>';
+            AFCS.forEach(function (c, i) {
+              var o = AFO[c], cc = g[c], ci = afCty(c);
+              h += '<div class="box" style="margin:6px 14px;padding:10px"><div class="row" onclick="afTog(' + i + ')"><b>' + (o ? '\u25be ' : '\u25b8 ') + ci.f + ' ' + esc(ci.n) + '</b><span class="mut">' + fa(cc.n) + ' \u0628\u0627\u0632\u06cc</span></div>';
+              if (o) Object.keys(cc.l).sort(function (a, b) { return cc.l[b] - cc.l[a]; }).forEach(function (k) {
+                h += '<div class="row" style="padding:8px 4px;border-top:1px solid rgba(255,255,255,.08)" onclick="afPick(\'' + k + '\')"><span>\u26bd ' + esc((AFLG[k] || {}).n || k) + '</span><span class="mut">' + fa(cc.l[k]) + ' \u203a</span></div>';
+              });
+              h += '</div>';
+            });
+            $('list').innerHTML = h;
+          }
+          function saveAF() { sv('afkey', $('afk').value.trim()); toast('\u06a9\u0644\u06cc\u062f API-Football \u0630\u062e\u06cc\u0631\u0647 \u0634\u062f'); renderSet(); }
+          function testAF() {
+            var v = $('afk').value.trim(); if (!v) { toast('\u0627\u0648\u0644 \u06a9\u0644\u06cc\u062f \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+            if (v != afKey()) sv('afkey', v);
+            toast('\u062f\u0631 \u062d\u0627\u0644 \u062a\u0633\u062a \u06a9\u0644\u06cc\u062f...');
+            afHttp('status', function (r) {
+              if (r.status != 200) { toast('\u274c \u062e\u0637\u0627 ' + r.status + '\u060c \u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u0648 VPN \u0631\u0648 \u0686\u06a9 \u06a9\u0646'); return; }
+              try {
+                var j = JSON.parse(r.body), e = afErr(j);
+                if (e) { toast('\u274c ' + e); return; }
+                var q = (j.response || {}).requests || {}, lim = q.limit_day || 100, cu = q.current || 0;
+                sv('afrem', { n: lim - cu, t: Date.now() });
+                toast('\u2705 \u06a9\u0644\u06cc\u062f \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647! \u0627\u0645\u0631\u0648\u0632 ' + fa(cu) + ' \u0627\u0632 ' + fa(lim) + ' \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0645\u0635\u0631\u0641 \u0634\u062f\u0647');
+                renderSet();
+              } catch (x) { toast('\u274c \u062c\u0648\u0627\u0628 \u0646\u0627\u0645\u0639\u062a\u0628\u0631'); }
+            });
+          }
           function lvc(k) { var n = LIVEC && LIVEC[k]; return n ? '<span class="lv">\ud83d\udd34 ' + fa(n) + ' \u0632\u0646\u062f\u0647</span>' : ''; }
           function noFx(lg, err) {
             $('list').innerHTML = '<div class="empty">' + (esl(lg) ? '\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc ' + lname(lg) + ' \u0627\u0632 \u0645\u0646\u0628\u0639 \u0631\u0627\u06cc\u06af\u0627\u0646 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (err && err.e ? ' (\u062e\u0637\u0627 ' + esc(err.e) + ')' : '') + '.' : '\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646 \u0628\u0631\u0627\u06cc ' + lname(lg) + ' \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a.') + '<br><br>' +
@@ -1322,7 +1492,7 @@ jobs:
             h += '<div class="lbl">\u26bd \u0645\u062c\u0645\u0648\u0639 \u06af\u0644</div><div class="hr hh"><span></span><span>\u0628\u06cc\u0634\u062a\u0631</span><span>\u06a9\u0645\u062a\u0631</span></div>';
             TLN.forEach(function (v) { h += '<div class="hr"><span class="mut">' + fa(v) + (v % 1 == 0 ? ' \u21a9' : '') + '</span>' + mb(m, tkey('O', v), '\u0628\u06cc\u0634\u062a\u0631') + mb(m, tkey('U', v), '\u06a9\u0645\u062a\u0631') + '</div>'; });
             h += '<div class="mut" style="padding:4px;line-height:1.8">\u270d\ufe0f \u0631\u0648\u06cc \u062e\u0648\u0646\u0647 \u062e\u0627\u0644\u06cc \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628 1xBet \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633\u060c \u0631\u0648\u06cc \u062e\u0648\u0646\u0647 \u067e\u0631 \u0628\u0632\u0646 \u062a\u0627 \u0628\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637. \u21a9 \u06cc\u0639\u0646\u06cc \u062e\u0637 \u06a9\u0627\u0645\u0644: \u0627\u06af\u0647 \u062f\u0642\u06cc\u0642\u0627\u064b \u0628\u0631\u0627\u0628\u0631 \u0628\u0634\u0647 \u067e\u0648\u0644 \u0628\u0631\u0645\u06cc\u200c\u06af\u0631\u062f\u0647. \u0628\u0631\u0627\u06cc \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u06cc\u0628 \u067e\u0631\u060c \u00ab\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634\u00bb \u0631\u0648 \u0628\u0632\u0646.</div>';
-            h += '<div class="quick"><button onclick="medit(\'' + m.id + '\')">' + (MEDIT[m.id] ? '\u2705 \u062a\u0645\u0648\u0645 \u0634\u062f' : '\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u0627\u06cc\u0628') + '</button><button onclick="pasteOdds(\'' + m.id + '\')">\u1f4cb \u0686\u0633\u0628\u0627\u0646\u062f\u0646</button><button onclick="hpTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646 \u067e\u0646\u0644</button></div></div>';
+            h += '<div class="quick"><button onclick="medit(\'' + m.id + '\')">' + (MEDIT[m.id] ? '\u2705 \u062a\u0645\u0648\u0645 \u0634\u062f' : '\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u0627\u06cc\u0628') + '</button><button onclick="pasteOdds(\'' + m.id + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646</button><button onclick="hpTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646 \u067e\u0646\u0644</button></div></div>';
             return h;
           }
           function mb(m, p, label) {
@@ -1333,8 +1503,8 @@ jobs:
           }
           function manBox(m) {
             var mn = MAN[m.id], n = mn ? Object.keys(mn).filter(function (k) { return k != '_t'; }).length : 0, ed = MEDIT[m.id];
-            var tip = isES(m.lg) ? '' : '<div class="mut" style="text-align:center;padding:4px">\u06cc\u0627 \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af \u0631\u0648 \u0627\u0632 \u062f\u06a9\u0645\u0647 \u0628\u0627\u0644\u0627 \u0628\u06af\u06cc\u0631 (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)</div>';
-            if (!n && !ed) return '<div class="more" onclick="pasteOdds(\'' + m.id + '\')">\u1f4cb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627</div><div class="more" onclick="medit(\'' + m.id + '\')">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647 (\u0627\u0632 1xBet)</div>' + tip;
+            var tip = (isES(m.lg) || isAF(m.lg)) ? '' : '<div class="mut" style="text-align:center;padding:4px">\u06cc\u0627 \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af \u0631\u0648 \u0627\u0632 \u062f\u06a9\u0645\u0647 \u0628\u0627\u0644\u0627 \u0628\u06af\u06cc\u0631 (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)</div>';
+            if (!n && !ed) return '<div class="more" onclick="pasteOdds(\'' + m.id + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627</div><div class="more" onclick="medit(\'' + m.id + '\')">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647 (\u0627\u0632 1xBet)</div>' + tip;
             var h = '<div class="odds">' + mb(m, '1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646') + mb(m, 'X', '\u0645\u0633\u0627\u0648\u06cc') + mb(m, '2', '\u06f2 \u0645\u0647\u0645\u0627\u0646') + '</div>';
             h += '<div class="lbl">\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647</div><div class="odds">' + mb(m, '1X', '\u06f1 \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc') + mb(m, 'X2', '\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2') + mb(m, '12', '\u06f1 \u06cc\u0627 \u06f2') + '</div>';
             h += '<div class="lbl">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f2.\u06f5</div><div class="odds two">' + mb(m, 'O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5') + mb(m, 'U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5') + '</div>';
@@ -1344,7 +1514,7 @@ jobs:
               h += '<div class="lbl">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f3.\u06f5</div><div class="odds two">' + mb(m, 'O35', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f3.\u06f5') + mb(m, 'U35', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f3.\u06f5') + '</div>';
             }
             h += '<div class="mut" style="text-align:center;padding:4px">' + (ed ? '\u270d\ufe0f \u0631\u0648\u06cc \u0647\u0631 \u062e\u0648\u0646\u0647 \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628 1xBet \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633. \u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 \u0627\u06af\u0647 \u062e\u0627\u0644\u06cc \u0628\u0645\u0648\u0646\u0647 \u0627\u0632 \u06f1\u060c \u0645\u0633\u0627\u0648\u06cc \u0648 \u06f2 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647.' : '\u270d\ufe0f \u0636\u0631\u0627\u06cc\u0628 \u062f\u0633\u062a\u06cc. \u0631\u0648\u06cc \u0636\u0631\u06cc\u0628 \u0628\u0632\u0646 \u062a\u0627 \u0628\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637') + '</div>';
-            h += '<div class="more" onclick="pasteOdds(\'' + m.id + '\')">\u1f4cb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627</div>';
+            h += '<div class="more" onclick="pasteOdds(\'' + m.id + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627</div>';
             h += '<div class="more" onclick="medit(\'' + m.id + '\')">' + (ed ? '\u2705 \u062a\u0645\u0648\u0645 \u0634\u062f' : '\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u0627\u06cc\u0628 \u0648 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631') + '</div>';
             return h;
           }
@@ -1400,12 +1570,12 @@ jobs:
             var t = '';
             try { if (window.Android && Android.clip) t = Android.clip(); } catch (e) { t = ''; }
             if (!t || !parseOdds(t).n) {
-              t = prompt('\u1f4cb \u0645\u062a\u0646 \u0635\u0641\u062d\u0647 \u0628\u0627\u0632\u06cc \u0631\u0648 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627 \u06a9\u067e\u06cc \u06a9\u0646 \u0648 \u0627\u06cc\u0646\u062c\u0627 \u0646\u06af\u0647 \u062f\u0627\u0631 \u0648 Paste \u0628\u0632\u0646\n' + m.home + ' - ' + m.away, '');
+              t = prompt('\ud83d\udccb \u0645\u062a\u0646 \u0635\u0641\u062d\u0647 \u0628\u0627\u0632\u06cc \u0631\u0648 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627 \u06a9\u067e\u06cc \u06a9\u0646 \u0648 \u0627\u06cc\u0646\u062c\u0627 \u0646\u06af\u0647 \u062f\u0627\u0631 \u0648 Paste \u0628\u0632\u0646\n' + m.home + ' - ' + m.away, '');
               if (!t) return;
             }
             var P = parseOdds(t);
             if (!P.n) { toast('\u062a\u0648 \u0627\u06cc\u0646 \u0645\u062a\u0646 \u0636\u0631\u06cc\u0628\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f'); return; }
-            if (!confirm('\u1f4cb ' + fa(P.n) + ' \u0636\u0631\u06cc\u0628 \u067e\u06cc\u062f\u0627 \u0634\u062f\n\u062a\u0648 \u0645\u062a\u0646: ' + (P.h || '?') + ' - ' + (P.a || '?') + '\n\u062a\u0648 \u0627\u067e: ' + m.home + ' - ' + m.away + '\n\n\u062a\u06cc\u0645 \u0627\u0648\u0644 \u0645\u062a\u0646 \u0645\u06cc\u0632\u0628\u0627\u0646 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647. \u062f\u0631\u0633\u062a\u0647\u061f')) return;
+            if (!confirm('\ud83d\udccb ' + fa(P.n) + ' \u0636\u0631\u06cc\u0628 \u067e\u06cc\u062f\u0627 \u0634\u062f\n\u062a\u0648 \u0645\u062a\u0646: ' + (P.h || '?') + ' - ' + (P.a || '?') + '\n\u062a\u0648 \u0627\u067e: ' + m.home + ' - ' + m.away + '\n\n\u062a\u06cc\u0645 \u0627\u0648\u0644 \u0645\u062a\u0646 \u0645\u06cc\u0632\u0628\u0627\u0646 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647. \u062f\u0631\u0633\u062a\u0647\u061f')) return;
             var mn = MAN[id] || { _t: m.time }, c = 0, extra = false;
             for (var k in P.o) {
               if (!m.fx && { '1': 1, 'X': 1, '2': 1, '1X': 1, 'X2': 1, '12': 1 }[k]) continue;
@@ -1426,11 +1596,11 @@ jobs:
             var now = Date.now(), list = $('list'), remn = ld('remaining', '');
             OT = {}; d.forEach(function (m) { if (!(m.lg in OT)) { var c = ld('odds_' + m.lg, null); OT[m.lg] = c ? c.t : 0; } });
             if (!multi && !(cur in OT)) { var oc = ld('odds_' + cur, null); OT[cur] = oc ? oc.t : 0; }
-            var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return alive(m, now) && (reg == 'day' || inDF(t)); })
+            var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return alive(m, now) && (reg == 'day' || reg == 'af' || inDF(t)); })
               .sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
-            var hc = reg == 'day' ? chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)', 'sm') : ((!multi && isES(cur)) ? '<span class="mut">\u270d\ufe0f \u0636\u0631\u0627\u06cc\u0628 \u0627\u06cc\u0646 \u0644\u06cc\u06af \u062f\u0633\u062a\u06cc\u0647</span>' : '');
+            var hc = reg == 'af' ? chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)', false, 'renderAF(1)', 'sm') : reg == 'day' ? chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)', 'sm') : ((!multi && isES(cur)) ? '<span class="mut">\u270d\ufe0f \u0636\u0631\u0627\u06cc\u0628 \u0627\u06cc\u0646 \u0644\u06cc\u06af \u062f\u0633\u062a\u06cc\u0647</span>' : '');
             var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(ms.length) + ' \u0628\u0627\u0632\u06cc' + (multi ? ' \u0627\u0632 ' + fmt(NL) + ' \u0644\u06cc\u06af' : '') +
-              (!multi && OT[cur] ? ' | \u062f\u0631\u06cc\u0627\u0641\u062a: ' + agoTxt(OT[cur]) : '') + (remn && reg != 'day' ? ' | \u0627\u0639\u062a\u0628\u0627\u0631: ' + esc(remn) : '') + '</span>' +
+              (!multi && OT[cur] ? ' | \u062f\u0631\u06cc\u0627\u0641\u062a: ' + agoTxt(OT[cur]) : '') + (remn && reg != 'day' && reg != 'af' ? ' | \u0627\u0639\u062a\u0628\u0627\u0631: ' + esc(remn) : '') + '</span>' +
               (hc ? hc : chip(multi ? '\ud83d\udcb0 \u0636\u0631\u0627\u06cc\u0628 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 (' + fmt(ALLK.length * 2) + ' \u0627\u0639\u062a\u0628\u0627\u0631)' : (OT[cur] ? '\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)' : '\ud83d\udcb0 \u062f\u0631\u06cc\u0627\u0641\u062a \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)'), false, multi ? 'loadMany(ALLK.slice())' : 'loadOdds(true)', 'sm')) + '</div>';
             if (reg == 'day') h += '<div class="mut" style="padding:0 14px 4px">\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646 ESPN\u060c \u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f \u0648 \u0628\u062f\u0648\u0646 \u0627\u0639\u062a\u0628\u0627\u0631. \u0647\u0631 \u0644\u06cc\u06af\u06cc \u0636\u0631\u06cc\u0628 \u0646\u062f\u0627\u0634\u062a\u060c \u0631\u0648\u06cc \u270d\ufe0f \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628\u0634 \u0631\u0648 \u0627\u0632 1xBet \u0648\u0627\u0631\u062f \u06a9\u0646.</div>';
             if (!ms.length) { list.innerHTML = h + '<div class="empty">\u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0641\u06cc\u0644\u062a\u0631 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0646\u06cc\u0633\u062a</div>'; return; }
@@ -1638,6 +1808,7 @@ jobs:
             if (!started(m)) return '';
             var L = LIVE[m.id];
             if (!L) {
+              if (isAF(m.lg)) return '<div class="live na" onclick="afSync(1)">\ud83c\udf10 \u0646\u062a\u06cc\u062c\u0647 \u0627\u0632 API-Football \u0647\u0631 \u06f1\u06f5 \u062f\u0642\u06cc\u0642\u0647 \u0628\u0631\u0648\u0632 \u0645\u06cc\u0634\u0647 (\u0628\u0632\u0646 \u062a\u0627 \u0627\u0644\u0627\u0646 \u0628\u06af\u06cc\u0631\u0647)</div>';
               var s = esl(m.lg), er = s ? LERR[s] : null, t;
               if (!s) t = '\u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0644\u06cc\u06af \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a';
               else if (er && er.e !== undefined) t = '\u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f (\u062e\u0637\u0627 <span class="ltr">' + esc(er.e) + (er.b ? ' ' + esc(er.b) : '') + '</span>). \u0628\u0632\u0646 \u062a\u0627 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646\u0647';
@@ -1674,6 +1845,7 @@ jobs:
           function checkResults(betId) {
             if (!BETS.some(function (b) { return b.st == 'p' && (!betId || b.id == betId); })) { toast('\u0634\u0631\u0637 \u0628\u0627\u0632 \u0646\u062f\u0627\u0631\u06cc'); return; }
             toast('\u062f\u0631 \u062d\u0627\u0644 \u06af\u0631\u0641\u062a\u0646 \u0646\u062a\u0627\u06cc\u062c \u0631\u0627\u06cc\u06af\u0627\u0646...');
+            afSync(true);
             liveTick(true, function () {
               settle(); renderBets();
               var now = Date.now(), left = 0;
@@ -2225,7 +2397,7 @@ jobs:
             return h + '</div>';
           }
           function mdlPanel(m) {
-            if (started(m)) return '';
+            if (started(m) || isAF(m.lg)) return '';
             if (!MDLO[m.id]) return '<div class="more" onclick="mTog(\'' + m.id + '\')">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 \u0622\u0645\u0627\u0631\u06cc \u0645\u062f\u0644 (\u0631\u0627\u06cc\u06af\u0627\u0646)' + (MDLC[m.id] ? ' \u2705' : '') + '</div>';
             var R = MDLC[m.id], h = '<div class="hpp"><div class="lbl">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 \u0622\u0645\u0627\u0631\u06cc (\u062c\u062f\u0648\u0644\u060c \u06f1\u06f0 \u0628\u0627\u0632\u06cc \u0622\u062e\u0631\u060c \u062e\u0648\u0646\u0647/\u0628\u06cc\u0631\u0648\u0646\u060c \u0631\u0648\u062f\u0631\u0648)</div>';
             if (!R) {
@@ -2282,15 +2454,18 @@ jobs:
             return h;
           }
           setTimeout(function () { mCheck(false); }, 9000);
+          setTimeout(function () { afSync(false); }, 6000);
+          setInterval(function () { afSync(false); }, 60000);
           /* ---------- settings ---------- */
           /* betting guide (update 17) */
           function guideHtml() { return '<div class="box"><div class="row"><b>\ud83d\udcd6 \u0631\u0627\u0647\u0646\u0645\u0627\u06cc \u0634\u0631\u0637\u200c\u0628\u0646\u062f\u06cc</b><span class="x" onclick="go(\'set\')">\u21a9\ufe0f \u0628\u0631\u06af\u0634\u062a</span></div><div class="mut">\u062e\u0644\u0627\u0635\u0647 \u06f5\u06f0 \u062f\u0631\u0633 \u062f\u0641\u062a\u0631\u0686\u0647 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc\u200c\u0647\u0627. \u0642\u0628\u0644 \u0627\u0632 \u0647\u0631 \u0634\u0631\u0637\u060c \u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632 \u0631\u0648 \u0645\u0631\u0648\u0631 \u06a9\u0646.</div></div><div class="box"><b>\ud83c\udfaf \u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632 \u0642\u0628\u0644 \u0627\u0632 \u0634\u0631\u0637</b><ol class="gd"><li><b>\u0628\u0627\u0632\u0627\u0631 \u0686\u06cc \u0645\u06cc\u06af\u0647\u061f</b> \u0627\u06af\u0647 \u0628\u0631\u0622\u0648\u0631\u062f\u0645 \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f5\u066a \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u062a\u06cc\u0632 (Pinnacle) \u0641\u0631\u0642 \u062f\u0627\u0631\u0647\u060c \u062f\u0648 \u0634\u0627\u062e\u0635 \u0622\u0645\u0627\u0631\u06cc \u0645\u0633\u062a\u0642\u0644 \u0644\u0627\u0632\u0645\u0647. \u0648\u06af\u0631\u0646\u0647 \u0628\u0631\u0622\u0648\u0631\u062f \u0631\u0648 \u0628\u0628\u0631 \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631</li><li><b>\u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u06f5\u06f5\u066a \u0628\u0647 \u0628\u0627\u0644\u0627 \u0634\u0631\u0637 \u0646\u0632\u0646</b> (X2\u060c 1X \u06cc\u0627 \u0628\u0631\u062f \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641). \u06a9\u0627\u0631\u0646\u0627\u0645\u0647: \u06f0 \u0627\u0632 \u06f4 \u274c</li><li><b>\u0627\u0646\u062a\u0638\u0627\u0631 \u06af\u0644 \u0631\u0648 \u0627\u0632 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0645\u062f\u0644\u200c\u0647\u0627 \u0648 \u0628\u0627\u0632\u0627\u0631 \u067e\u0627\u06cc\u06cc\u0646\u200c\u062a\u0631 \u0646\u06cc\u0627\u0631.</b> \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644 \u0648\u0627\u0642\u0639\u06cc \u06f3.\u06f0\u06f5 \u0628\u0648\u062f\u0647 \u0648 \u0628\u0631\u0622\u0648\u0631\u062f\u0647\u0627\u0645 \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06f2.\u06f3 \u062a\u0627 \u06f2.\u06f7</li><li><b>Under 3.5 \u06a9\u0645\u200c\u0631\u06cc\u0633\u06a9 \u0646\u06cc\u0633\u062a.</b> \u062d\u062f\u0648\u062f \u06f3\u06f6\u066a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u06f4 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u062f\u0627\u0634\u062a\u0646. \u0633\u0642\u0641\u0634 \u06f7\u06f0\u066a\u0647. \u062a\u0648 \u0628\u0627\u0632\u06cc \u0646\u0627\u0628\u0631\u0627\u0628\u0631\u060c \u06cc\u0627 \u0648\u0642\u062a\u06cc \u062a\u06cc\u0645 \u0639\u0642\u0628\u200c\u0627\u0641\u062a\u0627\u062f\u0647 \u0628\u0627\u06cc\u062f \u0628\u06cc\u0627\u062f \u062c\u0644\u0648\u060c \u0646\u0632\u0646</li><li><b>Under 2.5 \u067e\u06cc\u0634\u0646\u0647\u0627\u062f \u0627\u0635\u0644\u06cc \u0646\u06cc\u0633\u062a.</b> \u0627\u0632 \u06f2\u06f2 \u0628\u0627\u0632\u06cc\u060c \u06f1\u06f5 \u062a\u0627 \u06f3 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u062f\u0627\u0634\u062a\u0646</li><li><b>BTTS \u0641\u0642\u0637 \u0628\u0627 \u0634\u0627\u062e\u0635 \u0641\u0635\u0644 \u06a9\u0627\u0645\u0644:</b> \u0628\u0631\u0627\u06cc \u00ab\u062e\u06cc\u0631\u00bb \u06a9\u0644\u06cc\u0646\u200c\u0634\u06cc\u062a \u06f5\u06f0\u066a \u0628\u0647 \u0628\u0627\u0644\u0627\u060c \u06cc\u0627 BTTS \u0632\u06cc\u0631 \u06f2\u06f0\u066a \u0647\u0645\u0631\u0627\u0647 \u0628\u0627 \u063a\u06cc\u0628\u062a \u06af\u0644\u0632\u0646 \u0627\u0635\u0644\u06cc. \u0628\u0631\u0627\u06cc \u00ab\u0628\u0644\u0647\u00bb \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u062a\u0648 \u062d\u062f\u0648\u062f \u06f8\u06f0\u066a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u06af\u0644 \u062e\u0648\u0631\u062f\u0647 \u0628\u0627\u0634\u0646\u060c \u0628\u0647\u200c\u0639\u0644\u0627\u0648\u0647 \u063a\u06cc\u0628\u062a \u0645\u062f\u0627\u0641\u0639 \u06a9\u0644\u06cc\u062f\u06cc. \u06a9\u0627\u0631\u0646\u0627\u0645\u0647: \u06f3 \u0627\u0632 \u06f3 \u2705</li><li><b>\u0636\u0631\u0628\u0627\u062a \u0627\u06cc\u0633\u062a\u06af\u0627\u0647\u06cc \u0647\u0631 \u062f\u0648 \u0637\u0631\u0641 \u0631\u0648 \u0628\u0627 \u0639\u062f\u062f \u0628\u0633\u0646\u062c:</b> \u06a9\u0631\u0646\u0631\u0632\u0646\u060c \u0632\u0646\u0646\u062f\u0647 \u0636\u0631\u0628\u0647 \u0622\u0632\u0627\u062f \u0648 \u0642\u062f \u0645\u062f\u0627\u0641\u0639\u200c\u0647\u0627</li><li><b>\u062a\u0631\u06a9\u06cc\u0628 \u0631\u0633\u0645\u06cc\u060c \u063a\u0627\u06cc\u0628\u200c\u0647\u0627\u060c \u0646\u06cc\u0645\u06a9\u062a\u060c \u062f\u0627\u0648\u0631 \u0648 \u0647\u0634\u062f\u0627\u0631 \u0647\u0648\u0627\u0634\u0646\u0627\u0633\u06cc \u0631\u0633\u0645\u06cc</b> \u0631\u0648 \u0642\u0628\u0644 \u0627\u0632 \u0628\u0633\u062a\u0646 \u0686\u06a9 \u06a9\u0646</li><li><b>\u0633\u0646\u0627\u0631\u06cc\u0648\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0645\u06cc\u200c\u0646\u0648\u06cc\u0633\u06cc \u062a\u0648 \u0639\u062f\u062f\u0647\u0627 \u0647\u0645 \u0628\u06cc\u0627\u062f:</b> \u06af\u0644 \u0632\u0648\u062f\u0647\u0646\u06af\u0627\u0645\u060c \u062a\u06cc\u0645 \u0639\u0642\u0628\u200c\u0627\u0641\u062a\u0627\u062f\u0647\u060c \u06a9\u0627\u0631\u062a \u0642\u0631\u0645\u0632\u060c \u062e\u0633\u062a\u06af\u06cc \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641 \u062a\u0648 \u0646\u06cc\u0645\u0647 \u062f\u0648\u0645</li><li><b>\u0641\u06cc\u0644\u062a\u0631 \u0646\u0647\u0627\u06cc\u06cc:</b> \u0636\u0631\u06cc\u0628 \u06f1.\u06f4\u06f5 \u0628\u0647 \u0628\u0627\u0644\u0627 \u0648 EV \u062d\u062f\u0627\u0642\u0644 \u06f0.\u06f0\u06f5+\u060c \u0648\u06af\u0631\u0646\u0647 \u00ab\u0634\u0631\u0637 \u0627\u0631\u0632\u0634\u0645\u0646\u062f\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f\u00bb. \u0627\u06af\u0647 \u0627\u062d\u062a\u0645\u0627\u0644 \u0632\u06cc\u0631 \u06f5\u06f0\u066a\u0647\u060c \u0641\u0642\u0637 \u062a\u06a9\u06cc \u0648 \u0628\u0627 \u0645\u0628\u0644\u063a \u06a9\u0645</li></ol></div><div class="box"><b>\ud83d\udcca \u06a9\u0627\u0631\u0646\u0627\u0645\u0647 (\u062a\u0627 \u06f4 \u0627\u06a9\u062a\u0628\u0631 \u06f2\u06f0\u06f2\u06f6)</b><ul class="gd"><li>\u06a9\u0644 \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u0647\u0627\u06cc \u0627\u0635\u0644\u06cc: \u06f7 \u0628\u0631\u062f\u060c \u06f8 \u0628\u0627\u062e\u062a</li><li>BTTS \u0628\u0627 \u0634\u0627\u062e\u0635 \u0642\u0648\u06cc: \u06f3 \u0627\u0632 \u06f3 \u2705</li><li>\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 \u06cc\u0627 \u0628\u0631\u062f \u062a\u06cc\u0645 \u06a9\u0645\u062a\u0631 \u0645\u062d\u0628\u0648\u0628 \u0648\u0642\u062a\u06cc \u0641\u06cc\u0648\u0631\u062f \u0632\u06cc\u0631 \u06f5\u06f5\u066a \u0628\u0648\u062f: \u06f2 \u0627\u0632 \u06f2 \u2705</li><li>\u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u06f5\u06f5\u066a \u0628\u0647 \u0628\u0627\u0644\u0627: \u06f0 \u0627\u0632 \u06f4 \u274c</li><li>Under 2.5: \u06f0 \u0627\u0632 \u06f3 \u274c \u00b7 Under 3.5: \u06f2 \u0627\u0632 \u06f3 \u00b7 Over 1.5: \u06f0 \u0627\u0632 \u06f1</li></ul></div><details class="box gdd"><summary><b>\u26bd \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u06af\u0644</b> <span class="mut">(\u06f9)</span></summary><ul class="gd"><li>\u062a\u06cc\u0645\u06cc \u06a9\u0647 \u062a\u0648 \u06f3 \u0628\u0627\u0632\u06cc \u0622\u062e\u0631 \u06f2 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u0632\u062f\u0647\u060c Under \u0631\u0648 \u0628\u0627 \u0627\u0637\u0645\u06cc\u0646\u0627\u0646 \u0628\u0627\u0644\u0627 \u0646\u06af\u06cc\u0631</li><li>\u0627\u06af\u0647 xGA \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06f1.\u06f4 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631\u0647\u060c Under 2.5 \u0646\u0632\u0646</li><li>\u062a\u0648\u0632\u06cc\u0639 \u06af\u0644 \u0631\u0648 \u0628\u0628\u06cc\u0646\u060c \u0646\u0647 \u0641\u0642\u0637 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646. \u062a\u06cc\u0645\u06cc \u06a9\u0647 \u0628\u0639\u062f \u0627\u0632 \u06af\u0644 \u062e\u0648\u0631\u062f\u0646 \u0628\u0647 \u0647\u0645 \u0645\u06cc\u200c\u0631\u06cc\u0632\u0647 \u067e\u0634\u062a\u200c\u0633\u0631\u0647\u0645 \u06af\u0644 \u0645\u06cc\u200c\u062e\u0648\u0631\u0647</li><li>\u0632\u0645\u06cc\u0646 \u062e\u06cc\u0633 \u0648 \u0628\u0627\u0631\u0648\u0646 \u062f\u0644\u06cc\u0644 Under \u0646\u06cc\u0633\u062a</li><li>\u0645\u0647\u0627\u062c\u0645 \u062f\u0627\u063a (\u06f5 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u062a\u0648 \u06f5 \u0628\u0627\u0632\u06cc \u0622\u062e\u0631) \u0631\u0648 \u00ab\u0627\u0641\u062a \u0628\u0627\u0632\u062f\u0647\u06cc\u00bb \u062d\u0633\u0627\u0628 \u0646\u06a9\u0646</li><li>\u0627\u0646\u062a\u0638\u0627\u0631 \u06af\u0644 \u062a\u06cc\u0645\u06cc \u06a9\u0647 \u06af\u0644 \u0646\u0645\u06cc\u200c\u0632\u0646\u0647 \u0631\u0648 \u0627\u0632 \u0622\u0645\u0627\u0631 \u062e\u0648\u062f\u0634 \u0628\u06af\u06cc\u0631\u060c \u0646\u0647 \u0627\u0632 \u0645\u062f\u0644\u200c\u0647\u0627</li><li>\u0646\u06cc\u0645\u0647 \u0627\u0648\u0644 \u06f0-\u06f0 \u0645\u0642\u0627\u0628\u0644 \u062a\u06cc\u0645 \u0622\u0645\u0627\u062a\u0648\u0631 \u06cc\u0639\u0646\u06cc Under \u0646\u06cc\u0633\u062a\u060c \u0686\u0648\u0646 \u0646\u06cc\u0645\u0647 \u062f\u0648\u0645 \u062e\u0633\u062a\u0647 \u0645\u06cc\u0634\u0646</li><li>\u0648\u0642\u062a\u06cc \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u0628\u0627 \u0645\u0633\u0627\u0648\u06cc \u0631\u0627\u0636\u06cc\u200c\u0627\u0646 \u0648 \u06cc\u0647 \u062d\u0645\u0644\u0647 \u0636\u0639\u06cc\u0641\u0647\u060c Over 1.5 \u0628\u0627\u0644\u0627\u06cc \u06f6\u06f5\u066a \u0646\u06cc\u0633\u062a</li><li>\u062f\u0631\u0633\u200c\u0647\u0627 \u0631\u0648 \u0628\u0627 \u0628\u06cc\u0634\u200c\u0628\u0631\u0622\u0648\u0631\u062f \u062c\u0628\u0631\u0627\u0646 \u0646\u06a9\u0646. \u0648\u0642\u062a\u06cc \u0647\u0645\u0647\u200c\u0686\u06cc \u06a9\u0645\u200c\u06af\u0644 \u0645\u06cc\u06af\u0647\u060c \u0628\u0631\u0622\u0648\u0631\u062f\u062a \u0631\u0648 \u0627\u0632 \u0627\u0648\u0646\u0627 \u0628\u0627\u0644\u0627\u062a\u0631 \u0646\u0628\u0631</li></ul></details><details class="box gdd"><summary><b>\ud83e\udd1d \u06af\u0644 \u0632\u062f\u0646 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 (BTTS)</b> <span class="mut">(\u06f4)</span></summary><ul class="gd"><li>\u06a9\u0644\u06cc\u0646\u200c\u0634\u06cc\u062a \u0645\u0642\u0627\u0628\u0644 \u062a\u06cc\u0645\u200c\u0647\u0627\u06cc \u0642\u0639\u0631 \u062c\u062f\u0648\u0644 \u062f\u0644\u06cc\u0644 \u062f\u0641\u0627\u0639 \u0642\u0648\u06cc \u0646\u06cc\u0633\u062a</li><li>\u062a\u06cc\u0645\u06cc \u06a9\u0647 \u0647\u06cc\u0686 \u06a9\u0644\u06cc\u0646\u200c\u0634\u06cc\u062a\u06cc \u0646\u062f\u0627\u0631\u0647\u060c \u062d\u062a\u06cc \u0645\u0642\u0627\u0628\u0644 \u062a\u06cc\u0645\u06cc \u06a9\u0647 \u06af\u0644 \u0646\u0645\u06cc\u200c\u0632\u0646\u0647 \u0647\u0645 \u0645\u0645\u06a9\u0646\u0647 \u06af\u0644 \u0628\u062e\u0648\u0631\u0647</li><li>\u0648\u0642\u062a\u06cc \u0634\u06a9\u0627\u0641 \u06a9\u06cc\u0641\u06cc\u062a \u0632\u06cc\u0627\u062f\u0647 \u0648 \u062a\u06cc\u0645 \u0642\u0648\u06cc \u0632\u0648\u062f \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0647\u060c \u06af\u0644 \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641 \u0642\u0637\u0639\u06cc \u0646\u06cc\u0633\u062a</li><li>\u062a\u0627 \u0648\u0642\u062a\u06cc \u0627\u0631\u0632\u0634 BTTS \u062e\u06cc\u0631 \u062a\u0648 \u0627\u067e \u0632\u06cc\u0631 \u06f1\u0647\u060c \u0641\u0642\u0637 \u0628\u0627 \u0636\u0631\u06cc\u0628 \u0627\u0631\u0632\u0634\u0645\u0646\u062f \u0648 \u062a\u06a9\u06cc</li></ul></details><details class="box gdd"><summary><b>\ud83c\udfc6 \u0646\u062a\u06cc\u062c\u0647 \u0648 \u0641\u06cc\u0648\u0631\u062f</b> <span class="mut">(\u06f6)</span></summary><ul class="gd"><li>\u0645\u06cc\u0632\u0628\u0627\u0646\u06cc \u06a9\u0647 \u0642\u0644\u0639\u0647 \u062e\u0648\u0646\u06af\u06cc \u062f\u0627\u0631\u0647 \u0648 \u0627\u0631\u0632\u0634 \u062a\u06cc\u0645\u0634 \u0686\u0646\u062f \u0628\u0631\u0627\u0628\u0631\u0647\u060c \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u0628\u0627\u0632\u0627\u0631 \u062f\u0631\u0628\u0627\u0631\u0647\u200c\u0634 \u062f\u0631\u0633\u062a\u200c\u062a\u0631 \u0627\u0632 \u0645\u062f\u0644\u200c\u0647\u0627\u0633\u062a</li><li>\u062a\u06cc\u0645 \u0645\u06cc\u0647\u0645\u0627\u0646\u06cc \u06a9\u0647 \u0628\u0639\u062f \u0627\u0632 \u06af\u0644 \u0639\u0642\u0628 \u0645\u06cc\u200c\u0634\u06cc\u0646\u0647\u060c \u062f\u0642\u06cc\u0642\u0647\u200c\u0647\u0627\u06cc \u0622\u062e\u0631 \u06af\u0644 \u0645\u06cc\u200c\u062e\u0648\u0631\u0647. \u062c\u0644\u0648 \u0627\u0641\u062a\u0627\u062f\u0646\u0634 \u0631\u0648 \u0642\u0637\u0639\u06cc \u0628\u0631\u0627\u06cc X2 \u062d\u0633\u0627\u0628 \u0646\u06a9\u0646</li><li>\u0648\u0642\u062a\u06cc \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641 \u0632\u0648\u062f \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0647\u060c \u062a\u06cc\u0645 \u0642\u0648\u06cc \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u0646\u06cc\u0645\u0647 \u062f\u0648\u0645 \u0628\u0631\u0645\u06cc\u200c\u06af\u0631\u062f\u0647</li><li>\u0631\u06a9\u0648\u0631\u062f \u062e\u0648\u0646\u06af\u06cc \u0648 \u0628\u06cc\u0631\u0648\u0646 \u0631\u0648 \u0628\u0627 \u06a9\u06cc\u0641\u06cc\u062a \u062d\u0631\u06cc\u0641 \u0628\u0633\u0646\u062c. \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u062f\u0648\u0633\u062a\u0627\u0646\u0647 \u0628\u0627 \u062a\u06cc\u0645\u200c\u0647\u0627\u06cc \u062e\u06cc\u0644\u06cc \u0636\u0639\u06cc\u0641 \u062d\u0633\u0627\u0628 \u0646\u06cc\u0633\u062a\u0646</li><li>\u0627\u0633\u062a\u0639\u0641\u0627\u06cc \u0645\u0631\u0628\u06cc \u0628\u0627 \u062c\u0645\u0644\u0647 \u00ab\u0627\u0639\u062a\u0645\u0627\u062f \u0628\u0627\u0632\u06cc\u06a9\u0646\u200c\u0647\u0627 \u0631\u0648 \u0627\u0632 \u062f\u0633\u062a \u062f\u0627\u062f\u06cc\u0645\u00bb \u06cc\u0639\u0646\u06cc \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641\u200c\u062a\u0631 \u0634\u062f\u0647</li><li>xG \u0628\u0627\u0644\u0627 \u0628\u0627 \u062a\u0628\u062f\u06cc\u0644 \u0636\u0639\u06cc\u0641 \u062a\u0648 \u06a9\u0648\u062a\u0627\u0647\u200c\u0645\u062f\u062a \u062f\u0631\u0633\u062a \u0646\u0645\u06cc\u0634\u0647. \u0628\u0631\u0627\u06cc \u0628\u0631\u062f \u062a\u06cc\u0645 \u0628\u062f\u0634\u0627\u0646\u0633 \u0631\u0648\u06cc \u00ab\u0628\u0631\u06af\u0634\u062a \u0628\u0647 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646\u00bb \u062d\u0633\u0627\u0628 \u0646\u06a9\u0646</li></ul></details><details class="box gdd"><summary><b>\ud83c\udfab \u0633\u0627\u062e\u062a\u0646 \u0628\u0644\u06cc\u0637</b> <span class="mut">(\u06f4)</span></summary><ul class="gd"><li>\u0641\u0642\u0637 \u067e\u0627\u06cc\u0647\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0627\u062d\u062a\u0645\u0627\u0644 \u00d7 \u0636\u0631\u06cc\u0628\u0634\u0648\u0646 \u0628\u0627\u0644\u0627\u06cc \u06f1\u0647</li><li>\u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u0647\u0627\u06cc \u0636\u0631\u06cc\u0628\u200c\u0628\u0627\u0644\u0627 (\u0645\u062b\u0644 \u06f2.\u06f5 \u0628\u0647 \u0628\u0627\u0644\u0627) \u0631\u0648 \u062a\u06a9\u06cc \u0628\u0628\u0646\u062f\u060c \u0646\u0647 \u062a\u0648 \u0645\u06cc\u06a9\u0633</li><li>\u0647\u06cc\u0686\u200c\u0648\u0642\u062a \u0632\u06cc\u0631 \u062d\u062f \u0636\u0631\u06cc\u0628\u06cc \u06a9\u0647 \u0628\u0631\u0627\u06cc \u062e\u0648\u062f\u062a \u06af\u0630\u0627\u0634\u062a\u06cc \u0646\u0628\u0646\u062f</li><li>\u06a9\u0627\u0631\u062a \u0642\u0631\u0645\u0632 \u0641\u0642\u0637 \u0627\u0632 \u0628\u0627\u0632\u06cc\u06a9\u0646 \u062e\u0634\u0646 \u0646\u0645\u06cc\u0627\u062f. \u062f\u0631\u0648\u0627\u0632\u0647\u200c\u0628\u0627\u0646\u06cc \u06a9\u0647 \u0627\u0632 \u0639\u0642\u0628 \u0628\u0627\u0632\u06cc \u0645\u06cc\u200c\u0633\u0627\u0632\u0647 \u0645\u0642\u0627\u0628\u0644 \u067e\u0631\u0633 \u0647\u0645 \u0631\u06cc\u0633\u06a9\u0647. \u0622\u0645\u0627\u0631 \u062f\u0627\u0648\u0631 \u0628\u0647\u200c\u062a\u0646\u0647\u0627\u06cc\u06cc \u062d\u062f\u0627\u06a9\u062b\u0631 \u06f0.\u06f1 \u06af\u0644 \u0627\u0636\u0627\u0641\u0647</li></ul></details><details class="box gdd"><summary><b>\ud83e\udde0 \u0630\u0647\u0646\u06cc\u062a</b> <span class="mut">(\u06f6)</span></summary><ul class="gd"><li>\u00ab\u0634\u0631\u0637 \u0627\u0631\u0632\u0634\u0645\u0646\u062f\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f\u00bb \u06cc\u0647 \u062a\u0635\u0645\u06cc\u0645 \u062d\u0631\u0641\u0647\u200c\u0627\u06cc\u0647\u060c \u0646\u0647 \u0634\u06a9\u0633\u062a</li><li>\u0627\u062e\u062a\u0644\u0627\u0641 \u0628\u0632\u0631\u06af \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06cc\u0639\u0646\u06cc \u06cc\u0647 \u0686\u06cc\u0632\u06cc \u0631\u0648 \u0646\u062f\u06cc\u062f\u06cc\u060c \u0646\u0647 \u0627\u06cc\u0646\u06a9\u0647 \u0627\u0631\u0632\u0634 \u067e\u06cc\u062f\u0627 \u06a9\u0631\u062f\u06cc</li><li>\u06cc\u0647 \u0628\u0627\u062e\u062a \u0628\u0627 \u0627\u062d\u062a\u0645\u0627\u0644 \u06f4\u06f0 \u062a\u0627 \u06f6\u06f0 \u062f\u0631\u0635\u062f \u062f\u0631\u0633 \u0646\u06cc\u0633\u062a\u060c \u0648\u0627\u0631\u06cc\u0627\u0646\u0633\u0647. \u062f\u0631\u0633 \u062c\u062f\u06cc\u062f \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0627\u0636\u0627\u0641\u0647 \u0645\u06cc\u0634\u0647 \u06a9\u0647 \u06cc\u0647 \u0627\u0644\u06af\u0648 \u06f3 \u0628\u0627\u0631 \u062a\u06a9\u0631\u0627\u0631 \u0634\u062f\u0647 \u0628\u0627\u0634\u0647</li><li>EV \u0645\u062b\u0628\u062a \u06cc\u0639\u0646\u06cc \u0627\u0631\u0632\u0634 \u062f\u0631 \u0628\u0644\u0646\u062f\u0645\u062f\u062a\u060c \u0646\u0647 \u0627\u06cc\u0646\u06a9\u0647 \u0627\u06cc\u0646 \u0634\u0631\u0637 \u0627\u062d\u062a\u0645\u0627\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0631\u0647</li><li>\u0639\u0645\u0644\u06a9\u0631\u062f \u0647\u0631 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u0628\u0627 \u062a\u0639\u062f\u0627\u062f \u0646\u0645\u0648\u0646\u0647\u060c \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0636\u0631\u06cc\u0628 \u0648 \u0633\u0648\u062f \u0648\u0627\u0642\u0639\u06cc \u0628\u0633\u0646\u062c\u060c \u0646\u0647 \u0641\u0642\u0637 \u062f\u0631\u0635\u062f \u0628\u0631\u062f</li><li>\u0646\u062a\u06cc\u062c\u0647\u200c\u0647\u0627\u06cc \u062f\u0648\u0631\u0627\u0641\u062a\u0627\u062f\u0647 (\u0645\u062b\u0644 \u06f0-\u06f7) \u0631\u0648 \u0645\u0628\u0646\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u06a9\u0644 \u0631\u0648\u0634 \u0646\u06a9\u0646</li></ul></details><div class="box mut">\u0627\u06cc\u0646 \u0631\u0627\u0647\u0646\u0645\u0627 \u0628\u0631\u0627\u06cc \u0633\u0631\u06af\u0631\u0645\u06cc \u0628\u0627 \u0633\u06a9\u0647 \u0645\u062c\u0627\u0632\u06cc\u0647. \u0647\u06cc\u0686 \u0631\u0648\u0634\u06cc \u0628\u0631\u062f \u0631\u0648 \u062a\u0636\u0645\u06cc\u0646 \u0646\u0645\u06cc\u200c\u06a9\u0646\u0647.</div>'; }
           function showGuide() { go('set'); $('set').innerHTML = guideHtml(); window.scrollTo(0, 0); }
           function renderSet() {
-            var r = ld('remaining', '');
+            var r = ld('remaining', ''), afr = ld('afrem', null);
             $('set').innerHTML = '<div class="box"><b>\ud83d\udcd6 \u0631\u0627\u0647\u0646\u0645\u0627\u06cc \u0634\u0631\u0637\u200c\u0628\u0646\u062f\u06cc</b><div class="mut">\u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632 \u06f1\u06f0 \u0633\u0624\u0627\u0644\u06cc\u060c \u06a9\u0627\u0631\u0646\u0627\u0645\u0647 \u0648 \u062e\u0644\u0627\u0635\u0647 \u06f5\u06f0 \u062f\u0631\u0633</div><button class="btn blue" onclick="showGuide()">\u0628\u0627\u0632 \u06a9\u0631\u062f\u0646 \u0631\u0627\u0647\u0646\u0645\u0627</button></div>' + profBox() +
               '<div class="box"><b>\ud83d\udd11 \u06a9\u0644\u06cc\u062f API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">\u0630\u062e\u06cc\u0631\u0647 \u06a9\u0644\u06cc\u062f</button>' +
               (r ? '<div class="mut" style="margin-top:8px">\u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647 \u0627\u06cc\u0646 \u0645\u0627\u0647: ' + esc(r) + '</div>' : '') + '</div>' +
+              '<div class="box"><b>\ud83c\udf10 \u06a9\u0644\u06cc\u062f API-Football (\u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627)</b><div class="mut">\u0631\u0627\u06cc\u06af\u0627\u0646\u060c \u06f1\u06f0\u06f0 \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u062f\u0631 \u0631\u0648\u0632. \u0628\u0631\u0646\u0627\u0645\u0647 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1\u06f2\u06f0\u06f0 \u0644\u06cc\u06af\u060c \u062a\u0648 \u062a\u0628 \u00ab\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627\u00bb.</div><input id="afk" class="ltr" placeholder="API-Football key" value="' + esc(afKey()) + '"><div class="quick"><button onclick="saveAF()">\u0630\u062e\u06cc\u0631\u0647 \u06a9\u0644\u06cc\u062f</button><button onclick="testAF()">\ud83e\uddea \u062a\u0633\u062a \u06a9\u0644\u06cc\u062f</button></div>' + (afr ? '<div class="mut" style="margin-top:8px">\u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647 \u0627\u0645\u0631\u0648\u0632: ' + fa(afr.n) + ' (' + agoTxt(afr.t) + ')</div>' : '') + '</div>' +
               '<div class="box"><b>\ud83d\udd04 \u0622\u067e\u062f\u06cc\u062a \u0628\u0631\u0646\u0627\u0645\u0647</b><div class="mut">\u0646\u0633\u062e\u0647 \u0641\u0639\u0644\u06cc: ' + (BUILD ? 'v' + fa(BUILD) : '-') + '</div><button class="btn blue" onclick="checkUpdate(true)">\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a</button></div>' +
               '<div class="box"><b>\ud83c\udf0d \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc ESPN</b><div class="mut">' + (ESV && ESV.ok ? fa(Object.keys(ESV.ok).length) + ' \u0644\u06cc\u06af \u0627\u0632 \u0644\u06cc\u0633\u062a\u062a \u062a\u0648 ESPN \u067e\u06cc\u062f\u0627 \u0634\u062f. \u0647\u0641\u062a\u0647\u200c\u0627\u06cc \u06cc\u0647 \u0628\u0627\u0631 \u062e\u0648\u062f\u06a9\u0627\u0631 \u0686\u06a9 \u0645\u06cc\u0634\u0647.' : '\u0647\u0646\u0648\u0632 \u0686\u06a9 \u0646\u0634\u062f\u0647.') + '</div><button class="btn" onclick="probeES(true)">' + (ESVR ? '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc...' : '\ud83d\udd04 \u0628\u0631\u0631\u0633\u06cc \u062f\u0648\u0628\u0627\u0631\u0647 (\u0631\u0627\u06cc\u06af\u0627\u0646)') + '</button></div>' +
               '<div class="box"><b>\ud83e\ude99 \u0645\u062f\u06cc\u0631\u06cc\u062a \u0633\u06a9\u0647</b><div class="mut">\u0645\u0648\u062c\u0648\u062f\u06cc \u0641\u0639\u0644\u06cc: ' + fc(W.coins) + '</div><input id="coin" type="number" step="0.01" inputmode="decimal" placeholder="\u062a\u0639\u062f\u0627\u062f \u0633\u06a9\u0647">' +
