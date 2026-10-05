@@ -198,6 +198,20 @@ jobs:
                   }
 
                   @JavascriptInterface
+                  public String clip() {
+                      try {
+                          android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                          if (cm == null || !cm.hasPrimaryClip()) return "";
+                          android.content.ClipData d = cm.getPrimaryClip();
+                          if (d == null || d.getItemCount() == 0) return "";
+                          CharSequence t = d.getItemAt(0).coerceToText(MainActivity.this);
+                          return t == null ? "" : t.toString();
+                      } catch (Exception e) {
+                          return "";
+                      }
+                  }
+
+                  @JavascriptInterface
                   public void openUrl(String url) {
                       try {
                           Intent i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
@@ -1308,7 +1322,7 @@ jobs:
             h += '<div class="lbl">\u26bd \u0645\u062c\u0645\u0648\u0639 \u06af\u0644</div><div class="hr hh"><span></span><span>\u0628\u06cc\u0634\u062a\u0631</span><span>\u06a9\u0645\u062a\u0631</span></div>';
             TLN.forEach(function (v) { h += '<div class="hr"><span class="mut">' + fa(v) + (v % 1 == 0 ? ' \u21a9' : '') + '</span>' + mb(m, tkey('O', v), '\u0628\u06cc\u0634\u062a\u0631') + mb(m, tkey('U', v), '\u06a9\u0645\u062a\u0631') + '</div>'; });
             h += '<div class="mut" style="padding:4px;line-height:1.8">\u270d\ufe0f \u0631\u0648\u06cc \u062e\u0648\u0646\u0647 \u062e\u0627\u0644\u06cc \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628 1xBet \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633\u060c \u0631\u0648\u06cc \u062e\u0648\u0646\u0647 \u067e\u0631 \u0628\u0632\u0646 \u062a\u0627 \u0628\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637. \u21a9 \u06cc\u0639\u0646\u06cc \u062e\u0637 \u06a9\u0627\u0645\u0644: \u0627\u06af\u0647 \u062f\u0642\u06cc\u0642\u0627\u064b \u0628\u0631\u0627\u0628\u0631 \u0628\u0634\u0647 \u067e\u0648\u0644 \u0628\u0631\u0645\u06cc\u200c\u06af\u0631\u062f\u0647. \u0628\u0631\u0627\u06cc \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u06cc\u0628 \u067e\u0631\u060c \u00ab\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634\u00bb \u0631\u0648 \u0628\u0632\u0646.</div>';
-            h += '<div class="quick"><button onclick="medit(\'' + m.id + '\')">' + (MEDIT[m.id] ? '\u2705 \u062a\u0645\u0648\u0645 \u0634\u062f' : '\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u0627\u06cc\u0628') + '</button><button onclick="hpTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646 \u067e\u0646\u0644</button></div></div>';
+            h += '<div class="quick"><button onclick="medit(\'' + m.id + '\')">' + (MEDIT[m.id] ? '\u2705 \u062a\u0645\u0648\u0645 \u0634\u062f' : '\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u0627\u06cc\u0628') + '</button><button onclick="pasteOdds(\'' + m.id + '\')">\u1f4cb \u0686\u0633\u0628\u0627\u0646\u062f\u0646</button><button onclick="hpTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646 \u067e\u0646\u0644</button></div></div>';
             return h;
           }
           function mb(m, p, label) {
@@ -1320,7 +1334,7 @@ jobs:
           function manBox(m) {
             var mn = MAN[m.id], n = mn ? Object.keys(mn).filter(function (k) { return k != '_t'; }).length : 0, ed = MEDIT[m.id];
             var tip = isES(m.lg) ? '' : '<div class="mut" style="text-align:center;padding:4px">\u06cc\u0627 \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af \u0631\u0648 \u0627\u0632 \u062f\u06a9\u0645\u0647 \u0628\u0627\u0644\u0627 \u0628\u06af\u06cc\u0631 (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)</div>';
-            if (!n && !ed) return '<div class="more" onclick="medit(\'' + m.id + '\')">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647 (\u0627\u0632 1xBet)</div>' + tip;
+            if (!n && !ed) return '<div class="more" onclick="pasteOdds(\'' + m.id + '\')">\u1f4cb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627</div><div class="more" onclick="medit(\'' + m.id + '\')">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647 (\u0627\u0632 1xBet)</div>' + tip;
             var h = '<div class="odds">' + mb(m, '1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646') + mb(m, 'X', '\u0645\u0633\u0627\u0648\u06cc') + mb(m, '2', '\u06f2 \u0645\u0647\u0645\u0627\u0646') + '</div>';
             h += '<div class="lbl">\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647</div><div class="odds">' + mb(m, '1X', '\u06f1 \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc') + mb(m, 'X2', '\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2') + mb(m, '12', '\u06f1 \u06cc\u0627 \u06f2') + '</div>';
             h += '<div class="lbl">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f2.\u06f5</div><div class="odds two">' + mb(m, 'O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5') + mb(m, 'U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5') + '</div>';
@@ -1330,6 +1344,7 @@ jobs:
               h += '<div class="lbl">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f3.\u06f5</div><div class="odds two">' + mb(m, 'O35', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f3.\u06f5') + mb(m, 'U35', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f3.\u06f5') + '</div>';
             }
             h += '<div class="mut" style="text-align:center;padding:4px">' + (ed ? '\u270d\ufe0f \u0631\u0648\u06cc \u0647\u0631 \u062e\u0648\u0646\u0647 \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628 1xBet \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633. \u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 \u0627\u06af\u0647 \u062e\u0627\u0644\u06cc \u0628\u0645\u0648\u0646\u0647 \u0627\u0632 \u06f1\u060c \u0645\u0633\u0627\u0648\u06cc \u0648 \u06f2 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647.' : '\u270d\ufe0f \u0636\u0631\u0627\u06cc\u0628 \u062f\u0633\u062a\u06cc. \u0631\u0648\u06cc \u0636\u0631\u06cc\u0628 \u0628\u0632\u0646 \u062a\u0627 \u0628\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637') + '</div>';
+            h += '<div class="more" onclick="pasteOdds(\'' + m.id + '\')">\u1f4cb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627</div>';
             h += '<div class="more" onclick="medit(\'' + m.id + '\')">' + (ed ? '\u2705 \u062a\u0645\u0648\u0645 \u0634\u062f' : '\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u0627\u06cc\u0628 \u0648 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631') + '</div>';
             return h;
           }
@@ -1347,6 +1362,62 @@ jobs:
             var ch = false;
             slip.forEach(function (x) { if (x.id != id) return; var o = getOdd(m, x.pick); if (o && o != x.odd) { x.odd = o; var q = nv(m, x.pick); x.nv = q === null ? null : Math.round(q * 1000) / 1000; ch = true; } });
             if (ch) { sv(pk('slip'), slip); toast('\u0636\u0631\u06cc\u0628 \u062a\u0648 \u0628\u0644\u06cc\u0637 \u0647\u0645 \u0628\u0631\u0648\u0632 \u0634\u062f'); }
+            rerender();
+          }
+          /* paste odds from Betwana text (update 23) */
+          function pnorm(s) { return String(s).replace(/[\u200c\u200e\u200f\u00a0]/g, ' ').replace(/\u064a/g, '\u06cc').replace(/\u0643/g, '\u06a9').replace(/\s+/g, ' ').trim(); }
+          function pkey(s) { return pnorm(s).replace(/ /g, ''); }
+          function pnum(s) { var t = pnorm(s); if (!/^[0-9\u06f0-\u06f9]+([.\u066b,][0-9\u06f0-\u06f9]+)?$/.test(t)) return null; var n = num(t); return isNaN(n) ? null : n; }
+          var PHDR = {};
+          PHDR[pkey('\u0646\u062a\u06cc\u062c\u0647 \u0645\u0633\u0627\u0628\u0642\u0647')] = 'res'; PHDR[pkey('\u062f\u0627\u0628\u0644 \u0634\u0627\u0646\u0633')] = 'dc'; PHDR[pkey('\u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc')] = 'dnb';
+          PHDR[pkey('\u0645\u062c\u0645\u0648\u0639 \u06af\u0644\u200c\u0647\u0627')] = 'tot'; PHDR[pkey('\u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0646\u062f')] = 'btts'; PHDR[pkey('\u0647\u0646\u062f\u06cc\u06a9\u067e \u06af\u0644\u200c\u0647\u0627')] = 'hcp';
+          function parseOdds(text) {
+            var ls = String(text).split(/\r?\n/).map(pnorm).filter(function (x) { return x; });
+            var R = {}, sec = null, lab = null, H = null, A = null, n = 0;
+            function side(t) { if (H && t.indexOf(H) == 0) return '1'; if (A && t.indexOf(A) == 0) return '2'; return null; }
+            function put(k, v) { if (v >= 1.01 && v < 1000) { R[k] = r2(v); n++; } }
+            ls.forEach(function (x) {
+              var v = pnum(x);
+              if (v === null) { if (lab !== null) sec = PHDR[pkey(lab)] || null; lab = x; return; }
+              var t = lab; lab = null; if (t === null || !sec) return;
+              if (sec == 'res') { if (t == '\u0645\u0633\u0627\u0648\u06cc') put('X', v); else if (!H) { H = t; put('1', v); } else if (!A) { A = t; put('2', v); } return; }
+              if (sec == 'dc') { if (/ \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc$/.test(t)) put('1X', v); else if (/^\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 /.test(t)) put('X2', v); else put('12', v); return; }
+              if (sec == 'btts') { if (t == '\u0628\u0644\u0647') put('BY', v); else if (t == '\u062e\u06cc\u0631') put('BN', v); return; }
+              if (sec == 'tot') { var q = /^(\u0628\u0627\u0644\u0627\u06cc|\u067e\u0627\u06cc\u06cc\u0646) ?([0-9.]+)$/.exec(t); if (!q) return; var w = parseFloat(q[2]); if (TLN.indexOf(w) < 0) return; put(tkey(q[1] == '\u0628\u0627\u0644\u0627\u06cc' ? 'O' : 'U', w), v); return; }
+              if (sec == 'dnb' || sec == 'hcp') {
+                var s = side(t); if (!s) return;
+                var rest = pnorm(t.slice((s == '1' ? H : A).length)), hv = 0;
+                if (rest) { var hm2 = /^([+-]?)([0-9.]+)(-?)$/.exec(rest); if (!hm2) return; hv = parseFloat(hm2[2]) * ((hm2[1] == '-' || hm2[3] == '-') ? -1 : 1); }
+                if (sec == 'dnb' && hv) return;
+                if (HLN.indexOf(hv) < 0) return; put(hkey(s, hv), v);
+              }
+            });
+            return { o: R, n: Object.keys(R).length, h: H, a: A };
+          }
+          function pasteOdds(id) {
+            var m = MATCHES[id]; if (!m) return;
+            if (started(m)) { toast('\u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0634\u062f\u0647'); return; }
+            var t = '';
+            try { if (window.Android && Android.clip) t = Android.clip(); } catch (e) { t = ''; }
+            if (!t || !parseOdds(t).n) {
+              t = prompt('\u1f4cb \u0645\u062a\u0646 \u0635\u0641\u062d\u0647 \u0628\u0627\u0632\u06cc \u0631\u0648 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627 \u06a9\u067e\u06cc \u06a9\u0646 \u0648 \u0627\u06cc\u0646\u062c\u0627 \u0646\u06af\u0647 \u062f\u0627\u0631 \u0648 Paste \u0628\u0632\u0646\n' + m.home + ' - ' + m.away, '');
+              if (!t) return;
+            }
+            var P = parseOdds(t);
+            if (!P.n) { toast('\u062a\u0648 \u0627\u06cc\u0646 \u0645\u062a\u0646 \u0636\u0631\u06cc\u0628\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f'); return; }
+            if (!confirm('\u1f4cb ' + fa(P.n) + ' \u0636\u0631\u06cc\u0628 \u067e\u06cc\u062f\u0627 \u0634\u062f\n\u062a\u0648 \u0645\u062a\u0646: ' + (P.h || '?') + ' - ' + (P.a || '?') + '\n\u062a\u0648 \u0627\u067e: ' + m.home + ' - ' + m.away + '\n\n\u062a\u06cc\u0645 \u0627\u0648\u0644 \u0645\u062a\u0646 \u0645\u06cc\u0632\u0628\u0627\u0646 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647. \u062f\u0631\u0633\u062a\u0647\u061f')) return;
+            var mn = MAN[id] || { _t: m.time }, c = 0, extra = false;
+            for (var k in P.o) {
+              if (!m.fx && { '1': 1, 'X': 1, '2': 1, '1X': 1, 'X2': 1, '12': 1 }[k]) continue;
+              mn[k] = P.o[k]; c++;
+              if (k.charAt(0) == 'H' || (/^[OU]\d\d$/.test(k) && { O15: 1, U15: 1, O25: 1, U25: 1, O35: 1, U35: 1 }[k] !== 1)) extra = true;
+            }
+            mn._t = m.time; MAN[id] = mn; sv('man', MAN);
+            slip.forEach(function (x) { if (x.id != id) return; var o = getOdd(m, x.pick); if (o && o != x.odd) { x.odd = o; var q = nv(m, x.pick); x.nv = q === null ? null : Math.round(q * 1000) / 1000; } });
+            sv(pk('slip'), slip);
+            if (extra) HP[id] = true;
+            MEDIT[id] = false;
+            toast('\u2705 ' + fa(c) + ' \u0636\u0631\u06cc\u0628 \u062b\u0628\u062a \u0634\u062f');
             rerender();
           }
 
