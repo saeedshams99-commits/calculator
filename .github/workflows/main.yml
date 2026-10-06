@@ -410,7 +410,7 @@ jobs:
           .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#000d;color:#fff;padding:10px 16px;border-radius:20px;display:none;z-index:9;max-width:90%;text-align:center}
           .spin{text-align:center;padding:30px;color:var(--mut)}
           .day{padding:12px 14px 2px;color:var(--gold);font-weight:bold;font-size:13px}
-          .more{text-align:center;color:#64b5f6;padding:8px 0 2px;font-size:13px}
+          .more{text-align:center;color:#64b5f6;padding:8px 0 2px;font-size:13px}.delbtn{width:auto;background:#8e2b35;color:#fff;border:1px solid #d85b65;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:bold;font-family:inherit;margin:0 4px;line-height:1.4}
           .chip.sm{padding:5px 11px;font-size:12px}
           .lbl{color:var(--mut);font-size:12px;margin:8px 0 4px}
           .hr{display:grid;grid-template-columns:58px 1fr 1fr;gap:6px;align-items:center;margin-bottom:5px}.hr .ob{padding:5px 2px}.hh span{text-align:center;font-size:12px;color:var(--mut);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.hpp{border-top:1px dashed var(--card2);margin-top:6px;padding-top:4px}
@@ -661,6 +661,7 @@ jobs:
           function hm(t) { return L(t, { hour: '2-digit', minute: '2-digit' }, 'toLocaleTimeString'); }
           function dl(t) { return L(t, { weekday: 'long', day: 'numeric', month: 'long' }, 'toLocaleDateString'); }
           function dk(t) { return L(t, { year: 'numeric', month: '2-digit', day: '2-digit' }, 'toLocaleDateString', 'en-CA'); }
+          function dayPanel(t, now) { var a = new Date(t), b = new Date(now), ak = dk(a), bk = dk(b); if (ak == bk) return true; var n = new Date(b.getTime() + 86400000); return ak == dk(n) && a.getHours() < 6; }
           function toast(t) { var e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(e._t); e._t = setTimeout(function () { e.style.display = 'none'; }, 2500); }
           function chip(t, on, act, cls) { return '<span class="chip' + (on ? ' on' : '') + (cls ? ' ' + cls : '') + '" onclick="' + act + '">' + t + '</span>'; }
 
@@ -1088,7 +1089,7 @@ jobs:
           }
           function fetchDay(cb) {
             if (DAYF) return; DAYF = 1; DAYTRY = Date.now();
-            var now = Date.now(), ds = [dk(now - 86400000), dk(now)].map(function (d) { return d.replace(/-/g, ''); });
+            var now = Date.now(), ds = [dk(now - 86400000), dk(now), dk(now + 86400000)].map(function (d) { return d.replace(/-/g, ''); });
             var all = [], seen = {}, left = ds.length, ok = 0, er = null;
             var eat = function (j) { ok++; var lm = espnLM(j); (j.events || []).forEach(function (e) { if (seen[e.id]) return; seen[e.id] = 1; var m = evM(e, lm); if (m) all.push(m); }); };
             var fin = function () { DAYF = 0; if (ok) { DAY = { d: all }; DAYT = Date.now(); } cb(!!ok, er); };
@@ -1120,7 +1121,7 @@ jobs:
           function showDay() {
             var now = Date.now(), today = dk(now), oc = {}, out = [], used = {}, lgs = {};
             DAY.d.forEach(function (m) {
-              if (m.pp || dk(m.time) != today) return;
+              if (m.pp || !dayPanel(m.time, now)) return;
               if (DAYE) { if (!dayFin(m, now)) return; } else { if (!alive(m, now)) return; if (DAYU && started(m)) return; }
               if (!isES(m.lg)) {
                 if (!(m.lg in oc)) { var c = ld('odds_' + m.lg, null); oc[m.lg] = (c && c.d) ? c.d : []; }
@@ -1129,6 +1130,7 @@ jobs:
               }
               out.push(m); lgs[m.lg] = 1;
             });
+            out.sort(function (a, b) { return new Date(a.time).getTime() - new Date(b.time).getTime(); });
             NL = Object.keys(lgs).length; ALLK = []; DAYN = out.length;
             if (!out.length) { $('list').innerHTML = '<div class="empty">' + (DAYE ? '\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u06cc\u0633\u062a.' : DAYU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u0645\u0648\u0646\u062f\u0647.<br>\u00ab\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632\u00bb \u0631\u0648 \u0628\u0632\u0646\u060c \u06cc\u0627 \u0628\u0631\u0627\u06cc \u0641\u0631\u062f\u0627 \u0628\u0631\u0648 \u0633\u0631\u0627\u063a \u00ab\u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627\u00bb.' : '\u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f') + '<br><br>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)') + '</div>'; return; }
             RMALL = DAYE; renderMatches(out, true); RMALL = false;
@@ -1163,13 +1165,14 @@ jobs:
             AFOP = { t: now, d: d }; return d;
           }
           function dayAF(soft, force) {
-            var ds = afDate(0), c = ld('af_' + ds, null);
-            if (soft) { if (c) showDayAF(c); return; }
+            var ds = afDate(0), dn = afDate(1), c = ld('af_' + ds, null), cn = ld('af_' + dn, null);
+            if (soft) { if (c) showDayAF({ d: (c.d || []).concat(cn && cn.d ? cn.d : []) }); return; }
             if (!c) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 \u0627\u0632 API-Football...</div>';
             else if (force) toast('\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc...');
             afGet(ds, force ? 0 : 0.75 * 3600000, function (d, er) {
               if (reg != 'day' || !pageOn('matches')) return;
               if (!d) { $('list').innerHTML = '<div class="empty">\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (er ? '<br><span class="ltr">' + esc(er) + '</span>' : '') + '<br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a\u060c VPN \u0648 \u06a9\u0644\u06cc\u062f API-Football \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br><br>' + chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646', false, 'renderDay(false,1)') + '</div>'; return; }
+              if (cn && cn.d) d.d = (d.d || []).concat(cn.d);
               showDayAF(d);
               if (force) toast(er ? '\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f: ' + er : '\u2705 \u0628\u0631\u0648\u0632 \u0634\u062f\u060c ' + fa(DAYN) + ' \u0628\u0627\u0632\u06cc');
             });
@@ -1177,13 +1180,14 @@ jobs:
           function showDayAF(d) {
             var now = Date.now(), today = dk(now), out = [], lgs = {}, used = {}, oc = afOddsPool(now);
             d.d.forEach(function (m) {
-              if (m.pp || dk(m.time) != today) return;
+              if (m.pp || !dayPanel(m.time, now)) return;
               if (started(m)) afLive(m);
               if (DAYE) { if (!dayFin(m, now)) return; } else { if (!alive(m, now)) return; if (DAYU && started(m)) return; }
               var hit = null; oc.forEach(function (o) { if (!hit && !used[o.id] && sameM(o, m)) hit = o; });
               if (hit) { used[hit.id] = 1; if (LIVE[m.id] && !LIVE[hit.id]) LIVE[hit.id] = LIVE[m.id]; m = hit; }
               MATCHES[m.id] = m; out.push(m); lgs[m.lg] = 1;
             });
+            out.sort(function (a, b) { return new Date(a.time).getTime() - new Date(b.time).getTime(); });
             NL = Object.keys(lgs).length; ALLK = []; DAYN = out.length;
             if (!out.length) { $('list').innerHTML = '<div class="empty">' + (DAYE ? '\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u06cc\u0633\u062a.' : (DAYU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u0645\u0648\u0646\u062f\u0647. \u00ab\u0641\u0631\u062f\u0627\u00bb \u0631\u0648 \u062a\u0648 \u062a\u0628 \u00ab\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627\u00bb \u0628\u0628\u06cc\u0646.' : '\u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f')) + '<br><br>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)', false, 'renderDay(false,1)') + '</div>'; return; }
             RMALL = DAYE; renderMatches(out, true); RMALL = false;
@@ -2147,7 +2151,7 @@ jobs:
               if (b.note) h += '<div class="note">\ud83d\udcdd <b>\u0686\u0631\u0627 \u0628\u0633\u062a\u0645:</b> ' + esc(b.note) + '</div>';
               if (b.lesson) h += '<div class="note" style="border-right:3px solid var(--gold)">\ud83d\udcda <b>\u062f\u0631\u0633 \u0628\u0639\u062f \u0628\u0627\u0632\u06cc:</b> ' + esc(b.lesson) + '</div>';
               h += '<div class="row" style="justify-content:space-around"><span class="more" onclick="editNote(\'' + b.id + '\',\'note\')">\u270f\ufe0f \u06cc\u0627\u062f\u062f\u0627\u0634\u062a</span>' +
-                ((b.st == 'w' || b.st == 'l') ? '<span class="more" onclick="editNote(\'' + b.id + '\',\'lesson\')">\ud83d\udcda \u062f\u0631\u0633 \u0628\u0639\u062f \u0628\u0627\u0632\u06cc</span>' : '') + '<span class="more" style="color:var(--red)" onclick="delBet(\'' + b.id + '\')">\ud83d\uddd1\ufe0f \u062d\u0630\u0641 \u0634\u0631\u0637</span></div>';
+                ((b.st == 'w' || b.st == 'l') ? '<span class="more" onclick="editNote(\'' + b.id + '\',\'lesson\')">\ud83d\udcda \u062f\u0631\u0633 \u0628\u0639\u062f \u0628\u0627\u0632\u06cc</span>' : '') + '<button class="delbtn" onclick="delBet(\'' + b.id + '\')">\ud83d\uddd1\ufe0f \u062d\u0630\u0641 \u0634\u0631\u0637</button></div>';
               if (needCheck(b, Date.now())) h += '<div class="more" onclick="checkResults(\'' + b.id + '\')">\ud83d\udd04 \u0686\u06a9 \u0646\u062a\u06cc\u062c\u0647 \u0647\u0645\u06cc\u0646 \u0634\u0631\u0637</div>';
               h += '</div>';
             });
