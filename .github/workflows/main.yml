@@ -2093,6 +2093,14 @@ jobs:
             h += '<div class="mut" style="margin-top:8px;line-height:1.8">\u0627\u06af\u0647 \u0628\u0627\u0632\u0647\u200c\u0627\u06cc \u06a9\u0647 \u0645\u062b\u0644\u0627\u064b \u06f7\u06f0\u066a \u062f\u06cc\u062f\u06cc \u0648\u0627\u0642\u0639\u0627\u064b \u062d\u062f\u0648\u062f \u06f7\u06f0\u066a \u0628\u0631\u062f\u0647 \u0628\u0627\u0634\u0647 (\u0633\u0628\u0632)\u060c \u0628\u0631\u0622\u0648\u0631\u062f\u0647\u0627\u062a \u062f\u0631\u0633\u062a\u0647. CLV \u0645\u062b\u0628\u062a \u06cc\u0639\u0646\u06cc \u0636\u0631\u06cc\u0628\u062a \u0627\u0632 \u0636\u0631\u06cc\u0628 \u0644\u062d\u0638\u0647 \u0634\u0631\u0648\u0639 \u0628\u0647\u062a\u0631 \u0628\u0648\u062f\u0647\u060c \u06a9\u0647 \u0628\u0627 \u0646\u0645\u0648\u0646\u0647 \u06a9\u0648\u0686\u06cc\u06a9 \u0647\u0645 \u0645\u0639\u06cc\u0627\u0631 \u0642\u0627\u0628\u0644 \u0627\u0639\u062a\u0645\u0627\u062f\u06cc\u0647. \u0632\u06cc\u0631 \u06f1\u06f0 \u0646\u062a\u06cc\u062c\u0647 \u062a\u0648 \u0647\u0631 \u0628\u0627\u0632\u0647\u060c \u0639\u062f\u062f\u0647\u0627 \u0631\u0648 \u062c\u062f\u06cc \u0646\u06af\u06cc\u0631.</div></div>';
             return h;
           }
+          function delBet(id) {
+            var b = findBet(id); if (!b) return;
+            if (!confirm('ðŸ—‘ Ø§ÛŒÙ† Ø´Ø±Ø· Ùˆ Ø±Ú©ÙˆØ±Ø¯Ø´ Ø§Ø² Ø¢Ù…Ø§Ø± Ùˆ Ø¬Ø¯ÙˆÙ„ Ø¨Ø§Ø²Ø§Ø±Ù‡Ø§ Ù¾Ø§Ú© Ø´ÙˆØ¯ØŸ')) return;
+            b.sel.forEach(function (x) { delete SMN[x.id]; delete SRES[x.id]; delete SOPEN[x.id]; });
+            BETS = BETS.filter(function (x) { return x.id != id; });
+            W.coins = r2(W.coins + (b.st == 'p' ? b.stake : 0));
+            sv('sman', SMN); saveAll(); renderBets(); toast('âœ… Ø´Ø±Ø· Ùˆ Ø±Ú©ÙˆØ±Ø¯ Ø¢Ù…Ø§Ø±ÛŒâ€ŒØ§Ø´ Ù¾Ø§Ú© Ø´Ø¯');
+          }
           function editNote(id, f) {
             var b = null; BETS.forEach(function (x) { if (x.id == id) b = x; }); if (!b) return;
             var v = prompt(f == 'note' ? '\ud83d\udcdd \u0686\u0631\u0627 \u0627\u06cc\u0646 \u0634\u0631\u0637 \u0631\u0648 \u0628\u0633\u062a\u06cc\u061f' : '\ud83d\udcda \u0628\u0639\u062f \u0627\u0632 \u0628\u0627\u0632\u06cc \u0686\u06cc \u06cc\u0627\u062f \u06af\u0631\u0641\u062a\u06cc\u061f \u06a9\u062f\u0648\u0645 \u0627\u0633\u062a\u062f\u0644\u0627\u0644\u062a \u062f\u0631\u0633\u062a \u0628\u0648\u062f \u0648 \u06a9\u062f\u0648\u0645 \u063a\u0644\u0637\u061f', b[f] || '');
@@ -2139,7 +2147,7 @@ jobs:
               if (b.note) h += '<div class="note">\ud83d\udcdd <b>\u0686\u0631\u0627 \u0628\u0633\u062a\u0645:</b> ' + esc(b.note) + '</div>';
               if (b.lesson) h += '<div class="note" style="border-right:3px solid var(--gold)">\ud83d\udcda <b>\u062f\u0631\u0633 \u0628\u0639\u062f \u0628\u0627\u0632\u06cc:</b> ' + esc(b.lesson) + '</div>';
               h += '<div class="row" style="justify-content:space-around"><span class="more" onclick="editNote(\'' + b.id + '\',\'note\')">\u270f\ufe0f \u06cc\u0627\u062f\u062f\u0627\u0634\u062a</span>' +
-                ((b.st == 'w' || b.st == 'l') ? '<span class="more" onclick="editNote(\'' + b.id + '\',\'lesson\')">\ud83d\udcda \u062f\u0631\u0633 \u0628\u0639\u062f \u0628\u0627\u0632\u06cc</span>' : '') + '</div>';
+                ((b.st == 'w' || b.st == 'l') ? '<span class="more" onclick="editNote(\'' + b.id + '\',\'lesson\')">\ud83d\udcda \u062f\u0631\u0633 \u0628\u0639\u062f \u0628\u0627\u0632\u06cc</span>' : '') + '<span class="more" style="color:var(--red)" onclick="delBet(\'' + b.id + '\')">\ud83d\uddd1\ufe0f \u062d\u0630\u0641 \u0634\u0631\u0637</span></div>';
               if (needCheck(b, Date.now())) h += '<div class="more" onclick="checkResults(\'' + b.id + '\')">\ud83d\udd04 \u0686\u06a9 \u0646\u062a\u06cc\u062c\u0647 \u0647\u0645\u06cc\u0646 \u0634\u0631\u0637</div>';
               h += '</div>';
             });
