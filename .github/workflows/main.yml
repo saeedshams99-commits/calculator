@@ -2591,7 +2591,14 @@ jobs:
           (function () { var n = Date.now(), ch = false; for (var k in SMN) { if (k != 'calc' && (!SMN[k] || !SMN[k]._t || n - new Date(SMN[k]._t).getTime() > 3 * 86400000)) { delete SMN[k]; ch = true; } } if (ch) sv('sman', SMN); })();
           function sTyping() { var a = document.activeElement; return !!(a && a.className && /\bsin\b/.test(a.className)); }
           function sBlur() { if (RRP) { RRP = 0; setTimeout(function () { if (!sTyping()) rerender(); }, 60); } }
-          function sD(ctx) { var D = SMN[ctx]; if (!D) { D = { h: {}, a: {}, bl: 1, o: {}, mt: 'league' }; SMN[ctx] = D; } if (!D.h) D.h = {}; if (!D.a) D.a = {}; if (!D.o) D.o = {}; if (D.bl === undefined) D.bl = 1; if (!D.mt) D.mt = 'league'; return D; }
+          function sD(ctx) {
+            var D = SMN[ctx];
+            if (!D) { D = { h:{}, a:{}, bl:1, o:{}, mt:'league', weather:'clear', temp:'', refY:'', refR:'', lineupH:100, lineupA:100, bttsH:'unknown', bttsA:'unknown' }; SMN[ctx]=D; }
+            if(!D.h)D.h={}; if(!D.a)D.a={}; if(!D.o)D.o={}; if(D.bl===undefined)D.bl=1; if(!D.mt)D.mt='league';
+            if(!D.weather)D.weather='clear'; if(D.temp===undefined)D.temp=''; if(D.refY===undefined)D.refY=''; if(D.refR===undefined)D.refR='';
+            if(D.lineupH===undefined)D.lineupH=100; if(D.lineupA===undefined)D.lineupA=100;
+            if(!D.bttsH)D.bttsH='unknown'; if(!D.bttsA)D.bttsA='unknown'; return D;
+          }
           function sM(ctx) { return ctx == 'calc' ? null : (MATCHES[ctx] || null); }
           function sNames(ctx) { var m = sM(ctx), D = SMN[ctx] || {}; if (m) return [m.home, m.away]; return [D.hn || '\u0645\u06cc\u0632\u0628\u0627\u0646', D.an || '\u0645\u0647\u0645\u0627\u0646']; }
           function sNum(v) { var t = String(v === undefined || v === null ? '' : v).trim(); if (!t) return null; var n = num(t); return isNaN(n) ? null : n; }
@@ -2617,62 +2624,44 @@ jobs:
           }
           function r3(x) { return Math.round(x * 1000) / 1000; }
           function sCalc(ctx) {
-            var D = sD(ctx), nm = sNames(ctx), err = [];
-            var prep = function (T, n0) {
-              var w = sNum(T.w) || 0, d = sNum(T.d) || 0, l = sNum(T.l) || 0, n = w + d + l, gf = sNum(T.gf), ga = sNum(T.ga);
-              if (n < 3) { err.push(n0 + ': \u062a\u0639\u062f\u0627\u062f \u0628\u0631\u062f\u060c \u0645\u0633\u0627\u0648\u06cc \u0648 \u0628\u0627\u062e\u062a \u0631\u0648 \u0628\u062f\u0647 (\u062d\u062f\u0627\u0642\u0644 \u06f3 \u0628\u0627\u0632\u06cc)'); return null; }
-              if (gf === null || ga === null) { err.push(n0 + ': \u06af\u0644 \u0632\u062f\u0647 \u0648 \u06af\u0644 \u062e\u0648\u0631\u062f\u0647 \u0647\u0645\u0648\u0646 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0648 \u0628\u062f\u0647'); return null; }
-              return { n: n, w: w, d: d, l: l, gf: gf / n, ga: ga / n, tgf: gf, tga: ga, ppg: (3 * w + d) / n, sh: sAvg(T.sh), po: sNum(T.po), ws: sNum(T.ws) || 0, us: sNum(T.us) || 0, ls: sNum(T.ls) || 0 };
-            };
-            var h = prep(D.h, nm[0]), a = prep(D.a, nm[1]);
-            if (!h || !a) return { err: err };
-            var w = [], K = 3;
-            var ms = ((h.gf + h.ga) * h.n + (a.gf + a.ga) * a.n) / (2 * (h.n + a.n));
-            var mu = clp(0.6 * ms + 0.4 * 1.35, 0.95, 1.9);
-            var att = function (t) { var x = t.gf; if (t.sh !== null) x = 0.85 * x + 0.15 * t.gf * clp(t.sh / 12, 0.75, 1.35); if (t.po !== null) { var po = clp(t.po, 30, 70); x = 0.85 * x + 0.15 * t.gf * (1 + (po - 50) / 100); } return x; };
-            var ah = (att(h) * h.n + K * mu) / (h.n + K) / mu, dh = (h.ga * h.n + K * mu) / (h.n + K) / mu;
-            var aa = (att(a) * a.n + K * mu) / (a.n + K) / mu, da = (a.ga * a.n + K * mu) / (a.n + K) / mu;
-            var lh = mu * MP.ha * ah * da, la = mu / MP.ha * aa * dh;
-            var dp = clp(h.ppg - a.ppg, -2.5, 2.5), f = Math.exp(MP.bs * dp / 2); lh *= f; la /= f;
-            var stk = function (t) {
-              var fo = 1, fx = 1;
-              if (t.ws >= 3) fo *= 1 + 0.015 * Math.min(t.ws - 2, 4);
-              if (t.ls >= 3) { fo *= 1 - 0.02 * Math.min(t.ls - 2, 4); fx *= 1 + 0.01 * Math.min(t.ls - 2, 4); }
-              if (t.us >= 5) fx *= 1 - 0.01 * Math.min(t.us - 4, 5);
-              return [fo, fx];
-            };
-            var sh = stk(h), sa = stk(a);
-            var mtf = { league: [1, 1], club_group: [0.98, 0.98], club_knockout: [0.94, 0.94], nat_group: [0.96, 0.96], nat_knockout: [0.90, 0.90] }[D.mt] || [1, 1];
-            lh *= mtf[0]; la *= mtf[1];
-            if (D.mt == 'club_knockout' || D.mt == 'nat_knockout') w.push('\u0645\u0633\u0627\u0628\u0642\u0647 \u062d\u0630\u0641\u06cc: \u0645\u0633\u0627\u0648\u06cc \u0648 \u0628\u0627\u0632\u06cc \u0645\u062d\u062a\u0627\u0637\u0627\u0646\u0647 \u0645\u0645\u06a9\u0646 \u0627\u0633\u062a \u0628\u06cc\u0634\u062a\u0631 \u0634\u0648\u062f');
-            lh *= clp(sh[0] * sa[1], 0.9, 1.1); la *= clp(sa[0] * sh[1], 0.9, 1.1);
-            lh = clp(lh * MP.gs, 0.15, 4.5); la = clp(la * MP.gs, 0.15, 4.5);
-            var raw = [r3(lh), r3(la)], mk = null;
-            if (D.bl) {
-              var g = sGet(ctx), T = lh + la, Dd = lh - la, tm = null, dm = null;
-              var qo = sNv(g, 'O25'); if (qo !== null) tm = bis(function (x) { return ceq(ctot(x, 2.5, 'O')); }, qo, 0.3, 7);
-              var Tf = tm !== null ? (T + tm) / 2 : T;
-              var q1 = sNv(g, '1'), q2 = sNv(g, '2');
-              if (q1 !== null && q2 !== null) dm = bis(function (x) { var r = chcp((Tf + x) / 2, (Tf - x) / 2, 1, 0); return r[0] - r[2]; }, q1 - q2, -Tf + 0.05, Tf - 0.05);
-              var Df = dm !== null ? (Dd + dm) / 2 : Dd;
-              if (tm !== null || dm !== null) { lh = clp((Tf + Df) / 2, 0.1, 4.5); la = clp((Tf - Df) / 2, 0.1, 4.5); mk = { t: tm, d: dm }; }
-            }
-            if (h.n < 6 || a.n < 6) w.push('\u0646\u0645\u0648\u0646\u0647 \u06a9\u0648\u0686\u06cc\u06a9\u0647 (\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f6 \u0628\u0627\u0632\u06cc)\u060c \u0627\u0637\u0645\u06cc\u0646\u0627\u0646 \u0631\u0648 \u0645\u062a\u0648\u0633\u0637 \u062d\u0633\u0627\u0628 \u06a9\u0646 (\u062f\u0631\u0633 \u06f3)');
-            if (h.l >= 6 || a.l >= 6) w.push('\u06cc\u0647 \u062a\u06cc\u0645 \u06f6 \u0628\u0627\u062e\u062a \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u062f\u0627\u0631\u0647. \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u0642\u0648\u06cc \u0634\u0631\u0637 \u0646\u0632\u0646 (\u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632\u060c \u0633\u0624\u0627\u0644 \u06f2)');
-            return { lh: r3(lh), la: r3(la), rho: MP.rho, raw: raw, mk: mk, mu: mu, w: w, h: h, a: a };
+            var D=sD(ctx), nm=sNames(ctx), err=[], w=[];
+            var prep=function(T,n0){var w0=sNum(T.w)||0,d=sNum(T.d)||0,l=sNum(T.l)||0,n=w0+d+l,gf=sNum(T.gf),ga=sNum(T.ga);
+              if(n<3){err.push(n0+': تعداد برد، مساوی و باخت را بده (حداقل 3 بازی)');return null;}
+              if(gf===null||ga===null){err.push(n0+': گل زده و گل خورده را بده');return null;}
+              return {n:n,w:w0,d:d,l:l,gf:gf/n,ga:ga/n,ppg:(3*w0+d)/n,sh:sAvg(T.sh),po:sNum(T.po),ws:sNum(T.ws)||0,us:sNum(T.us)||0,ls:sNum(T.ls)||0};};
+            var h=prep(D.h,nm[0]),a=prep(D.a,nm[1]);if(!h||!a)return {err:err};
+            var K=3,ms=((h.gf+h.ga)*h.n+(a.gf+a.ga)*a.n)/(2*(h.n+a.n)),mu=clp(.6*ms+.4*1.35,.95,1.9);
+            var att=function(t){var x=t.gf;if(t.sh!==null)x=.85*x+.15*t.gf*clp(t.sh/12,.75,1.35);if(t.po!==null){var po=clp(t.po,30,70);x=.85*x+.15*t.gf*(1+(po-50)/100);}return x;};
+            var ah=(att(h)*h.n+K*mu)/(h.n+K)/mu,dh=(h.ga*h.n+K*mu)/(h.n+K)/mu,aa=(att(a)*a.n+K*mu)/(a.n+K)/mu,da=(a.ga*a.n+K*mu)/(a.n+K)/mu;
+            var lh=mu*MP.ha*ah*da,la=mu/MP.ha*aa*dh,f=Math.exp(MP.bs*clp(h.ppg-a.ppg,-2.5,2.5)/2);lh*=f;la/=f;
+            var stk=function(t){var fo=1,fx=1;if(t.ws>=3)fo*=1+.015*Math.min(t.ws-2,4);if(t.ls>=3){fo*=1-.02*Math.min(t.ls-2,4);fx*=1+.01*Math.min(t.ls-2,4);}if(t.us>=5)fx*=1-.01*Math.min(t.us-4,5);return[fo,fx];};
+            var sh=stk(h),sa=stk(a),mtf={league:[1,1],friendly:[1.08,1.08],club_group:[.98,.98],club_knockout:[.94,.94],nat_group:[.96,.96],nat_knockout:[.90,.90]}[D.mt]||[1,1];
+            lh*=mtf[0];la*=mtf[1];if(D.mt=='friendly')w.push('بازی دوستانه: افزایش محدود نرخ گل اعمال شد');
+            var lH=clp(sNum(D.lineupH)||100,60,115)/100,lA=clp(sNum(D.lineupA)||100,60,115)/100;lh*=lH;la*=lA;
+            var wf={clear:1,cloudy:.995,rain:.92}[D.weather]||1;lh*=wf;la*=wf;
+            var temp=sNum(D.temp);if(temp!==null){var tf=temp<5?.94:(temp>35?.93:(temp>30?.97:(temp<10?.98:1)));lh*=tf;la*=tf;}
+            var ry=sNum(D.refY),rr=sNum(D.refR);if(ry!==null||rr!==null){var ref=1+clp(((ry===null?3.8:ry)-3.8)*.004+((rr===null?.12:rr)-.12)*.015,-.025,.025);lh*=ref;la*=ref;}
+            if(D.bttsH=='yes')lh*=1.10;if(D.bttsH=='no')lh*=.82;if(D.bttsA=='yes')la*=1.10;if(D.bttsA=='no')la*=.82;
+            lh*=clp(sh[0]*sa[1],.9,1.1);la*=clp(sa[0]*sh[1],.9,1.1);lh=clp(lh*MP.gs,.15,4.5);la=clp(la*MP.gs,.15,4.5);
+            var raw=[r3(lh),r3(la)],mk=null;
+            if(D.bl){var g=sGet(ctx),T=lh+la,Dd=lh-la,tm=null,dm=null,qo=sNv(g,'O25');if(qo!==null)tm=bis(function(x){return ceq(ctot(x,2.5,'O'));},qo,.3,7);
+              var Tf=tm!==null?(T+tm)/2:T,q1=sNv(g,'1'),q2=sNv(g,'2');if(q1!==null&&q2!==null)dm=bis(function(x){var r=chcp((Tf+x)/2,(Tf-x)/2,1,0);return r[0]-r[2];},q1-q2,-Tf+.05,Tf-.05);
+              var Df=dm!==null?(Dd+dm)/2:Dd;if(tm!==null||dm!==null){lh=clp((Tf+Df)/2,.1,4.5);la=clp((Tf-Df)/2,.1,4.5);mk={t:tm,d:dm};}}
+            if(h.n<6||a.n<6)w.push('نمونه کمتر از ۶ بازی است؛ اطمینان مدل متوسط است');
+            return {lh:r3(lh),la:r3(la),rho:MP.rho,raw:raw,mk:mk,mu:mu,w:w,h:h,a:a,inputs:{weather:D.weather,temp:temp,refY:ry,refR:rr,lineupH:lH*100,lineupA:lA*100,bttsH:D.bttsH,bttsA:D.bttsA,matchType:D.mt}};
           }
           var SMK = [['1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646'], ['X', '\u0645\u0633\u0627\u0648\u06cc'], ['2', '\u06f2 \u0645\u0647\u0645\u0627\u0646'], ['1X', '1X'], ['X2', 'X2'], ['12', '12'], ['H1:0', '\u0645\u06cc\u0632\u0628\u0627\u0646 \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc'], ['H2:0', '\u0645\u0647\u0645\u0627\u0646 \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc'], ['BY', 'BTTS \u0628\u0644\u0647'], ['BN', 'BTTS \u062e\u06cc\u0631'], ['O15', 'O 1.5'], ['U15', 'U 1.5'], ['O25', 'O 2.5'], ['U25', 'U 2.5'], ['O35', 'O 3.5'], ['U35', 'U 3.5']];
           function sLn(v) { return (v > 0 ? '+' : '') + v; }
           function sRow(R, g, k, l) {
             var p = mPr(R, k), o = g(k), q = o ? sNv(g, k) : null;
             if (p === null) p = 0;
-            var cap = k == 'U35' ? 0.7 : 0.8, pe = Math.min(p, cap), ev = o ? pe * o - 1 : null, ed = q === null ? null : p - q;
+            var ev = o ? p * o - 1 : null, ed = q === null ? null : p - q;
             var q1 = sNv(g, '1'), q2 = sNv(g, '2'), ag = false;
             if (q1 !== null && q1 >= FAVT && { '2': 1, 'X': 1, 'X2': 1, 'H2:0': 1 }[k]) ag = true;
             if (q2 !== null && q2 >= FAVT && { '1': 1, 'X': 1, '1X': 1, 'H1:0': 1 }[k]) ag = true;
             var ok = o && o >= 1.45 && ev >= 0.05 && !ag && (ed === null || ed >= 0.05);
             var v = ok ? 1 : 0;
-            var v2 = !v && ok && ed !== null && ed >= 0.03 && k.charAt(0) == 'O' ? 1 : 0;
+            var v2 = !v && o && o >= 1.40 && ev >= 0.03 && !ag && (ed === null || ed >= 0.03) ? 1 : 0;
             return { k: k, l: l, p: p, o: o, q: q, ev: ev, ed: ed, v: v, v2: v2, ag: ag };
           }
           function sAll(R, g) {
@@ -2725,7 +2714,7 @@ jobs:
           function sRe(ctx) { if (ctx == 'calc') renderCalc(); else rerender(); }
           function sTog(ctx) { SOPEN[ctx] = !SOPEN[ctx]; if (ctx != 'calc' && SOPEN[ctx] && SEL != ctx && MATCHES[ctx]) { openM(ctx); return; } sRe(ctx); }
           function sBl(ctx) { var D = sD(ctx); D.bl = D.bl ? 0 : 1; sv('sman', SMN); sRe(ctx); }
-          function sClr(ctx) { if (!confirm('\u0622\u0645\u0627\u0631 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return; var D = sD(ctx); D.h = {}; D.a = {}; D.mt = 'league'; if (ctx == 'calc') { D.o = {}; D.hn = ''; D.an = ''; } delete SRES[ctx]; sv('sman', SMN); sRe(ctx); }
+          function sClr(ctx) { if (!confirm('\u0622\u0645\u0627\u0631 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return; var D = sD(ctx); D.h = {}; D.a = {}; D.mt = 'league'; D.weather='clear'; D.temp=''; D.refY=''; D.refR=''; D.lineupH=100; D.lineupA=100; D.bttsH='unknown'; D.bttsA='unknown'; if (ctx == 'calc') { D.o = {}; D.hn = ''; D.an = ''; } delete SRES[ctx]; sv('sman', SMN); sRe(ctx); }
           function sAdd(ctx, k) { var m = sM(ctx); if (!m) { toast('\u0627\u06cc\u0646\u062c\u0627 \u0641\u0642\u0637 \u0645\u062d\u0627\u0633\u0628\u0647\u200c\u0633\u062a. \u0628\u0631\u0627\u06cc \u0628\u0644\u06cc\u0637 \u0627\u0632 \u0635\u0641\u062d\u0647 \u0647\u0645\u0648\u0646 \u0628\u0627\u0632\u06cc \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u06a9\u0646'); return; } if (!getOdd(m, k)) { toast('\u0627\u0648\u0644 \u0636\u0631\u06cc\u0628 \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u0628\u0686\u0633\u0628\u0648\u0646 \u06cc\u0627 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647'); return; } tog(ctx, k); }
           function sPaste(ctx) {
             if (ctx != 'calc') { pasteOdds(ctx); return; }
@@ -2750,7 +2739,9 @@ jobs:
             var h = '<div class="hpp"><div class="lbl">\ud83d\udcdd \u062a\u062d\u0644\u06cc\u0644 \u0628\u0627 \u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc</div><div class="mut" style="line-height:1.9">\u062a\u0639\u062f\u0627\u062f \u0628\u0631\u062f\u060c \u0645\u0633\u0627\u0648\u06cc \u0648 \u0628\u0627\u062e\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u062e\u06cc\u0631 \u0647\u0631 \u062a\u06cc\u0645 (\u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06f1\u06f0 \u062a\u0627) \u0648 \u062c\u0645\u0639 \u06af\u0644 \u0632\u062f\u0647 \u0648 \u062e\u0648\u0631\u062f\u0647 \u0647\u0645\u0648\u0646 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0648 \u0628\u062f\u0647. \u0645\u062c\u0645\u0648\u0639 \u0634\u0648\u062a\u060c \u0645\u0627\u0644\u06a9\u06cc\u062a \u062a\u0648\u067e \u0648 \u0631\u06a9\u0648\u0631\u062f\u0647\u0627\u06cc \u067e\u0634\u062a\u200c\u0633\u0631\u0647\u0645 \u0627\u062e\u062a\u06cc\u0627\u0631\u06cc\u200c\u0627\u0646. \u0645\u062c\u0645\u0648\u0639 \u0634\u0648\u062a \u0631\u0648 \u0645\u06cc\u062a\u0648\u0646\u06cc \u0645\u06cc\u0627\u0646\u06a9\u06cc\u0646 \u0628\u062f\u06cc \u060c \u0645\u0627\u0644\u06a9\u06cc\u062a \u0631\u0648 \u0628\u0647\u0635\u0648\u0631\u062a \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u062f\u0631\u0635\u062f\u06cc \u0628\u062f\u0647\u060c \u0645\u062b\u0644\u0627\u064b \u06f5\u06f8\u066b\u060c \u0628\u0631\u0627\u06cc \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u062c\u062f\u0627.</div>';
             if (!m) h += '<div class="sg" style="grid-template-columns:1fr 1fr">' + sFld(ctx, 'n', 'hn', '\u0627\u0633\u0645 \u0645\u06cc\u0632\u0628\u0627\u0646', 1) + sFld(ctx, 'n', 'an', '\u0627\u0633\u0645 \u0645\u0647\u0645\u0627\u0646', 1) + '</div>';
             h += sSide(ctx, 'h', '\ud83c\udfe0 ' + nm[0]) + sSide(ctx, 'a', '\u2708\ufe0f ' + nm[1]);
-            h += '<div class="note" style="white-space:normal"><b>\u0646\u0648\u0639 \u0645\u0633\u0627\u0628\u0642\u0647</b><select onchange="sIn(\'' + ctx + '\',\'n\',\'mt\',this)"><option value="league"' + (D.mt == 'league' ? ' selected' : '') + '>\u0644\u06cc\u06af</option><option value="club_group"' + (D.mt == 'club_group' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u06af\u0631\u0648\u0647\u06cc</option><option value="club_knockout"' + (D.mt == 'club_knockout' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u062d\u0630\u0641\u06cc</option><option value="nat_group"' + (D.mt == 'nat_group' ? ' selected' : '') + '>\u0645\u0644\u06cc \u06af\u0631\u0648\u0647\u06cc \u0686\u0647\u0627\u0631 \u062a\u06cc\u0645\u06cc</option><option value="nat_knockout"' + (D.mt == 'nat_knockout' ? ' selected' : '') + '>\u0645\u0644\u06cc \u062d\u0630\u0641\u06cc</option></select></div>';
+            h += '<div class="note" style="white-space:normal"><b>🌤️ آب‌وهوا، داور و ترکیب</b><div class="sg" style="grid-template-columns:1fr 1fr">' +
+              '<div><label class="mut">آب‌وهوا</label><select onchange="sIn(\''+ctx+'\',\'n\',\'weather\',this)"><option value="clear"'+(D.weather=='clear'?' selected':'')+'>صاف</option><option value="cloudy"'+(D.weather=='cloudy'?' selected':'')+'>ابری</option><option value="rain"'+(D.weather=='rain'?' selected':'')+'>بارانی</option></select></div>'+sFld(ctx,'n','temp','دما °C',0)+'</div><div class="sg" style="grid-template-columns:1fr 1fr">'+sFld(ctx,'n','refY','میانگین زرد داور',0)+sFld(ctx,'n','refR','میانگین قرمز داور',0)+'</div><div class="sg" style="grid-template-columns:1fr 1fr">'+sFld(ctx,'n','lineupH','قدرت ترکیب میزبان %',0)+sFld(ctx,'n','lineupA','قدرت ترکیب مهمان %',0)+'</div><div class="sg" style="grid-template-columns:1fr 1fr"><div><label class="mut">میزبان گل می‌زند؟</label><select onchange="sIn(\''+ctx+'\',\'n\',\'bttsH\',this)"><option value="unknown"'+(D.bttsH=='unknown'?' selected':'')+'>نامشخص</option><option value="yes"'+(D.bttsH=='yes'?' selected':'')+'>بله</option><option value="no"'+(D.bttsH=='no'?' selected':'')+'>خیر</option></select></div><div><label class="mut">مهمان گل می‌زند؟</label><select onchange="sIn(\''+ctx+'\',\'n\',\'bttsA\',this)"><option value="unknown"'+(D.bttsA=='unknown'?' selected':'')+'>نامشخص</option><option value="yes"'+(D.bttsA=='yes'?' selected':'')+'>بله</option><option value="no"'+(D.bttsA=='no'?' selected':'')+'>خیر</option></select></div></div></div>';
+            h += h += '<div class="note" style="white-space:normal"><b>\u0646\u0648\u0639 \u0645\u0633\u0627\u0628\u0642\u0647</b><select onchange="sIn(\'' + ctx + '\',\'n\',\'mt\',this)"><option value="league"' + (D.mt == 'league' ? ' selected' : '') + '>\u0644\u06cc\u06af</option><option value=\"friendly\"'+(D.mt == 'friendly' ? ' selected' : '')+'>دوستانه</option><option value="club_group"' + (D.mt == 'club_group' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u06af\u0631\u0648\u0647\u06cc</option><option value="club_knockout"' + (D.mt == 'club_knockout' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u062d\u0630\u0641\u06cc</option><option value="nat_group"' + (D.mt == 'nat_group' ? ' selected' : '') + '>\u0645\u0644\u06cc \u06af\u0631\u0648\u0647\u06cc \u0686\u0647\u0627\u0631 \u062a\u06cc\u0645\u06cc</option><option value="nat_knockout"' + (D.mt == 'nat_knockout' ? ' selected' : '') + '>\u0645\u0644\u06cc \u062d\u0630\u0641\u06cc</option></select></div>';
             var no = m ? 0 : Object.keys(D.o).length;
             h += '<div class="quick" style="margin-top:6px"><button onclick="sPaste(\'' + ctx + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0628\u062a \u0648\u0627\u0646\u0627</button><button onclick="sClr(\'' + ctx + '\')">\ud83e\uddf9 \u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646</button><button onclick="sTog(\'' + ctx + '\')">\u25b2 \u0628\u0633\u062a\u0646</button></div>';
             if (!m && no) h += '<div class="mut">' + fa(no) + ' \u0636\u0631\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627 \u062b\u0628\u062a \u0634\u062f\u0647</div>';
