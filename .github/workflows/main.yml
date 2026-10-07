@@ -2383,9 +2383,18 @@ jobs:
             return M;
           }
           function mPr(R, p) {
-            /* win prob of pick p, push excluded (same as the calculator) */
+            /* Win probability of pick p, push excluded. For BTTS, combine the Dixon-Coles
+               base probability with the two teams' last-10 BTTS evidence. */
             if (!R) return null;
             if (!R.M) R.M = mMat(R.lh, R.la, R.rho);
+            if ((p == 'BY' || p == 'BN') && R.bttsHist !== null && R.bttsHist !== undefined) {
+              var base=0,i,j;
+              for(i=0;i<=10;i++) for(j=0;j<=10;j++) if(i>0&&j>0) base+=R.M[i][j];
+              var clampP=function(x){return Math.max(.001,Math.min(.999,x));};
+              var lg=function(x){x=clampP(x);return Math.log(x/(1-x));};
+              var blend=1/(1+Math.exp(-(0.70*lg(base)+0.30*lg(R.bttsHist))));
+              return p=='BY'?blend:1-blend;
+            }
             var w = 0, l = 0, i, j;
             for (i = 0; i <= 10; i++) for (j = 0; j <= 10; j++) { var r = resX(p, i, j); if (r == 'w') w += R.M[i][j]; else if (r == 'l') l += R.M[i][j]; }
             return w + l > 0 ? w / (w + l) : null;
@@ -2593,11 +2602,11 @@ jobs:
           function sBlur() { if (RRP) { RRP = 0; setTimeout(function () { if (!sTyping()) rerender(); }, 60); } }
           function sD(ctx) {
             var D = SMN[ctx];
-            if (!D) { D = { h:{}, a:{}, bl:1, o:{}, mt:'league', weather:'clear', temp:'', refY:'', refR:'', lineupH:100, lineupA:100, bttsH:'unknown', bttsA:'unknown' }; SMN[ctx]=D; }
+            if (!D) { D = { h:{}, a:{}, bl:1, o:{}, mt:'league', weather:'clear', temp:'', refY:'', refR:'', formH:'4-3-3', formA:'4-3-3', btts10H:'', btts10A:'' }; SMN[ctx]=D; }
             if(!D.h)D.h={}; if(!D.a)D.a={}; if(!D.o)D.o={}; if(D.bl===undefined)D.bl=1; if(!D.mt)D.mt='league';
             if(!D.weather)D.weather='clear'; if(D.temp===undefined)D.temp=''; if(D.refY===undefined)D.refY=''; if(D.refR===undefined)D.refR='';
-            if(D.lineupH===undefined)D.lineupH=100; if(D.lineupA===undefined)D.lineupA=100;
-            if(!D.bttsH)D.bttsH='unknown'; if(!D.bttsA)D.bttsA='unknown'; return D;
+            if(!D.formH)D.formH='4-3-3'; if(!D.formA)D.formA='4-3-3'; if(D.btts10H===undefined)D.btts10H=''; if(D.btts10A===undefined)D.btts10A='';
+            return D;
           }
           function sM(ctx) { return ctx == 'calc' ? null : (MATCHES[ctx] || null); }
           function sNames(ctx) { var m = sM(ctx), D = SMN[ctx] || {}; if (m) return [m.home, m.away]; return [D.hn || '\u0645\u06cc\u0632\u0628\u0627\u0646', D.an || '\u0645\u0647\u0645\u0627\u0646']; }
@@ -2623,6 +2632,72 @@ jobs:
             return (1 / x) / (1 / x + 1 / y);
           }
           function r3(x) { return Math.round(x * 1000) / 1000; }
+
+          /* ---------- tactical formation engine ----------
+             The formation is treated as a starting structure, not a fixed picture.
+             The engine models: width, midfield numbers, wing-back exposure, attacking lines,
+             defensive line height, central overloads and transition risk. Effects are deliberately
+             small and regularized so formation cannot overpower stronger empirical team data. */
+          var FORM = {
+            '4-3-3':     {d:4,m:3,a:3,w:3,p:0,dm:1,ten:0,wb:0,hi:2,co:2},
+            '4-2-3-1':   {d:4,m:3,a:1,w:3,p:1,dm:2,ten:1,wb:0,hi:2,co:3},
+            '4-4-2':     {d:4,m:2,a:2,w:2,p:0,dm:0,ten:0,wb:0,hi:2,co:3},
+            '4-4-1-1':   {d:4,m:2,a:1,w:2,p:1,dm:0,ten:1,wb:0,hi:2,co:3},
+            '4-5-1':     {d:4,m:3,a:1,w:2,p:0,dm:1,ten:0,wb:0,hi:1,co:4},
+            '4-1-4-1':   {d:4,m:4,a:1,w:3,p:0,dm:1,ten:0,wb:0,hi:2,co:4},
+            '4-2-2-2':   {d:4,m:2,a:2,w:1,p:0,dm:2,ten:2,wb:0,hi:2,co:3},
+            '4-3-1-2':   {d:4,m:3,a:2,w:1,p:1,dm:1,ten:1,wb:0,hi:2,co:3},
+            '4-3-2-1':   {d:4,m:3,a:1,w:1,p:2,dm:1,ten:2,wb:0,hi:2,co:3},
+            '4-2-1-3':   {d:4,m:3,a:3,w:3,p:1,dm:2,ten:1,wb:0,hi:2,co:2},
+            '3-4-3':     {d:3,m:2,a:3,w:3,p:0,dm:0,ten:0,wb:2,hi:2,co:2},
+            '3-4-2-1':   {d:3,m:2,a:1,w:2,p:2,dm:0,ten:2,wb:2,hi:2,co:2},
+            '3-5-2':     {d:3,m:3,a:2,w:2,p:0,dm:1,ten:0,wb:2,hi:1,co:3},
+            '3-4-1-2':   {d:3,m:2,a:2,w:2,p:1,dm:0,ten:1,wb:2,hi:2,co:2},
+            '3-3-3-1':   {d:3,m:3,a:1,w:2,p:3,dm:1,ten:3,wb:0,hi:2,co:2},
+            '5-3-2':     {d:5,m:3,a:2,w:2,p:0,dm:1,ten:0,wb:2,hi:1,co:4},
+            '5-4-1':     {d:5,m:4,a:1,w:2,p:0,dm:1,ten:0,wb:2,hi:1,co:5},
+            '5-2-3':     {d:5,m:2,a:3,w:3,p:0,dm:2,ten:0,wb:2,hi:2,co:3},
+            '4-2-4':     {d:4,m:2,a:4,w:3,p:0,dm:2,ten:0,wb:0,hi:3,co:2},
+            '4-1-2-1-2': {d:4,m:4,a:2,w:1,p:1,dm:1,ten:1,wb:0,hi:2,co:4},
+            '4-1-3-2':   {d:4,m:4,a:2,w:2,p:1,dm:1,ten:1,wb:0,hi:2,co:3},
+            '5-2-1-2':   {d:5,m:3,a:2,w:2,p:1,dm:2,ten:1,wb:2,hi:1,co:4},
+            '3-2-4-1':   {d:3,m:2,a:1,w:3,p:4,dm:2,ten:2,wb:0,hi:3,co:2},
+            '3-2-2-3':   {d:3,m:2,a:3,w:3,p:2,dm:2,ten:2,wb:0,hi:3,co:2}
+          };
+          var FORM_LIST = Object.keys(FORM);
+          function formInfo(k){ return FORM[k] || FORM['4-3-3']; }
+          function formEffect(att, def) {
+            var A=formInfo(att), B=formInfo(def), x=1, y=1, notes=[];
+            /* Width vs narrowness / back-three wing spaces. */
+            x += 0.012*(A.w-B.w);
+            x += 0.010*((A.w>=3?1:0)-(B.w<=1?1:0));
+            /* Central numerical superiority and the No.10 pocket. */
+            x += 0.012*(A.m-B.m);
+            x += 0.010*(A.ten>0 && B.dm<=1 ? 1 : 0);
+            /* Front-three pressure against 4/5-man build-up, and two-striker box occupation. */
+            x += 0.009*(A.a-B.dm);
+            x += 0.008*(A.p>=2 && B.d>=4 ? 1 : 0);
+            /* Wing-backs can pin wide players but leave transition channels if lost. */
+            x += 0.010*(A.wb-B.wb);
+            /* Back three/five can reduce central penetration but may concede width. */
+            x -= 0.008*(B.d>=5 && A.w<3 ? 1 : 0);
+            x += 0.010*(A.w>=3 && B.d==3 ? 1 : 0);
+            /* High line vs direct/front-heavy opponent. */
+            x += 0.008*(A.a>=3 && B.hi>=2 ? 1 : 0);
+            y = 1 + 0.006*(B.w-A.w) + 0.009*(B.a-A.dm) + 0.008*(B.ten>0 && A.dm<=1 ? 1 : 0);
+            /* Transition risk: aggressive structure can raise both sides' chance creation. */
+            if(A.a>=3 && B.a>=2) { x+=0.008; y+=0.008; notes.push('دو تیم ساختار تهاجمی دارند؛ ریسک انتقال و موقعیت‌سازی هر دو طرف بیشتر است'); }
+            if(A.w>=3 && B.d==3) notes.push('عرض میزبان در برابر دفاع سه‌نفره می‌تواند فضا در کانال‌های کناری ایجاد کند');
+            if(A.m>B.m) notes.push('برتری عددی میانه زمین به نفع ساختار مهاجم است');
+            if(B.ten>0 && A.dm<=1) notes.push('شماره ۱۰ مهمان می‌تواند پشت هافبک دفاعی میزبان فضا پیدا کند');
+            if(B.w>=3 && A.d==3) notes.push('عرض مهمان می‌تواند دفاع سه‌نفره میزبان را به کناره‌ها بکشد');
+            return {att:clp(x,.92,1.08),def:clp(y,.92,1.08),notes:notes};
+          }
+          function formMatch(home, away) {
+            var ha=formEffect(home,away), ah=formEffect(away,home);
+            return {home:ha.att*ah.def,away:ah.att*ha.def,notes:(ha.notes||[]).concat(ah.notes||[])};
+          }
+
           function sCalc(ctx) {
             var D=sD(ctx), nm=sNames(ctx), err=[], w=[];
             var prep=function(T,n0){var w0=sNum(T.w)||0,d=sNum(T.d)||0,l=sNum(T.l)||0,n=w0+d+l,gf=sNum(T.gf),ga=sNum(T.ga);
@@ -2637,20 +2712,34 @@ jobs:
             var stk=function(t){var fo=1,fx=1;if(t.ws>=3)fo*=1+.015*Math.min(t.ws-2,4);if(t.ls>=3){fo*=1-.02*Math.min(t.ls-2,4);fx*=1+.01*Math.min(t.ls-2,4);}if(t.us>=5)fx*=1-.01*Math.min(t.us-4,5);return[fo,fx];};
             var sh=stk(h),sa=stk(a),mtf={league:[1,1],friendly:[1.08,1.08],club_group:[.98,.98],club_knockout:[.94,.94],nat_group:[.96,.96],nat_knockout:[.90,.90]}[D.mt]||[1,1];
             lh*=mtf[0];la*=mtf[1];if(D.mt=='friendly')w.push('بازی دوستانه: افزایش محدود نرخ گل اعمال شد');
-            var lH=clp(sNum(D.lineupH)||100,60,115)/100,lA=clp(sNum(D.lineupA)||100,60,115)/100;lh*=lH;la*=lA;
             var wf={clear:1,cloudy:.995,rain:.92}[D.weather]||1;lh*=wf;la*=wf;
             var temp=sNum(D.temp);if(temp!==null){var tf=temp<5?.94:(temp>35?.93:(temp>30?.97:(temp<10?.98:1)));lh*=tf;la*=tf;}
             var ry=sNum(D.refY),rr=sNum(D.refR);if(ry!==null||rr!==null){var ref=1+clp(((ry===null?3.8:ry)-3.8)*.004+((rr===null?.12:rr)-.12)*.015,-.025,.025);lh*=ref;la*=ref;}
-            if(D.bttsH=='yes')lh*=1.10;if(D.bttsH=='no')lh*=.82;if(D.bttsA=='yes')la*=1.10;if(D.bttsA=='no')la*=.82;
+
+            /* Last-10 BTTS frequency: count of matches (0..10) in which BOTH teams scored.
+               Jeffreys Beta(0.5,0.5) posterior regularizes the ten-match sample. The evidence
+               is used primarily for the BTTS market and cannot overpower the goal model. */
+            var bH=sNum(D.btts10H),bA=sNum(D.btts10A),bhP=null,baP=null,bhist=null;
+            if(bH!==null){bH=Math.round(clp(bH,0,10));bhP=(bH+0.5)/11;}
+            if(bA!==null){bA=Math.round(clp(bA,0,10));baP=(bA+0.5)/11;}
+            if(bhP!==null&&baP!==null){
+              var logit=function(p){p=clp(p,.001,.999);return Math.log(p/(1-p));};
+              var invlogit=function(z){return 1/(1+Math.exp(-z));};
+              bhist=invlogit((logit(bhP)+logit(baP))/2);
+              w.push('BTTS ده بازی اخیر: '+bH+' از ۱۰ برای '+nm[0]+' و '+bA+' از ۱۰ برای '+nm[1]+'؛ اثر منظم‌شده روی بازار هر دو تیم گل می‌زنند اعمال شد');
+            }
+
+            /* Formation-vs-formation tactical interaction. */
+            var fm=formMatch(D.formH,D.formA);lh*=fm.home;la*=fm.away;Array.prototype.push.apply(w,fm.notes);
             lh*=clp(sh[0]*sa[1],.9,1.1);la*=clp(sa[0]*sh[1],.9,1.1);lh=clp(lh*MP.gs,.15,4.5);la=clp(la*MP.gs,.15,4.5);
             var raw=[r3(lh),r3(la)],mk=null;
             if(D.bl){var g=sGet(ctx),T=lh+la,Dd=lh-la,tm=null,dm=null,qo=sNv(g,'O25');if(qo!==null)tm=bis(function(x){return ceq(ctot(x,2.5,'O'));},qo,.3,7);
               var Tf=tm!==null?(T+tm)/2:T,q1=sNv(g,'1'),q2=sNv(g,'2');if(q1!==null&&q2!==null)dm=bis(function(x){var r=chcp((Tf+x)/2,(Tf-x)/2,1,0);return r[0]-r[2];},q1-q2,-Tf+.05,Tf-.05);
               var Df=dm!==null?(Dd+dm)/2:Dd;if(tm!==null||dm!==null){lh=clp((Tf+Df)/2,.1,4.5);la=clp((Tf-Df)/2,.1,4.5);mk={t:tm,d:dm};}}
             if(h.n<6||a.n<6)w.push('نمونه کمتر از ۶ بازی است؛ اطمینان مدل متوسط است');
-            return {lh:r3(lh),la:r3(la),rho:MP.rho,raw:raw,mk:mk,mu:mu,w:w,h:h,a:a,inputs:{weather:D.weather,temp:temp,refY:ry,refR:rr,lineupH:lH*100,lineupA:lA*100,bttsH:D.bttsH,bttsA:D.bttsA,matchType:D.mt}};
+            return {lh:r3(lh),la:r3(la),rho:MP.rho,raw:raw,mk:mk,mu:mu,w:w,h:h,a:a,bttsHist:bhist,bttsCounts:{home:bH,away:bA},inputs:{weather:D.weather,temp:temp,refY:ry,refR:rr,formH:D.formH,formA:D.formA,btts10H:bH,btts10A:bA,matchType:D.mt,formationEffect:fm}};
           }
-          var SMK = [['1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646'], ['X', '\u0645\u0633\u0627\u0648\u06cc'], ['2', '\u06f2 \u0645\u0647\u0645\u0627\u0646'], ['1X', '1X'], ['X2', 'X2'], ['12', '12'], ['H1:0', '\u0645\u06cc\u0632\u0628\u0627\u0646 \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc'], ['H2:0', '\u0645\u0647\u0645\u0627\u0646 \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc'], ['BY', 'BTTS \u0628\u0644\u0647'], ['BN', 'BTTS \u062e\u06cc\u0631'], ['O15', 'O 1.5'], ['U15', 'U 1.5'], ['O25', 'O 2.5'], ['U25', 'U 2.5'], ['O35', 'O 3.5'], ['U35', 'U 3.5']];
+          var SMK = [['1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646'], ['X', '\u0645\u0633\u0627\u0648\u06cc'], ['2', '\u06f2 \u0645\u0647\u0645\u0627\u0646'], ['1X', '1X'], ['X2', 'X2'], ['12', '12'], ['H1:0', '\u0645\u06cc\u0632\u0628\u0627\u0646 \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc'], ['H2:0', '\u0645\u0647\u0645\u0627\u0646 \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc'], ['O15', 'O 1.5'], ['U15', 'U 1.5'], ['O25', 'O 2.5'], ['U25', 'U 2.5'], ['O35', 'O 3.5'], ['U35', 'U 3.5'], ['BY', 'BTTS بله'], ['BN', 'BTTS خیر']];
           function sLn(v) { return (v > 0 ? '+' : '') + v; }
           function sRow(R, g, k, l) {
             var p = mPr(R, k), o = g(k), q = o ? sNv(g, k) : null;
@@ -2692,6 +2781,7 @@ jobs:
             SRES[ctx] = R;
             var g = sGet(ctx), nm = sNames(ctx), A = sAll(R, g), hasO = A.M.some(function (x) { return x.o; }), h = '';
             h += '<div class="grid" style="margin-top:8px"><div class="cell">\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631 ' + esc(nm[0]) + '<b class="gold">' + fc(R.lh) + '</b></div><div class="cell">\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631 ' + esc(nm[1]) + '<b class="gold">' + fc(R.la) + '</b></div></div>';
+            if(R.bttsCounts && R.bttsCounts.home!==null && R.bttsCounts.away!==null) h += '<div class="mut" style="line-height:1.8;margin-top:4px">BTTS در ۱۰ بازی اخیر: <b>'+fa(R.bttsCounts.home)+'</b> از ۱۰ برای '+esc(nm[0])+' | <b>'+fa(R.bttsCounts.away)+'</b> از ۱۰ برای '+esc(nm[1])+'</div>';
             h += '<div class="mut" style="line-height:1.8;margin-top:4px">\u06a9\u0644: ' + fc(R.lh + R.la) + ' \u06af\u0644' + (R.mk ? ' | \u0645\u062f\u0644 \u062e\u0627\u0645: <span class="ltr">' + fc(R.raw[0]) + ' - ' + fc(R.raw[1]) + '</span>' + (R.mk.t !== null ? ' | \u0628\u0627\u0632\u0627\u0631: ' + fc(R.mk.t) + ' \u06af\u0644' : '') + '. \u0646\u0635\u0641\u200c\u0646\u0635\u0641 \u06a9\u0634\u06cc\u062f\u0647 \u0634\u062f \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631 (\u062f\u0631\u0633 \u06f1\u060c \u06f2\u06f6 \u0648 \u06f5\u06f0)' : '') + '</div>';
             R.w.forEach(function (t) { h += '<div class="warn">\u26a0\ufe0f ' + esc(t) + '</div>'; });
             h += '<div class="note" style="white-space:normal"><b>\ud83d\udc8e \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u0627\u0627\u0631\u0632\u0634</b>';
@@ -2714,7 +2804,7 @@ jobs:
           function sRe(ctx) { if (ctx == 'calc') renderCalc(); else rerender(); }
           function sTog(ctx) { SOPEN[ctx] = !SOPEN[ctx]; if (ctx != 'calc' && SOPEN[ctx] && SEL != ctx && MATCHES[ctx]) { openM(ctx); return; } sRe(ctx); }
           function sBl(ctx) { var D = sD(ctx); D.bl = D.bl ? 0 : 1; sv('sman', SMN); sRe(ctx); }
-          function sClr(ctx) { if (!confirm('\u0622\u0645\u0627\u0631 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return; var D = sD(ctx); D.h = {}; D.a = {}; D.mt = 'league'; D.weather='clear'; D.temp=''; D.refY=''; D.refR=''; D.lineupH=100; D.lineupA=100; D.bttsH='unknown'; D.bttsA='unknown'; if (ctx == 'calc') { D.o = {}; D.hn = ''; D.an = ''; } delete SRES[ctx]; sv('sman', SMN); sRe(ctx); }
+          function sClr(ctx) { if (!confirm('\u0622\u0645\u0627\u0631 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return; var D = sD(ctx); D.h = {}; D.a = {}; D.mt = 'league'; D.weather='clear'; D.temp=''; D.refY=''; D.refR=''; D.formH='4-3-3'; D.formA='4-3-3'; D.btts10H=''; D.btts10A=''; if (ctx == 'calc') { D.o = {}; D.hn = ''; D.an = ''; } delete SRES[ctx]; sv('sman', SMN); sRe(ctx); }
           function sAdd(ctx, k) { var m = sM(ctx); if (!m) { toast('\u0627\u06cc\u0646\u062c\u0627 \u0641\u0642\u0637 \u0645\u062d\u0627\u0633\u0628\u0647\u200c\u0633\u062a. \u0628\u0631\u0627\u06cc \u0628\u0644\u06cc\u0637 \u0627\u0632 \u0635\u0641\u062d\u0647 \u0647\u0645\u0648\u0646 \u0628\u0627\u0632\u06cc \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u06a9\u0646'); return; } if (!getOdd(m, k)) { toast('\u0627\u0648\u0644 \u0636\u0631\u06cc\u0628 \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u0628\u0686\u0633\u0628\u0648\u0646 \u06cc\u0627 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647'); return; } tog(ctx, k); }
           function sPaste(ctx) {
             if (ctx != 'calc') { pasteOdds(ctx); return; }
@@ -2725,6 +2815,7 @@ jobs:
             var D = sD(ctx); D.o = P.o; if (P.h) D.hn = P.h; if (P.a) D.an = P.a; sv('sman', SMN);
             toast('\u2705 ' + fa(P.n) + ' \u0636\u0631\u06cc\u0628 \u062b\u0628\u062a \u0634\u062f'); renderCalc();
           }
+          function sInt10Fld(ctx, k, l) { var D=sD(ctx), v=D[k]; return '<div><label class="mut" style="font-size:11px">'+l+'</label><input class="sin ltr" type="number" min="0" max="10" step="1" inputmode="numeric" value="'+esc(v || '')+'" oninput="sIn(\''+ctx+'\',\'n\',\''+k+'\',this)" onblur="sBlur()"></div>'; }
           function sFld(ctx, s, k, l, txt) { var D = sD(ctx), v = s == 'n' ? D[k] : D[s][k]; return '<div><label class="mut" style="font-size:11px">' + l + '</label><input class="sin' + (txt ? '' : ' ltr') + '" ' + (txt ? '' : 'inputmode="decimal" ') + 'value="' + esc(v || '') + '" oninput="sIn(\'' + ctx + '\',\'' + s + '\',\'' + k + '\',this)" onblur="sBlur()"></div>'; }
           function sSide(ctx, s, n0) {
             var r = function (a) { return '<div class="sg" style="grid-template-columns:repeat(' + a.length + ',1fr)">' + a.map(function (x) { return sFld(ctx, s, x[0], x[1], x[2]); }).join('') + '</div>'; };
@@ -2739,9 +2830,8 @@ jobs:
             var h = '<div class="hpp"><div class="lbl">\ud83d\udcdd \u062a\u062d\u0644\u06cc\u0644 \u0628\u0627 \u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc</div><div class="mut" style="line-height:1.9">\u062a\u0639\u062f\u0627\u062f \u0628\u0631\u062f\u060c \u0645\u0633\u0627\u0648\u06cc \u0648 \u0628\u0627\u062e\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u062e\u06cc\u0631 \u0647\u0631 \u062a\u06cc\u0645 (\u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06f1\u06f0 \u062a\u0627) \u0648 \u062c\u0645\u0639 \u06af\u0644 \u0632\u062f\u0647 \u0648 \u062e\u0648\u0631\u062f\u0647 \u0647\u0645\u0648\u0646 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0648 \u0628\u062f\u0647. \u0645\u062c\u0645\u0648\u0639 \u0634\u0648\u062a\u060c \u0645\u0627\u0644\u06a9\u06cc\u062a \u062a\u0648\u067e \u0648 \u0631\u06a9\u0648\u0631\u062f\u0647\u0627\u06cc \u067e\u0634\u062a\u200c\u0633\u0631\u0647\u0645 \u0627\u062e\u062a\u06cc\u0627\u0631\u06cc\u200c\u0627\u0646. \u0645\u062c\u0645\u0648\u0639 \u0634\u0648\u062a \u0631\u0648 \u0645\u06cc\u062a\u0648\u0646\u06cc \u0645\u06cc\u0627\u0646\u06a9\u06cc\u0646 \u0628\u062f\u06cc \u060c \u0645\u0627\u0644\u06a9\u06cc\u062a \u0631\u0648 \u0628\u0647\u0635\u0648\u0631\u062a \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u062f\u0631\u0635\u062f\u06cc \u0628\u062f\u0647\u060c \u0645\u062b\u0644\u0627\u064b \u06f5\u06f8\u066b\u060c \u0628\u0631\u0627\u06cc \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u062c\u062f\u0627.</div>';
             if (!m) h += '<div class="sg" style="grid-template-columns:1fr 1fr">' + sFld(ctx, 'n', 'hn', '\u0627\u0633\u0645 \u0645\u06cc\u0632\u0628\u0627\u0646', 1) + sFld(ctx, 'n', 'an', '\u0627\u0633\u0645 \u0645\u0647\u0645\u0627\u0646', 1) + '</div>';
             h += sSide(ctx, 'h', '\ud83c\udfe0 ' + nm[0]) + sSide(ctx, 'a', '\u2708\ufe0f ' + nm[1]);
-            h += '<div class="note" style="white-space:normal"><b>🌤️ آب‌وهوا، داور و ترکیب</b><div class="sg" style="grid-template-columns:1fr 1fr">' +
-              '<div><label class="mut">آب‌وهوا</label><select onchange="sIn(\''+ctx+'\',\'n\',\'weather\',this)"><option value="clear"'+(D.weather=='clear'?' selected':'')+'>صاف</option><option value="cloudy"'+(D.weather=='cloudy'?' selected':'')+'>ابری</option><option value="rain"'+(D.weather=='rain'?' selected':'')+'>بارانی</option></select></div>'+sFld(ctx,'n','temp','دما °C',0)+'</div><div class="sg" style="grid-template-columns:1fr 1fr">'+sFld(ctx,'n','refY','میانگین زرد داور',0)+sFld(ctx,'n','refR','میانگین قرمز داور',0)+'</div><div class="sg" style="grid-template-columns:1fr 1fr">'+sFld(ctx,'n','lineupH','قدرت ترکیب میزبان %',0)+sFld(ctx,'n','lineupA','قدرت ترکیب مهمان %',0)+'</div><div class="sg" style="grid-template-columns:1fr 1fr"><div><label class="mut">میزبان گل می‌زند؟</label><select onchange="sIn(\''+ctx+'\',\'n\',\'bttsH\',this)"><option value="unknown"'+(D.bttsH=='unknown'?' selected':'')+'>نامشخص</option><option value="yes"'+(D.bttsH=='yes'?' selected':'')+'>بله</option><option value="no"'+(D.bttsH=='no'?' selected':'')+'>خیر</option></select></div><div><label class="mut">مهمان گل می‌زند؟</label><select onchange="sIn(\''+ctx+'\',\'n\',\'bttsA\',this)"><option value="unknown"'+(D.bttsA=='unknown'?' selected':'')+'>نامشخص</option><option value="yes"'+(D.bttsA=='yes'?' selected':'')+'>بله</option><option value="no"'+(D.bttsA=='no'?' selected':'')+'>خیر</option></select></div></div></div>';
-            h += h += '<div class="note" style="white-space:normal"><b>\u0646\u0648\u0639 \u0645\u0633\u0627\u0628\u0642\u0647</b><select onchange="sIn(\'' + ctx + '\',\'n\',\'mt\',this)"><option value="league"' + (D.mt == 'league' ? ' selected' : '') + '>\u0644\u06cc\u06af</option><option value=\"friendly\"'+(D.mt == 'friendly' ? ' selected' : '')+'>دوستانه</option><option value="club_group"' + (D.mt == 'club_group' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u06af\u0631\u0648\u0647\u06cc</option><option value="club_knockout"' + (D.mt == 'club_knockout' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u062d\u0630\u0641\u06cc</option><option value="nat_group"' + (D.mt == 'nat_group' ? ' selected' : '') + '>\u0645\u0644\u06cc \u06af\u0631\u0648\u0647\u06cc \u0686\u0647\u0627\u0631 \u062a\u06cc\u0645\u06cc</option><option value="nat_knockout"' + (D.mt == 'nat_knockout' ? ' selected' : '') + '>\u0645\u0644\u06cc \u062d\u0630\u0641\u06cc</option></select></div>';
+            h += '<div class="note" style="white-space:normal"><b>شرایط تکمیلی مدل</b><div class="sg" style="grid-template-columns:1fr 1fr">' + '<div><label class="mut">آب‌وهوا</label><select onchange="sIn(\''+ctx+'\',\'n\',\'weather\',this)"><option value="clear"'+(D.weather=='clear'?' selected':'')+'>صاف</option><option value="cloudy"'+(D.weather=='cloudy'?' selected':'')+'>ابری</option><option value="rain"'+(D.weather=='rain'?' selected':'')+'>بارانی</option></select></div>' + sFld(ctx,'n','temp','دما °C',0) + '</div><div class="sg" style="grid-template-columns:1fr 1fr">' + sFld(ctx,'n','refY','میانگین زرد داور',0) + sFld(ctx,'n','refR','میانگین قرمز داور',0) + '</div><div class="sg" style="grid-template-columns:1fr 1fr"><div><label class="mut">ترکیب پایه میزبان</label><select onchange="sIn(\''+ctx+'\',\'n\',\'formH\',this)">'+FORM_LIST.map(function(k){return '<option value="'+k+'"'+(D.formH==k?' selected':'')+'>'+k+'</option>';}).join('')+'</select></div><div><label class="mut">ترکیب پایه مهمان</label><select onchange="sIn(\''+ctx+'\',\'n\',\'formA\',this)">'+FORM_LIST.map(function(k){return '<option value="'+k+'"'+(D.formA==k?' selected':'')+'>'+k+'</option>';}).join('')+'</select></div></div><div class="sg" style="grid-template-columns:1fr 1fr">'+sInt10Fld(ctx,'btts10H','تعداد BTTS میزبان در ۱۰ بازی اخیر')+sInt10Fld(ctx,'btts10A','تعداد BTTS مهمان در ۱۰ بازی اخیر')+'</div><div class="mut" style="font-size:11px;line-height:1.8">ترکیب‌ها به‌صورت تطبیقی بررسی می‌شوند؛ مدل فقط «قدرت ترکیب» نمی‌دهد، بلکه اثر تقابل ساختاری دو آرایش را روی عرض، میانه زمین، فشار، فضاهای نیمه‌عمقی و انتقال‌ها وارد می‌کند.</div></div>';
+            h += '<div class="note" style="white-space:normal"><b>\u0646\u0648\u0639 \u0645\u0633\u0627\u0628\u0642\u0647</b><select onchange="sIn(\'' + ctx + '\',\'n\',\'mt\',this)"><option value="league"' + (D.mt == 'league' ? ' selected' : '') + '>\u0644\u06cc\u06af</option><option value=\"friendly\"'+(D.mt == 'friendly' ? ' selected' : '')+'>دوستانه</option><option value="club_group"' + (D.mt == 'club_group' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u06af\u0631\u0648\u0647\u06cc</option><option value="club_knockout"' + (D.mt == 'club_knockout' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u062d\u0630\u0641\u06cc</option><option value="nat_group"' + (D.mt == 'nat_group' ? ' selected' : '') + '>\u0645\u0644\u06cc \u06af\u0631\u0648\u0647\u06cc \u0686\u0647\u0627\u0631 \u062a\u06cc\u0645\u06cc</option><option value="nat_knockout"' + (D.mt == 'nat_knockout' ? ' selected' : '') + '>\u0645\u0644\u06cc \u062d\u0630\u0641\u06cc</option></select></div>';
             var no = m ? 0 : Object.keys(D.o).length;
             h += '<div class="quick" style="margin-top:6px"><button onclick="sPaste(\'' + ctx + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0628\u062a \u0648\u0627\u0646\u0627</button><button onclick="sClr(\'' + ctx + '\')">\ud83e\uddf9 \u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646</button><button onclick="sTog(\'' + ctx + '\')">\u25b2 \u0628\u0633\u062a\u0646</button></div>';
             if (!m && no) h += '<div class="mut">' + fa(no) + ' \u0636\u0631\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627 \u062b\u0628\u062a \u0634\u062f\u0647</div>';
