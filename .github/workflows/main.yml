@@ -673,6 +673,7 @@ jobs:
           var W = ld(pk('wallet'), null); if (!W) { W = { coins: START, last: 0 }; sv(pk('wallet'), W); }
           var BETS = ld(pk('bets'), []);
           var slip = ld(pk('slip'), []);
+          var SLIPSTAKE = 0;
           var NOTE = '', FAVT = 0.55;
           function saveAll() { sv(pk('wallet'), W); sv(pk('bets'), BETS); renderBal(); }
           function renderBal() { $('bal').innerHTML = '<span class="pf" onclick="go(\'set\')">' + esc(pn()) + '</span>\ud83e\ude99 ' + fc(W.coins); }
@@ -1773,6 +1774,11 @@ jobs:
             h += '<div class="row"><span>\u0628\u0631\u062f \u0627\u062d\u062a\u0645\u0627\u0644\u06cc</span><b id="win" style="color:var(--green)">\u06f0</b></div>';
             h += '<button class="btn" onclick="place()">\u2705 \u062b\u0628\u062a \u0634\u0631\u0637</button></div>';
             el.innerHTML = h;
+            if (SLIPSTAKE > 0) {
+              var se = $('stake');
+              if (se) { se.value = SLIPSTAKE; calc(); }
+              SLIPSTAKE = 0;
+            }
           }
           function evTxt(x) {
             if (!x.my) return '\u0627\u062d\u062a\u0645\u0627\u0644 \u062e\u0648\u062f\u062a \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633 \u062a\u0627 \u0627\u0631\u0632\u0634 (EV) \u062d\u0633\u0627\u0628 \u0628\u0634\u0647 \u0648 \u062a\u0648 \u06a9\u0627\u0644\u06cc\u0628\u0631\u0627\u0633\u06cc\u0648\u0646 \u0628\u06cc\u0627\u062f';
@@ -2812,7 +2818,14 @@ jobs:
           function sBl(ctx) { var D = sD(ctx); D.bl = D.bl ? 0 : 1; sv('sman', SMN); sRe(ctx); }
           function sClr(ctx) { if (!confirm('\u0622\u0645\u0627\u0631 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return; var D = sD(ctx); D.h = {}; D.a = {}; D.mt = 'league'; D.weather='clear'; D.temp=''; D.refY=''; D.refR=''; D.formH=''; D.formA=''; D.btts10H=''; D.btts10A=''; if (ctx == 'calc') { D.o = {}; D.hn = ''; D.an = ''; } delete SRES[ctx]; sv('sman', SMN); sRe(ctx); }
           function sAdd(ctx, k) { var m = sM(ctx); if (!m) { toast('\u0627\u06cc\u0646\u062c\u0627 \u0641\u0642\u0637 \u0645\u062d\u0627\u0633\u0628\u0647\u200c\u0633\u062a. \u0628\u0631\u0627\u06cc \u0628\u0644\u06cc\u0637 \u0627\u0632 \u0635\u0641\u062d\u0647 \u0647\u0645\u0648\u0646 \u0628\u0627\u0632\u06cc \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u06a9\u0646'); return false; } if (!getOdd(m, k)) { toast('\u0627\u0648\u0644 \u0636\u0631\u06cc\u0628 \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u0628\u0686\u0633\u0628\u0648\u0646 \u06cc\u0627 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647'); return false; } tog(ctx, k); return true; }
-          function sAddStake(ctx, k, amount) { var n = Number(amount) || 0; if (n <= 0) { sAdd(ctx, k); return; } if (sAdd(ctx, k)) { var e = $('stake'); if (e) { e.value = n; calc(); } } }
+          function sAddStake(ctx, k, amount) {
+            var n = Number(amount) || 0;
+            if (n <= 0) { sAdd(ctx, k); return; }
+            if (sAdd(ctx, k)) {
+              SLIPSTAKE = n;
+              go('slip');
+            }
+          }
           function sPaste(ctx) {
             if (ctx != 'calc') { pasteOdds(ctx); return; }
             var t = '';
