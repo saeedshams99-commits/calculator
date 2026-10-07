@@ -2099,11 +2099,11 @@ jobs:
           }
           function delBet(id) {
             var b = findBet(id); if (!b) return;
-            if (!confirm('ðŸ—‘ Ø§ÛŒÙ† Ø´Ø±Ø· Ùˆ Ø±Ú©ÙˆØ±Ø¯Ø´ Ø§Ø² Ø¢Ù…Ø§Ø± Ùˆ Ø¬Ø¯ÙˆÙ„ Ø¨Ø§Ø²Ø§Ø±Ù‡Ø§ Ù¾Ø§Ú© Ø´ÙˆØ¯ØŸ')) return;
+            if (!confirm('🗑 این شرط و رکوردش از آمار و جدول بازارها پاک شود؟')) return;
             b.sel.forEach(function (x) { delete SMN[x.id]; delete SRES[x.id]; delete SOPEN[x.id]; });
             BETS = BETS.filter(function (x) { return x.id != id; });
             W.coins = r2(W.coins + (b.st == 'p' ? b.stake : 0));
-            sv('sman', SMN); saveAll(); renderBets(); toast('âœ… Ø´Ø±Ø· Ùˆ Ø±Ú©ÙˆØ±Ø¯ Ø¢Ù…Ø§Ø±ÛŒâ€ŒØ§Ø´ Ù¾Ø§Ú© Ø´Ø¯');
+            sv('sman', SMN); saveAll(); renderBets(); toast('✅ شرط و رکورد آماری‌اش پاک شد');
           }
           function editNote(id, f) {
             var b = null; BETS.forEach(function (x) { if (x.id == id) b = x; }); if (!b) return;
