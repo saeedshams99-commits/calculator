@@ -1198,8 +1198,13 @@ jobs:
           var reg = 'pop', cur = POP[0], DF = 'all', CUR = null, CURM = false, NL = 0, MATCHES = {}, OPEN = {}, EX = {}, SPORTS = [], cbs = {}, cbn = 0;
 
           function $(id) { return document.getElementById(id); }
-          function ld(k, d) { try { var v = Android.load(k); var r = v ? JSON.parse(v) : d; return r === null ? d : r; } catch (e) { return d; } }
-          function sv(k, v) { Android.save(k, JSON.stringify(v)); }
+          var LDC = LDC || {};
+          function ld(k, d) {
+            var big = String(k).indexOf('af_') == 0; if (!LDC) LDC = {};
+            if (big && LDC.hasOwnProperty(k)) return LDC[k] === null ? d : LDC[k];
+            try { var v = Android.load(k); var r = v ? JSON.parse(v) : null; if (big) LDC[k] = r; return r === null ? d : r; } catch (e) { return d; }
+          }
+          function sv(k, v) { if (!LDC) LDC = {}; if (String(k).indexOf('af_') == 0) LDC[k] = (v === undefined ? null : v); Android.save(k, JSON.stringify(v)); }
           window.__cb = function (id, res) { var f = cbs[id]; delete cbs[id]; if (f) f(JSON.parse(res)); };
           function http(url, f) { var id = 'c' + (cbn++); cbs[id] = f; Android.get(url, id); }
           function key() { return ld('key', ''); }
@@ -1215,15 +1220,24 @@ jobs:
           function r2(n) { return Math.round(n * 100) / 100; }
           function fc(n) { return r2(n).toLocaleString('fa-IR', { maximumFractionDigits: 2 }); }
           function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+          /* speed (update 32): one Intl formatter per format instead of a new one on every call, and day keys memoized per 15 minutes */
+          var LFC = {}, DKC = {};
           function L(t, o, m, loc) {
+            var k = m + '|' + (loc || 'fa-IR') + '|' + JSON.stringify(o), f = LFC[k];
+            if (f === undefined) {
+              f = null;
+              try { var oo = JSON.parse(JSON.stringify(o)); oo.timeZone = 'Asia/Tehran'; f = new Intl.DateTimeFormat(loc || 'fa-IR', oo); f.format(new Date()); } catch (e) { f = null; }
+              LFC[k] = f;
+            }
             var d = new Date(t);
-            try { var oo = JSON.parse(JSON.stringify(o)); oo.timeZone = 'Asia/Tehran'; return d[m](loc || 'fa-IR', oo); }
-            catch (e) { return d[m](loc || 'fa-IR', o); }
+            if (f) { try { return f.format(d); } catch (e) {} }
+            try { var o2 = JSON.parse(JSON.stringify(o)); o2.timeZone = 'Asia/Tehran'; return d[m](loc || 'fa-IR', o2); } catch (e2) { return d[m](loc || 'fa-IR', o); }
           }
           function tm(t) { return L(t, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }, 'toLocaleString'); }
           function hm(t) { return L(t, { hour: '2-digit', minute: '2-digit' }, 'toLocaleTimeString'); }
           function dl(t) { return L(t, { weekday: 'long', day: 'numeric', month: 'long' }, 'toLocaleDateString'); }
-          function dk(t) { return L(t, { year: 'numeric', month: '2-digit', day: '2-digit' }, 'toLocaleDateString', 'en-CA'); }
+          function dk0(t) { return L(t, { year: 'numeric', month: '2-digit', day: '2-digit' }, 'toLocaleDateString', 'en-CA'); }
+          function dk(t) { var ms = typeof t == 'number' ? t : new Date(t).getTime(); if (isNaN(ms)) return dk0(t); var h = Math.floor(ms / 900000), v = DKC[h]; if (v === undefined) { v = DKC[h] = dk0(h * 900000); } return v; }
           function dayPanel(t, now) { var a = new Date(t), b = new Date(now), ak = dk(a), bk = dk(b); if (ak == bk) return true; var n = new Date(b.getTime() + 86400000); return ak == dk(n) && a.getHours() < 6; }
           function toast(t) { var e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(e._t); e._t = setTimeout(function () { e.style.display = 'none'; }, 2500); }
           function chip(t, on, act, cls) { return '<span class="chip' + (on ? ' on' : '') + (cls ? ' ' + cls : '') + '" onclick="' + act + '">' + t + '</span>'; }
@@ -1750,7 +1764,7 @@ jobs:
             afGet(ds, force ? 0 : 0.75 * 3600000, function (d, er) {
               if (reg != 'day' || !pageOn('matches')) return;
               if (!d) { $('list').innerHTML = '<div class="empty">\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (er ? '<br><span class="ltr">' + esc(er) + '</span>' : '') + '<br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a\u060c VPN \u0648 \u06a9\u0644\u06cc\u062f API-Football \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br><br>' + chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646', false, 'renderDay(false,1)') + '</div>'; return; }
-              if (cn && cn.d) d.d = (d.d || []).concat(cn.d);
+              if (cn && cn.d) d = { t: d.t, d: (d.d || []).concat(cn.d) };
               showDayAF(d);
               if (force) toast(er ? '\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f: ' + er : '\u2705 \u0628\u0631\u0648\u0632 \u0634\u062f\u060c ' + fa(DAYN) + ' \u0628\u0627\u0632\u06cc');
             });
@@ -2277,7 +2291,7 @@ jobs:
           function renderMatches(d, multi) {
             CUR = d; CURM = !!multi;
             var now = Date.now(), list = $('list'), remn = ld('remaining', '');
-            OT = {}; d.forEach(function (m) { if (!(m.lg in OT)) { var c = ld('odds_' + m.lg, null); OT[m.lg] = c ? c.t : 0; } });
+            OT = {}; d.forEach(function (m) { if (!(m.lg in OT)) { if (isAF(m.lg)) { OT[m.lg] = 0; return; } var c = ld('odds_' + m.lg, null); OT[m.lg] = c ? c.t : 0; } });
             if (!multi && !(cur in OT)) { var oc = ld('odds_' + cur, null); OT[cur] = oc ? oc.t : 0; }
             var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return (RMALL || alive(m, now)) && (reg == 'day' || reg == 'af' || inDF(t)); })
               .sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
