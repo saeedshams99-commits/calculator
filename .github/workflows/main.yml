@@ -973,6 +973,11 @@ jobs:
           .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#000d;color:#fff;padding:10px 16px;border-radius:20px;display:none;z-index:9;max-width:90%;text-align:center}
           .spin{text-align:center;padding:30px;color:var(--mut)}
           .day{padding:12px 14px 2px;color:var(--gold);font-weight:bold;font-size:13px}
+          .dsec{background:#0a2a4f;margin:10px 12px 0;border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:bold;color:var(--gold)}
+          .dsec.on{border-radius:12px 12px 0 0}
+          .dcty{background:var(--card);margin:6px 12px 0;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+          .dlg{margin:4px 12px 0 12px;padding:8px 14px;border-right:3px solid var(--acc);background:var(--card2);border-radius:8px;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+          .dwrap{padding-bottom:4px}
           .more{text-align:center;color:#64b5f6;padding:8px 0 2px;font-size:13px}.delbtn{width:auto;background:#8e2b35;color:#fff;border:1px solid #d85b65;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:bold;font-family:inherit;margin:0 4px;line-height:1.4}
           .chip.sm{padding:5px 11px;font-size:12px}
           .lbl{color:var(--mut);font-size:12px;margin:8px 0 4px}
@@ -2288,6 +2293,70 @@ jobs:
             rerender();
           }
 
+          /* today tab tree (update 33): time windows, then country, then league, then the games */
+          var DBK = [[30, '\u23f1 \u0646\u06cc\u0645 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [60, '\ud83d\udd50 \u0646\u06cc\u0645 \u0633\u0627\u0639\u062a \u062a\u0627 \u06f1 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [180, '\ud83d\udd52 \u06f1 \u062a\u0627 \u06f3 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [360, '\ud83d\udd55 \u06f3 \u062a\u0627 \u06f6 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [720, '\ud83d\udd5b \u06f6 \u062a\u0627 \u06f1\u06f2 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [1440, '\ud83c\udf19 \u06f1\u06f2 \u062a\u0627 \u06f2\u06f4 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [1e9, '\ud83d\udcc6 \u0628\u0639\u062f \u0627\u0632 \u06f2\u06f4 \u0633\u0627\u0639\u062a']];
+          var DTO = {}, DTK = [];
+          function dCty(m) {
+            if (isAF(m.lg)) {
+              var a = AFLG[m.lg] || { c: 'World' }, c = a.c || 'World', f = afCty(c);
+              if (c == 'World') return { k: '_w', f: f.f, n: '\u0628\u06cc\u0646\u200c\u0627\u0644\u0645\u0644\u0644\u06cc \u0648 \u0642\u0627\u0631\u0647\u200c\u0627\u06cc', o: -1 };
+              return { k: String(c).toLowerCase().replace(/[- ]/g, '_'), f: f.f, n: f.n, o: 0 };
+            }
+            var ci = cinfo(m.lg);
+            if (/uefa|conmebol|fifa|concacaf|caf_|afc_|world_cup|nations|euro|copa_america|club_world|friendl/.test(m.lg) && ci.id == 'x') return { k: '_w', f: '\ud83c\udf0d', n: '\u0628\u06cc\u0646\u200c\u0627\u0644\u0645\u0644\u0644\u06cc \u0648 \u0642\u0627\u0631\u0647\u200c\u0627\u06cc', o: -1 };
+            return { k: ci.id == 'x' ? '_x' : ci.id, f: ci.f, n: ci.id == 'x' ? '\u0633\u0627\u06cc\u0631' : ci.fa, o: ci.id == 'x' ? 1 : 0 };
+          }
+          function dLgN(k) { if (isAF(k)) { var a = AFLG[k]; return a ? esc(a.n) : '\u26bd'; } var s = lname(k); return s; }
+          function dBk(m, now) {
+            if (DAYE) return 'e';
+            if (started(m)) return 'live';
+            var mn = (new Date(m.time).getTime() - now) / 60000;
+            for (var i = 0; i < DBK.length; i++) if (mn <= DBK[i][0]) return 'b' + i;
+            return 'b' + (DBK.length - 1);
+          }
+          function dKey(k) { var i = DTK.indexOf(k); if (i < 0) { DTK.push(k); i = DTK.length - 1; } return i; }
+          function dTg(i) { var k = DTK[i]; if (k === undefined) return; DTO[k] = !dOpen(k); if (CUR) renderMatches(CUR, CURM); }
+          function dOpen(k) { return DTO.hasOwnProperty(k) ? DTO[k] : (DTO.hasOwnProperty('d:' + k) ? DTO['d:' + k] : false); }
+          function dayTree(ms, now) {
+            var S = {}, order = ['live'];
+            if (DAYE) order = ['e']; else for (var i = 0; i < DBK.length; i++) order.push('b' + i);
+            ms.forEach(function (m) {
+              var b = dBk(m, now), c = dCty(m), s = S[b] = S[b] || { n: 0, c: {} };
+              var cc = s.c[c.k] = s.c[c.k] || { i: c, n: 0, l: {} };
+              var ll = cc.l[m.lg] = cc.l[m.lg] || [];
+              ll.push(m); cc.n++; s.n++;
+            });
+            var h = '', first = true;
+            order.forEach(function (b) {
+              var s = S[b]; if (!s) return;
+              var sk = 's|' + b;
+              if (first && !DTO.hasOwnProperty(sk)) DTO['d:' + sk] = true;
+              first = false;
+              var so = dOpen(sk), cks = Object.keys(s.c);
+              var lbl = b == 'live' ? '\ud83d\udd34 \u062f\u0631 \u062c\u0631\u06cc\u0627\u0646' : (b == 'e' ? '\ud83c\udfc1 \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632' : DBK[+b.slice(1)][1]);
+              h += '<div class="dsec' + (so ? ' on' : '') + '" onclick="dTg(' + dKey(sk) + ')"><span>' + (so ? '\u25be ' : '\u25b8 ') + lbl + '</span><span class="mut" style="font-weight:normal">' + fa(s.n) + ' \u0628\u0627\u0632\u06cc\u060c ' + fa(cks.length) + ' \u06a9\u0634\u0648\u0631</span></div>';
+              if (!so) return;
+              cks.sort(function (a, b2) { var A = s.c[a], B = s.c[b2]; return (A.i.o - B.i.o) || (B.n - A.n) || (A.i.n < B.i.n ? -1 : 1); });
+              h += '<div class="dwrap">';
+              cks.forEach(function (ck) {
+                var cc = s.c[ck], key = sk + '|' + ck, co = dOpen(key), lks = Object.keys(cc.l);
+                if (!DTO.hasOwnProperty(key) && cks.length == 1) { DTO['d:' + key] = true; co = true; }
+                h += '<div class="dcty" onclick="dTg(' + dKey(key) + ')"><b>' + (co ? '\u25be ' : '\u25b8 ') + cc.i.f + ' ' + esc(cc.i.n) + '</b><span class="mut">' + fa(cc.n) + ' \u0628\u0627\u0632\u06cc' + (lks.length > 1 ? '\u060c ' + fa(lks.length) + ' \u0644\u06cc\u06af' : '') + '</span></div>';
+                if (!co) return;
+                lks.sort(function (a, b2) { var ra = isAF(a) ? 50 : rank(a), rb = isAF(b2) ? 50 : rank(b2); return (ra - rb) || (cc.l[b2].length - cc.l[a].length); });
+                lks.forEach(function (lk) {
+                  var ls = cc.l[lk], lkey = key + '|' + lk;
+                  if (!DTO.hasOwnProperty(lkey) && lks.length == 1) DTO['d:' + lkey] = true;
+                  var lo = dOpen(lkey);
+                  h += '<div class="dlg" onclick="dTg(' + dKey(lkey) + ')"><span>' + (lo ? '\u25be ' : '\u25b8 ') + (isAF(lk) ? '\u26bd ' : '') + dLgN(lk) + '</span><span class="mut">' + fa(ls.length) + ' \u0628\u0627\u0632\u06cc' + (lo ? '' : ' | ' + hm(ls[0].time)) + '</span></div>';
+                  if (!lo) return;
+                  ls.sort(function (a, b2) { return new Date(a.time) - new Date(b2.time); }).forEach(function (m) { h += card(m); });
+                });
+              });
+              h += '</div>';
+            });
+            return h;
+          }
           function renderMatches(d, multi) {
             CUR = d; CURM = !!multi;
             var now = Date.now(), list = $('list'), remn = ld('remaining', '');
@@ -2301,6 +2370,7 @@ jobs:
               (hc ? hc : chip(multi ? '\ud83d\udcb0 \u0636\u0631\u0627\u06cc\u0628 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 (' + fmt(ALLK.length * 2) + ' \u0627\u0639\u062a\u0628\u0627\u0631)' : (OT[cur] ? '\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)' : '\ud83d\udcb0 \u062f\u0631\u06cc\u0627\u0641\u062a \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)'), false, multi ? 'loadMany(ALLK.slice())' : 'loadOdds(true)', 'sm')) + '</div>';
             if (reg == 'day' && !afKey()) h += '<div class="mut" style="padding:0 14px 4px">\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646 ESPN\u060c \u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f \u0648 \u0628\u062f\u0648\u0646 \u0627\u0639\u062a\u0628\u0627\u0631. \u0647\u0631 \u0644\u06cc\u06af\u06cc \u0636\u0631\u06cc\u0628 \u0646\u062f\u0627\u0634\u062a\u060c \u0631\u0648\u06cc \u270d\ufe0f \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628\u0634 \u0631\u0648 \u0627\u0632 1xBet \u0648\u0627\u0631\u062f \u06a9\u0646.</div>';
             if (!ms.length) { list.innerHTML = h + '<div class="empty">\u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0641\u06cc\u0644\u062a\u0631 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0646\u06cc\u0633\u062a</div>'; return; }
+            if (reg == 'day') { ms.forEach(function (m) { MATCHES[m.id] = m; }); list.innerHTML = h + dayTree(ms, now); if (ms.some(function (m) { return started(m) && !LIVE[m.id]; })) setTimeout(function () { liveTick(false); }, 200); return; }
             var last = '';
             ms.forEach(function (m) {
               MATCHES[m.id] = m;
