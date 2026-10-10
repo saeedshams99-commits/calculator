@@ -648,9 +648,9 @@ jobs:
                       String id = e.getKey();
                       JSONObject r = e.getValue(), old = S.optJSONObject(id);
                       int ot = old == null ? 0 : old.optInt("hs") + old.optInt("as"), nt = r.optInt("hs") + r.optInt("as");
-                      boolean adv = old == null || nt > ot || (fin(r) && !fin(old)) || (nt == ot && !r.optString("st").equals(old.optString("st")));
-                      if (!adv) continue;
-                      if (!"pre".equals(r.optString("st")) && !fin(r) && nt > ot) goalNote(c, w, tx, id, r);
+                      if (fin(old)) continue;
+                      boolean diff = old == null || r.optInt("hs") != old.optInt("hs") || r.optInt("as") != old.optInt("as");
+                      if (!"pre".equals(r.optString("st")) && !fin(r) && diff && (nt > ot || old != null)) goalNote(c, w, tx, id, r, old != null && nt <= ot);
                       r.put("t", now);
                       S.put(id, r);
                   }
@@ -676,7 +676,7 @@ jobs:
 
               static String kind(JSONObject tx, int n) { return n > 1 ? tk(tx, "mix", "Mix {n}").replace("{n}", String.valueOf(n)) : tk(tx, "one", "Single"); }
 
-              static void goalNote(Context c, JSONObject w, JSONObject tx, String id, JSONObject r) {
+              static void goalNote(Context c, JSONObject w, JSONObject tx, String id, JSONObject r, boolean var) {
                   String h = "", a = "";
                   JSONArray L = w.optJSONArray("legs");
                   for (int i = 0; L != null && i < L.length(); i++) {
@@ -685,7 +685,7 @@ jobs:
                   }
                   int hs = r.optInt("hs"), as = r.optInt("as");
                   String el = r.optString("el", "");
-                  String title = tk(tx, "g", "GOAL ") + h + " " + hs + " - " + as + " " + a + (el.length() > 0 ? " (" + el + ")" : "");
+                  String title = (var ? tk(tx, "gv", "VAR ") : tk(tx, "g", "GOAL ")) + h + " " + hs + " - " + as + " " + a + (el.length() > 0 ? " (" + el + ")" : "");
                   StringBuilder sb = new StringBuilder();
                   JSONArray B = w.optJSONArray("bets");
                   for (int i = 0; B != null && i < B.length(); i++) {
@@ -704,7 +704,7 @@ jobs:
                       }
                   }
                   if (sb.length() == 0) return;
-                  AlarmReceiver.show(c, ("g" + id + "_" + (hs + as)).hashCode(), title, sb.toString(), "bets", tk(tx, "ch", "Bets"));
+                  AlarmReceiver.show(c, (var ? "v" + id + "_" + hs + "_" + as : "g" + id + "_" + (hs + as)).hashCode(), title, sb.toString(), "bets", tk(tx, "ch", "Bets"));
               }
 
               static void results(Context c, SharedPreferences p, JSONObject w, JSONObject S, JSONObject tx) throws Exception {
@@ -1809,7 +1809,7 @@ jobs:
             if (!fx.id || !t.home || !t.away) return null;
             var k = 'af_' + lg.id;
             if (!AFLG[k] || AFLG[k].n != lg.name) AFLG[k] = { n: lg.name || '?', c: lg.country || 'World' };
-            var m = { id: 'af' + fx.id, lg: k, home: t.home.name, away: t.away.name, time: fx.date, h: null, d: null, a: null, ov: null, un: null, fx: 1, st: AFP[st] || 'pre', ss: st };
+            var m = { id: 'af' + fx.id, lg: k, home: t.home.name, away: t.away.name, time: fx.date, h: null, d: null, a: null, ov: null, un: null, fx: 1, st: AFP[st] || 'pre', ss: st, ft: Date.now() };
             if (AFX[st]) m.pp = 1;
             var g = f.goals || {}, ft = (f.score || {}).fulltime || {}, hs = g.home, as = g.away;
             if ((st == 'AET' || st == 'PEN') && ft.home !== null && ft.home !== undefined) { hs = ft.home; as = ft.away; }
@@ -1817,9 +1817,10 @@ jobs:
             return m;
           }
           function afLive(m) {
-            if (m.pp) { LIVE[m.id] = { hs: 0, as: 0, st: 'post', pp: 1, clk: '', t: Date.now() }; return; }
+            if (m.pp) { LIVE[m.id] = { hs: 0, as: 0, st: 'post', pp: 1, clk: '', t: m.ft || Date.now() }; return; }
             if (m.st == 'pre' || m.hs === undefined) return;
-            LIVE[m.id] = { hs: m.hs, as: m.as, st: m.st, clk: m.st == 'post' ? 'FT' : (m.el ? m.el + "'" : m.ss), t: Date.now() };
+            var O = LIVE[m.id]; if (O && O.t > (m.ft || 0) && !(O.st != 'post' && m.st == 'post')) return;
+            LIVE[m.id] = { hs: m.hs, as: m.as, st: m.st, clk: m.st == 'post' ? 'FT' : (m.el ? m.el + "'" : m.ss), t: m.ft || Date.now() };
           }
           function afGet(ds, ttl, cb) {
             var c = ld('af_' + ds, null);
@@ -3856,7 +3857,7 @@ jobs:
             return h + '</div>';
           }
           /* ---------- phone notifications: goals + bet results, also when the app is closed (update 31) ---------- */
-          var BGTX = { g: '\u26bd \u06af\u0644! ', tk: '\ud83c\udfab ', mix: '\u0645\u06cc\u06a9\u0633 {n} \u067e\u0627\u06cc\u0647', one: '\u062a\u06a9\u06cc', coin: '\u0633\u06a9\u0647', nw: '\u0641\u0639\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0631\u06cc \u2705', nl: '\u0641\u0639\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0627\u0632\u06cc \u274c', nv: '\u0641\u0639\u0644\u0627\u064b \u0628\u0631\u06af\u0634\u062a \u067e\u0648\u0644 \u21a9\ufe0f',
+          var BGTX = { g: '\u26bd \u06af\u0644! ', gv: '\ud83d\udeab \u06af\u0644 \u0645\u0631\u062f\u0648\u062f \u0634\u062f (VAR)\u060c \u0646\u062a\u06cc\u062c\u0647 \u0627\u0644\u0627\u0646: ', tk: '\ud83c\udfab ', mix: '\u0645\u06cc\u06a9\u0633 {n} \u067e\u0627\u06cc\u0647', one: '\u062a\u06a9\u06cc', coin: '\u0633\u06a9\u0647', nw: '\u0641\u0639\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0631\u06cc \u2705', nl: '\u0641\u0639\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0627\u0632\u06cc \u274c', nv: '\u0641\u0639\u0644\u0627\u064b \u0628\u0631\u06af\u0634\u062a \u067e\u0648\u0644 \u21a9\ufe0f',
             rw: '\ud83c\udf89 \u0634\u0631\u0637\u062a \u0628\u0631\u062f \u0634\u062f! {x} \u0633\u06a9\u0647 \u06af\u0631\u0641\u062a\u06cc', rl: '\u274c \u0634\u0631\u0637\u062a \u0628\u0627\u062e\u062a \u0634\u062f ({x} \u0633\u06a9\u0647)', rv: '\u21a9\ufe0f \u0634\u0631\u0637 \u0628\u0627\u0637\u0644 \u0634\u062f\u060c {x} \u0633\u06a9\u0647 \u0628\u0631\u06af\u0634\u062a', st: '\u0645\u0628\u0644\u063a', od: '\u0636\u0631\u06cc\u0628', pp: '\u0645\u0639\u0648\u0642',
             mw: '\u2705', ml: '\u274c', mv: '\u21a9\ufe0f', mp: '\u23f3', ch: '\u06af\u0644\u200c\u0647\u0627 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0634\u0631\u0637\u200c\u0647\u0627' };
           function bgOn() { return !ld('bgoff', 0); }
@@ -3870,8 +3871,10 @@ jobs:
               if (b.st != 'p') return;
               b.sel.forEach(function (x) {
                 var s = S[x.id], L = LIVE[x.id]; if (x.res != 'p' || !s || s.st == 'pre') return;
-                if (s.pp) { if (!L || !L.pp) { LIVE[x.id] = { hs: 0, as: 0, st: 'post', pp: 1, clk: '', t: s.t }; ch = true; } return; }
-                if (!L || (s.hs + s.as) > (L.hs + L.as) || (s.st == 'post' && L.st != 'post')) { LIVE[x.id] = { hs: s.hs, as: s.as, st: s.st, clk: s.st == 'post' ? 'FT' : (s.el || ''), t: s.t, eid: L ? L.eid : '', sw: L ? L.sw : 0 }; ch = true; }
+                if (L && L.st == 'post') return;
+                if (L && (s.t || 0) <= (L.t || 0)) return;
+                if (s.pp) { LIVE[x.id] = { hs: 0, as: 0, st: 'post', pp: 1, clk: '', t: s.t }; ch = true; return; }
+                { LIVE[x.id] = { hs: s.hs, as: s.as, st: s.st, clk: s.st == 'post' ? 'FT' : (s.el || ''), t: s.t, eid: L ? L.eid : '', sw: L ? L.sw : 0 }; ch = true; }
               });
             });
             return ch;
@@ -3881,14 +3884,17 @@ jobs:
             BETS.forEach(function (b) { if (b.st == 'p') b.sel.forEach(function (x) { if (x.res == 'p') (by[x.id] = by[x.id] || []).push({ b: b, x: x }); }); });
             Object.keys(by).forEach(function (id) {
               var L = LIVE[id]; if (!L || L.pp || L.st == 'pre') return;
-              var s = S[id], ot = s ? s.hs + s.as : 0, nt = L.hs + L.as;
-              if (s && !(nt > ot || (L.st == 'post' && s.st != 'post'))) return;
-              if (L.st != 'post' && nt > ot) {
-                var x0 = by[id][0].x, ls = [];
+              var s = S[id], ot = s ? s.hs + s.as : 0, nt = L.hs + L.as, lst = L.st == 'x' ? 'in' : L.st;
+              /* update 34: a final result is never overwritten, and only newer data counts (a VAR call can take a goal back) */
+              if (s && (s.st == 'post' || (s.t || 0) > (L.t || 0))) return;
+              var diff = !s || s.hs != L.hs || s.as != L.as;
+              if (s && !diff && s.st == lst) { if (s.el != (L.clk || '')) { s.el = L.clk || ''; s.t = L.t || now; ch = true; } return; }
+              if (L.st != 'post' && diff && (nt > ot || s)) {
+                var x0 = by[id][0].x, ls = [], var0 = !!s && nt <= ot;
                 by[id].forEach(function (o) { var r = resX(o.x.pick, L.hs, L.as); ls.push(BGTX.tk + pl(o.x) + ' @' + o.x.odd.toFixed(2) + ' | ' + betKind(o.b) + ' | ' + nfmt(o.b.stake) + ' ' + BGTX.coin + ' | ' + BGTX['n' + r]); });
-                bgNote('g' + id + '_' + nt, BGTX.g + x0.home + ' ' + L.hs + ' - ' + L.as + ' ' + x0.away + (L.clk ? ' (' + L.clk + ')' : ''), ls.join('\n'));
+                bgNote(var0 ? 'v' + id + '_' + L.hs + '_' + L.as : 'g' + id + '_' + nt, (var0 ? BGTX.gv : BGTX.g) + x0.home + ' ' + L.hs + ' - ' + L.as + ' ' + x0.away + (L.clk ? ' (' + L.clk + ')' : ''), ls.join('\n'));
               }
-              S[id] = { hs: L.hs, as: L.as, st: L.st == 'x' ? 'in' : L.st, el: L.clk || '', t: now }; ch = true;
+              S[id] = { hs: L.hs, as: L.as, st: lst, el: L.clk || '', t: L.t || now }; ch = true;
             });
             if (ch) { bgClean(S, 5); sv('bgs', S); }
           }
@@ -3921,53 +3927,4 @@ jobs:
                     var L = LIVE[x.id] || {}, af = afKey() ? afIdOf(x) : { id: 0, sw: 0 }, d1 = ymd(k), d2 = ymd(k - 5 * 3600000);
                     legs[x.id] = { i: x.id, h: x.home, a: x.away, t: k, af: af.id, afs: af.sw, es: esl(x.lg) || '', d: d1, d2: d2 == d1 ? '' : d2, eid: L.eid || '', sw: L.sw ? 1 : 0 };
                   });
-                  bets.push({ id: b.id, pf: multi ? pn(p.id) : '', s: b.stake, o: b.odd, l: bl });
-                });
-              });
-            } catch (e) {}
-            sv('bgw', { v: 1, off: bgOn() ? 0 : 1, ak: afKey(), es: ESPN_API, af: AF_API, res: AF_RES, fl: AF_FLOOR, legs: Object.keys(legs).map(function (k) { return legs[k]; }), bets: bets, tx: BGTX });
-            try { if (window.Android && Android.bgKick) Android.bgKick(); } catch (e) {}
-          }
-          function bgBox() {
-            var q = afQuota(), iv = afIv();
-            return '<div class="box"><b>\ud83d\udcf3 \u0646\u0648\u062a\u06cc\u0641 \u06af\u0644 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0634\u0631\u0637</b><div class="mut" style="line-height:1.9">\u0648\u0642\u062a\u06cc \u062a\u0648 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u06a9\u0647 \u0631\u0648\u0634 \u0634\u0631\u0637 \u0628\u0633\u062a\u06cc \u06af\u0644 \u0628\u0634\u0647\u060c \u0646\u0648\u062a\u06cc\u0641 \u0645\u06cc\u0627\u062f \u0648 \u0632\u06cc\u0631\u0634 \u0634\u0631\u0637\u062a \u0646\u0648\u0634\u062a\u0647 \u0645\u06cc\u0634\u0647 (\u0648 \u0627\u06cc\u0646\u06a9\u0647 \u0627\u0644\u0627\u0646 \u062f\u0627\u0631\u06cc \u0645\u06cc\u200c\u0628\u0631\u06cc \u06cc\u0627 \u0645\u06cc\u200c\u0628\u0627\u0632\u06cc). \u0648\u0642\u062a\u06cc \u0634\u0631\u0637 \u0628\u0631\u062f \u06cc\u0627 \u0628\u0627\u062e\u062a \u0628\u0634\u0647 \u0647\u0645 \u0628\u0627 \u0646\u062a\u06cc\u062c\u0647\u060c \u0646\u0648\u0639 \u0634\u0631\u0637 \u0648 \u0645\u0628\u0644\u063a \u062e\u0628\u0631\u062a \u0645\u06cc\u200c\u06a9\u0646\u0647. \u0627\u067e \u0628\u0633\u062a\u0647 \u0647\u0645 \u0628\u0627\u0634\u0647 \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647.<br>' +
-              '\u0645\u0646\u0628\u0639: ESPN (\u0631\u0627\u06cc\u06af\u0627\u0646\u060c \u0647\u0631 \u06f5 \u062f\u0642\u06cc\u0642\u0647) \u0648 \u0628\u0631\u0627\u06cc \u0628\u0642\u06cc\u0647 API-Football ' + (afKey() ? (iv ? '(\u0647\u0631 ' + afMin() + ' \u062f\u0642\u06cc\u0642\u0647 \u0648 \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0628\u0627\u0632\u06cc \u0632\u0646\u062f\u0647 \u062f\u0627\u0631\u06cc' + (q !== null ? '\u060c ' + fa(q) + ' \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0627\u0645\u0631\u0648\u0632 \u0645\u0648\u0646\u062f\u0647' : '') + ')' : '(\u23f8 \u0633\u0647\u0645\u06cc\u0647 \u0627\u0645\u0631\u0648\u0632 \u062a\u0645\u0648\u0645 \u0634\u062f\u0647)') : '(\u06a9\u0644\u06cc\u062f \u0646\u062f\u0627\u0631\u06cc)') + '</div>' +
-              '<div class="quick" style="margin-top:6px"><button onclick="bgTog()">' + (bgOn() ? '\ud83d\udd15 \u062e\u0627\u0645\u0648\u0634 \u06a9\u0646' : '\ud83d\udd14 \u0631\u0648\u0634\u0646 \u06a9\u0646') + '</button><button onclick="bgTest()">\ud83e\uddea \u0646\u0648\u062a\u06cc\u0641 \u0622\u0632\u0645\u0627\u06cc\u0634\u06cc</button><button onclick="bgBat()">\ud83d\udd0b \u0628\u0627\u062a\u0631\u06cc</button></div>' +
-              '<div class="mut" style="margin-top:6px;line-height:1.8">\u0627\u06af\u0647 \u0646\u0648\u062a\u06cc\u0641\u200c\u0647\u0627 \u062f\u06cc\u0631 \u0645\u06cc\u0627\u0646: \u062f\u06a9\u0645\u0647 \u00ab\u0628\u0627\u062a\u0631\u06cc\u00bb \u0631\u0648 \u0628\u0632\u0646\u060c \u00ab\u0641\u0648\u062a\u0628\u0627\u0644 \u0628\u062a\u00bb \u0631\u0648 \u067e\u06cc\u062f\u0627 \u06a9\u0646 \u0648 \u0628\u0630\u0627\u0631\u0634 \u0631\u0648\u06cc Unrestricted \u06cc\u0627 \u00ab\u0628\u062f\u0648\u0646 \u0645\u062d\u062f\u0648\u062f\u06cc\u062a\u00bb.</div></div>';
-          }
-          function bgTog() { sv('bgoff', bgOn() ? 1 : 0); bgSync(); renderSet(); toast(bgOn() ? '\ud83d\udd14 \u0646\u0648\u062a\u06cc\u0641\u200c\u0647\u0627 \u0631\u0648\u0634\u0646 \u0634\u062f' : '\ud83d\udd15 \u0646\u0648\u062a\u06cc\u0641\u200c\u0647\u0627 \u062e\u0627\u0645\u0648\u0634 \u0634\u062f'); }
-          function bgTest() {
-            try { Android.notif('test', BGTX.g + '\u062a\u06cc\u0645 \u0627\u0644\u0641 1 - 0 \u062a\u06cc\u0645 \u0628 (35)', BGTX.tk + '\u0628\u0631\u062f \u062a\u06cc\u0645 \u0627\u0644\u0641 @1.85 | ' + BGTX.one + ' | 50 ' + BGTX.coin + ' | ' + BGTX.nw); toast('\u0646\u0648\u062a\u06cc\u0641 \u0641\u0631\u0633\u062a\u0627\u062f\u0647 \u0634\u062f\u060c \u0628\u0627\u0644\u0627\u06cc \u0635\u0641\u062d\u0647 \u06af\u0648\u0634\u06cc \u0631\u0648 \u0628\u0628\u06cc\u0646'); }
-            catch (e) { toast('\u0627\u06cc\u0646 \u0646\u0633\u062e\u0647 \u0647\u0646\u0648\u0632 \u0646\u0648\u062a\u06cc\u0641 \u0646\u062f\u0627\u0631\u0647'); }
-          }
-          function bgBat() { try { Android.battery(); } catch (e) { toast('\u0628\u0627\u0632 \u0646\u0634\u062f'); } }
-          renderBal(); updateCnt(); syncRem();
-          setTimeout(function () { if (bgImport()) afterLive(); else bgSync(); }, 1500);
-          setTimeout(function () { liveTick(false); }, 2500);
-          setInterval(function () { if (pageOn('matches') || pageOn('bets')) liveTick(false); if (pageOn('matches') && (reg == 'browse' || reg == 'day')) liveCounts(); }, 60000);
-          loadSports(function () { renderLeagues(); loadOdds(false); });
-          setTimeout(function () { checkUpdate(false); }, 1200);
-          </script>
-          </body>
-          </html>
-          EOF_X
-          sed -i "s/__BUILD__/$GITHUB_RUN_NUMBER/g" build.gradle src/main/assets/index.html
-          sed -i "s#__REPO__#$GITHUB_REPOSITORY#g" src/main/assets/index.html
-
-      - name: Build
-        working-directory: app
-        run: gradle assembleDebug --no-daemon
-
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/*.apk footballbet.apk
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: footballbet-apk
-          path: footballbet.apk
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ github.run_number }}
-          name: Football Bet v${{ github.run_number }}
-          files: footballbet.apk
+                  bets.push({ id: b.
