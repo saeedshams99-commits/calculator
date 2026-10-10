@@ -882,7 +882,7 @@ jobs:
                   JSONObject r = new JSONObject();
                   r.put("hs", sInt((bsw ? bA : bH).optString("score", "0")));
                   r.put("as", sInt((bsw ? bH : bA).optString("score", "0")));
-                  String s = ty.optBoolean("completed", false) ? "post" : ("in".equals(state) ? "in" : ("post".equals(state) ? "x" : "pre"));
+                  String s = (ty.optBoolean("completed", false) || "post".equals(state)) ? "post" : ("in".equals(state) ? "in" : "pre");
                   if (pp) { s = "post"; r.put("pp", 1); r.put("hs", 0); r.put("as", 0); }
                   r.put("st", s);
                   r.put("el", ty.optString("shortDetail", ""));
@@ -1790,7 +1790,7 @@ jobs:
             RMALL = DAYE; renderMatches(out, true); RMALL = false;
           }
           /* API-Football, all leagues of the world (update 24) */
-          var AF_API = 'https://v3.football.api-sports.io/', AFD = 0, AFU = true, AFL = null, AFO = {}, AFB = {}, AFCS = [], AFLG = ld('aflg', {});
+          var AFBT = {}, AF_API = 'https://v3.football.api-sports.io/', AFD = 0, AFU = true, AFL = null, AFO = {}, AFB = {}, AFCS = [], AFLG = ld('aflg', {});
           function afKey() { return ld('afkey', ''); }
           function isAF(lg) { return String(lg).indexOf('af_') == 0; }
           function afHttp(path, f) { var id = 'c' + (cbn++); cbs[id] = f; Android.get2(AF_API + path, 'x-apisports-key', afKey(), id); }
@@ -1826,8 +1826,9 @@ jobs:
             var c = ld('af_' + ds, null);
             if (c && Date.now() - c.t < ttl) { cb(c, null); return; }
             if (!afKey()) { cb(c, 'nokey'); return; }
-            if (AFB[ds]) { AFB[ds].push(cb); return; }
-            AFB[ds] = [cb]; sv('aflast', Date.now());
+            if (AFB[ds] && Date.now() - (AFBT[ds] || 0) < 45000) { AFB[ds].push(cb); return; }
+            var oldq = AFB[ds] || []; AFB[ds] = oldq.concat([cb]); AFBT[ds] = Date.now(); sv('aflast', Date.now());
+            var my = AFBT[ds];
             afHttp('fixtures?date=' + ds + '&timezone=Asia/Tehran', function (r) {
               afRem(r);
               var out = c, er = null;
@@ -1846,12 +1847,14 @@ jobs:
                   }
                 } catch (x) { er = 'JSON'; }
               }
+              if (AFBT[ds] != my) return;
               if (out) out.d.forEach(afLive);
-              var q = AFB[ds]; delete AFB[ds];
+              var q = AFB[ds] || []; delete AFB[ds]; delete AFBT[ds];
               q.forEach(function (f) { f(out, er); });
               if (out && !er) afterLive();
             });
           }
+          var AFSE = '';
           function afSync(force, done) {
             if (!afKey()) { if (done) done(); return; }
             var now = Date.now(), ds = {};
@@ -1866,7 +1869,8 @@ jobs:
             });
             var ks = Object.keys(ds), left = ks.length;
             if (!left) { if (done) done(); return; }
-            ks.forEach(function (d) { afGet(d, force ? 120000 : Math.max(15 * 60000, afIv() || 6 * 3600000), function (c) { if (c) c.d.forEach(afLive); if (--left == 0) { afterLive(); if (done) done(); } }); });
+            AFSE = '';
+            ks.forEach(function (d) { afGet(d, force ? 120000 : Math.max(15 * 60000, afIv() || 6 * 3600000), function (c, er) { if (er && er != 'nokey') AFSE = er; if (c) c.d.forEach(afLive); if (--left == 0) { afterLive(); if (done) done(); } }); });
           }
           function renderAF(force) {
             CUR = null;
@@ -2508,7 +2512,7 @@ jobs:
             if (!best || bs < 1.2) return null;
             var st = best.e.status || best.c.status || {}, ty = st.type || {};
             var hs = parseInt((best.sw ? best.A : best.H).score, 10), as = parseInt((best.sw ? best.H : best.A).score, 10);
-            var state = ty.completed ? 'post' : (ty.state == 'in' ? 'in' : (ty.state == 'post' ? 'x' : 'pre'));
+            var state = (ty.completed || ty.state == 'post') ? 'post' : (ty.state == 'in' ? 'in' : 'pre');
             var pp = /POSTPON|CANCEL|ABANDON/i.test(String(ty.name || '') + ' ' + String(ty.description || '')); if (pp) state = 'x';
             return { hs: isNaN(hs) ? 0 : hs, as: isNaN(as) ? 0 : as, st: state, pp: pp, clk: ty.shortDetail || st.displayClock || '', t: Date.now(), eid: String(best.e.id || ''), sw: best.sw ? 1 : 0 };
           }
@@ -2525,7 +2529,7 @@ jobs:
           function liveTick(force, done) {
             var T = liveTargets(), g = {}, now = Date.now();
             Object.keys(T).forEach(function (id) {
-              var m = T[id], s = esl(m.lg); if (!s) return;
+              var m = T[id], s = esl(m.lg) || 'all';
               var L = LIVE[id]; if (L && L.st == 'post') return;
               var k = new Date(m.time).getTime();
               if (!force && (!L || L.st != 'in') && now - k > END_MS) { LTRY[id] = (LTRY[id] || 0) + 1; if (LTRY[id] > 3) return; }
@@ -2593,9 +2597,24 @@ jobs:
             }
             return '';
           }
+          /* manual final score (update 35): when no source gives the result, Saeed types it once and every bet on that game settles */
+          function manRes(bid, j) {
+            var b = null; BETS.forEach(function (x) { if (x.id == bid) b = x; }); if (!b || !b.sel[j]) return;
+            var x = b.sel[j], L = LIVE[x.id];
+            var v = prompt('\u0646\u062a\u06cc\u062c\u0647 \u0646\u0647\u0627\u06cc\u06cc \u06f9\u06f0 \u062f\u0642\u06cc\u0642\u0647 \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633 (\u0645\u06cc\u0632\u0628\u0627\u0646-\u0645\u0647\u0645\u0627\u0646)\u060c \u0645\u062b\u0644\u0627\u064b 1-1\n' + x.home + ' - ' + x.away, L ? L.hs + '-' + L.as : '');
+            if (v === null) return;
+            v = String(v).replace(/[\u06f0-\u06f9]/g, function (d) { return '\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9'.indexOf(d); }).replace(/[\u0660-\u0669]/g, function (d) { return '\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669'.indexOf(d); });
+            var mm = /^\s*(\d{1,2})\s*[-:\u2013\s]\s*(\d{1,2})\s*$/.exec(v);
+            if (!mm) { toast('\u0627\u06cc\u0646\u200c\u062c\u0648\u0631\u06cc \u0628\u0646\u0648\u06cc\u0633: 1-1'); return; }
+            var hs = +mm[1], as = +mm[2];
+            if (!confirm('\u0646\u062a\u06cc\u062c\u0647 \u0646\u0647\u0627\u06cc\u06cc ' + x.home + ' ' + hs + ' - ' + as + ' ' + x.away + ' \u062b\u0628\u062a \u0628\u0634\u0647\u061f\n\u0647\u0645\u0647 \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u0631\u0648\u06cc \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0628\u0627 \u0647\u0645\u06cc\u0646 \u0646\u062a\u06cc\u062c\u0647 \u0628\u0633\u062a\u0647 \u0645\u06cc\u0634\u0646.')) return;
+            LIVE[x.id] = { hs: hs, as: as, st: 'post', clk: 'FT', t: Date.now(), mr: 1 };
+            afterLive(); renderBets(); toast('\u2705 \u0646\u062a\u06cc\u062c\u0647 \u062b\u0628\u062a \u0634\u062f');
+          }
           function liveTxt(x) {
             var L = LIVE[x.id]; if (!L || x.res != 'p') return '';
-            return ' ' + (L.st == 'post' ? '\ud83c\udfc1' : '\ud83d\udd34') + ' (' + L.hs + '-' + L.as + (L.clk && L.st != 'post' ? ' ' + esc(L.clk) : '') + ')';
+            var ag = L.st != 'post' && L.t && Date.now() - L.t > 10 * 60000 ? ' \u00b7 ' + agoTxt(L.t) : '';
+            return ' ' + (L.st == 'post' ? '\ud83c\udfc1' : '\ud83d\udd34') + ' (' + L.hs + '-' + L.as + (L.clk && L.st != 'post' ? ' ' + esc(L.clk) : '') + ag + ')';
           }
           /* handicap + full totals (update 18): pick 'H1:-1.5' = home -1.5, 'H2:+1' = away +1, 'H1:0'; totals O05..O55 and whole O10..O50 (push = refund) */
           function hcp(p) { var m = /^H([12]):([+-]?\d+(?:\.\d)?)$/.exec(p); return m ? { s: m[1], v: parseFloat(m[2]) } : null; }
@@ -2620,14 +2639,16 @@ jobs:
           function checkResults(betId) {
             if (!BETS.some(function (b) { return b.st == 'p' && (!betId || b.id == betId); })) { toast('\u0634\u0631\u0637 \u0628\u0627\u0632 \u0646\u062f\u0627\u0631\u06cc'); return; }
             toast('\u062f\u0631 \u062d\u0627\u0644 \u06af\u0631\u0641\u062a\u0646 \u0646\u062a\u0627\u06cc\u062c \u0631\u0627\u06cc\u06af\u0627\u0646...');
-            afSync(true);
-            liveTick(true, function () {
+            afSync(true, function () { liveTick(true, function () {
               settle(); renderBets();
-              var now = Date.now(), left = 0;
+              var now = Date.now(), left = 0, stuck = 0;
+              BETS.forEach(function (b) { if (b.st == 'p' && (!betId || b.id == betId)) b.sel.forEach(function (x) { if (x.res == 'p' && new Date(x.time).getTime() + 150 * 60000 < now) stuck++; }); });
+              if (AFSE) toast('\u26a0\ufe0f API-Football \u062c\u0648\u0627\u0628 \u0646\u062f\u0627\u062f: ' + AFSE);
+              else if (stuck) toast('\u23f3 \u0647\u0646\u0648\u0632 \u0646\u062a\u06cc\u062c\u0647 \u0646\u0647\u0627\u06cc\u06cc \u0646\u06cc\u0648\u0645\u062f\u0647. \u0627\u06af\u0647 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645 \u0634\u062f\u0647\u060c \u00ab\u270d\ufe0f \u062b\u0628\u062a \u0646\u062a\u06cc\u062c\u0647 \u062f\u0633\u062a\u06cc\u00bb \u0631\u0648 \u0628\u0632\u0646');
               BETS.forEach(function (b) { if (b.st == 'p' && (!betId || b.id == betId)) b.sel.forEach(function (x) { if (x.res == 'p' && !x.man && !isES(x.lg) && new Date(x.time).getTime() + 105 * 60000 < now) left++; }); });
-              if (!left) { toast('\u0646\u062a\u0627\u06cc\u062c \u0628\u0631\u0648\u0632 \u0634\u062f \u2705 (\u0628\u062f\u0648\u0646 \u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631)'); return; }
+              if (!left) { if (!AFSE && !stuck) toast('\u0646\u062a\u0627\u06cc\u062c \u0628\u0631\u0648\u0632 \u0634\u062f \u2705 (\u0628\u062f\u0648\u0646 \u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631)'); return; }
               if (key() && confirm(fa(left) + ' \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647 \u062a\u0648 \u0646\u062a\u0627\u06cc\u062c \u0631\u0627\u06cc\u06af\u0627\u0646 \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f. \u0628\u0627 \u0627\u0639\u062a\u0628\u0627\u0631 API \u0686\u06a9 \u0628\u0634\u0647\u061f (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0644\u06cc\u06af)')) paidCheck(betId);
-            });
+            }); });
           }
           function paidCheck(betId) {
             var now = Date.now(), lgs = {};
@@ -2814,6 +2835,7 @@ jobs:
                   '<div class="row"><span>' + esc(pl(x)) + '</span><b class="ltr">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div>' +
                   '<div class="mut">' + inf + '</div>' + (x.ctr ? '<div class="warn">\u26a0\ufe0f \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u0628\u0627\u0632\u0627\u0631 \u0628\u0633\u062a\u0647 \u0634\u062f</div>' : '') +
                   '<div>' + (x.res == 'p' && nst && !x.man ? '<span class="lnk" onclick="fetchCL(\'' + b.id + '\',' + j + ')">\ud83d\udcc8 \u0636\u0631\u06cc\u0628 \u0627\u0644\u0627\u0646 (\u06f1 \u0627\u0639\u062a\u0628\u0627\u0631)</span>' : '') +
+                  (x.res == 'p' && new Date(x.time).getTime() + 150 * 60000 < Date.now() ? '<span class="lnk" onclick="manRes(\'' + b.id + '\',' + j + ')">\u270d\ufe0f \u062b\u0628\u062a \u0646\u062a\u06cc\u062c\u0647 \u062f\u0633\u062a\u06cc</span> ' : '') +
                   '<span class="lnk" onclick="setCL(\'' + b.id + '\',' + j + ')">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u062f\u0633\u062a\u06cc</span></div></div>';
               });
               var amt = b.st == 'l' ? '\u06f0' : (b.st == 'p' ? fc(b.stake * b.odd) : '+' + fc(b.win));
@@ -3510,421 +3532,4 @@ jobs:
             if (m && started(m)) return '';
             if (!SOPEN[ctx]) return '<div class="more" onclick="sTog(\'' + ctx + '\')">\ud83d\udcdd \u062a\u062d\u0644\u06cc\u0644 \u0628\u0627 \u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc (\u06f1\u06f0 \u0628\u0627\u0632\u06cc \u0622\u062e\u0631)' + (D && D.h && (D.h.w || D.h.gf) ? ' \u2705' : '') + '</div>';
             D = sD(ctx); var nm = sNames(ctx);
-            var h = '<div class="hpp"><div class="lbl">\ud83d\udcdd \u062a\u062d\u0644\u06cc\u0644 \u0628\u0627 \u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc</div><div class="mut" style="line-height:1.9">\u062a\u0639\u062f\u0627\u062f \u0628\u0631\u062f\u060c \u0645\u0633\u0627\u0648\u06cc \u0648 \u0628\u0627\u062e\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u062e\u06cc\u0631 \u0647\u0631 \u062a\u06cc\u0645 (\u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06f1\u06f0 \u062a\u0627) \u0648 \u062c\u0645\u0639 \u06af\u0644 \u0632\u062f\u0647 \u0648 \u062e\u0648\u0631\u062f\u0647 \u0647\u0645\u0648\u0646 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0648 \u0628\u062f\u0647. \u0645\u062c\u0645\u0648\u0639 \u0634\u0648\u062a\u060c \u0645\u0627\u0644\u06a9\u06cc\u062a \u062a\u0648\u067e \u0648 \u0631\u06a9\u0648\u0631\u062f\u0647\u0627\u06cc \u067e\u0634\u062a\u200c\u0633\u0631\u0647\u0645 \u0627\u062e\u062a\u06cc\u0627\u0631\u06cc\u200c\u0627\u0646. \u0645\u062c\u0645\u0648\u0639 \u0634\u0648\u062a \u0631\u0648 \u0645\u06cc\u062a\u0648\u0646\u06cc \u0645\u06cc\u0627\u0646\u06a9\u06cc\u0646 \u0628\u062f\u06cc \u060c \u0645\u0627\u0644\u06a9\u06cc\u062a \u0631\u0648 \u0628\u0647\u0635\u0648\u0631\u062a \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u062f\u0631\u0635\u062f\u06cc \u0628\u062f\u0647\u060c \u0645\u062b\u0644\u0627\u064b \u06f5\u06f8\u066b\u060c \u0628\u0631\u0627\u06cc \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u062c\u062f\u0627.</div>';
-            if (!m) h += '<div class="sg" style="grid-template-columns:1fr 1fr">' + sFld(ctx, 'n', 'hn', '\u0627\u0633\u0645 \u0645\u06cc\u0632\u0628\u0627\u0646', 1) + sFld(ctx, 'n', 'an', '\u0627\u0633\u0645 \u0645\u0647\u0645\u0627\u0646', 1) + '</div>';
-            h += sSide(ctx, 'h', '\ud83c\udfe0 ' + nm[0]) + sSide(ctx, 'a', '\u2708\ufe0f ' + nm[1]);
-            h += '<div class="note" style="white-space:normal"><b>\u0634\u0631\u0627\u06cc\u0637 \u062a\u06a9\u0645\u06cc\u0644\u06cc \u0645\u062f\u0644</b><div class="sg" style="grid-template-columns:1fr 1fr">' + '<div><label class="mut">\u0622\u0628\u200c\u0648\u0647\u0648\u0627</label><select onchange="sIn(\''+ctx+'\',\'n\',\'weather\',this)"><option value="clear"'+(D.weather=='clear'?' selected':'')+'>\u0635\u0627\u0641</option><option value="cloudy"'+(D.weather=='cloudy'?' selected':'')+'>\u0627\u0628\u0631\u06cc</option><option value="rain"'+(D.weather=='rain'?' selected':'')+'>\u0628\u0627\u0631\u0627\u0646\u06cc</option></select></div>' + sFld(ctx,'n','temp','\u062f\u0645\u0627 \u00b0C',0) + '</div><div class="sg" style="grid-template-columns:1fr 1fr">' + sFld(ctx,'n','refY','\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0632\u0631\u062f \u062f\u0627\u0648\u0631',0) + sFld(ctx,'n','refR','\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0642\u0631\u0645\u0632 \u062f\u0627\u0648\u0631',0) + '</div><div class="sg" style="grid-template-columns:1fr 1fr"><div><label class="mut">\u062a\u0631\u06a9\u06cc\u0628 \u067e\u0627\u06cc\u0647 \u0645\u06cc\u0632\u0628\u0627\u0646</label><select onchange="sIn(\''+ctx+'\',\'n\',\'formH\',this)"><option value=""'+(D.formH==''?' selected':'')+'>\u0628\u062f\u0648\u0646 \u062a\u0631\u06a9\u06cc\u0628 / \u0646\u0627\u0645\u0634\u062e\u0635</option>'+FORM_LIST.map(function(k){return '<option value="'+k+'"'+(D.formH==k?' selected':'')+'>'+k+'</option>';}).join('')+'</select></div><div><label class="mut">\u062a\u0631\u06a9\u06cc\u0628 \u067e\u0627\u06cc\u0647 \u0645\u0647\u0645\u0627\u0646</label><select onchange="sIn(\''+ctx+'\',\'n\',\'formA\',this)"><option value=""'+(D.formA==''?' selected':'')+'>\u0628\u062f\u0648\u0646 \u062a\u0631\u06a9\u06cc\u0628 / \u0646\u0627\u0645\u0634\u062e\u0635</option>'+FORM_LIST.map(function(k){return '<option value="'+k+'"'+(D.formA==k?' selected':'')+'>'+k+'</option>';}).join('')+'</select></div></div><div class="sg" style="grid-template-columns:1fr 1fr">'+sInt10Fld(ctx,'btts10H','\u062a\u0639\u062f\u0627\u062f BTTS \u0645\u06cc\u0632\u0628\u0627\u0646 \u062f\u0631 \u06f1\u06f0 \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631')+sInt10Fld(ctx,'btts10A','\u062a\u0639\u062f\u0627\u062f BTTS \u0645\u0647\u0645\u0627\u0646 \u062f\u0631 \u06f1\u06f0 \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631')+'</div><div class="mut" style="font-size:11px;line-height:1.8">\u062a\u0631\u06a9\u06cc\u0628\u200c\u0647\u0627 \u0628\u0647\u200c\u0635\u0648\u0631\u062a \u062a\u0637\u0628\u06cc\u0642\u06cc \u0628\u0631\u0631\u0633\u06cc \u0645\u06cc\u200c\u0634\u0648\u0646\u062f\u061b \u0645\u062f\u0644 \u0641\u0642\u0637 \u00ab\u0642\u062f\u0631\u062a \u062a\u0631\u06a9\u06cc\u0628\u00bb \u0646\u0645\u06cc\u200c\u062f\u0647\u062f\u060c \u0628\u0644\u06a9\u0647 \u0627\u062b\u0631 \u062a\u0642\u0627\u0628\u0644 \u0633\u0627\u062e\u062a\u0627\u0631\u06cc \u062f\u0648 \u0622\u0631\u0627\u06cc\u0634 \u0631\u0627 \u0631\u0648\u06cc \u0639\u0631\u0636\u060c \u0645\u06cc\u0627\u0646\u0647 \u0632\u0645\u06cc\u0646\u060c \u0641\u0634\u0627\u0631\u060c \u0641\u0636\u0627\u0647\u0627\u06cc \u0646\u06cc\u0645\u0647\u200c\u0639\u0645\u0642\u06cc \u0648 \u0627\u0646\u062a\u0642\u0627\u0644\u200c\u0647\u0627 \u0648\u0627\u0631\u062f \u0645\u06cc\u200c\u06a9\u0646\u062f.</div></div>';
-            h += '<div class="note" style="white-space:normal"><b>\u0646\u0648\u0639 \u0645\u0633\u0627\u0628\u0642\u0647</b><select onchange="sIn(\'' + ctx + '\',\'n\',\'mt\',this)"><option value="league"' + (D.mt == 'league' ? ' selected' : '') + '>\u0644\u06cc\u06af</option><option value=\"friendly\"'+(D.mt == 'friendly' ? ' selected' : '')+'>\u062f\u0648\u0633\u062a\u0627\u0646\u0647</option><option value="club_group"' + (D.mt == 'club_group' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u06af\u0631\u0648\u0647\u06cc</option><option value="club_knockout"' + (D.mt == 'club_knockout' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u062d\u0630\u0641\u06cc</option><option value="nat_group"' + (D.mt == 'nat_group' ? ' selected' : '') + '>\u0645\u0644\u06cc \u06af\u0631\u0648\u0647\u06cc \u0686\u0647\u0627\u0631 \u062a\u06cc\u0645\u06cc</option><option value="nat_knockout"' + (D.mt == 'nat_knockout' ? ' selected' : '') + '>\u0645\u0644\u06cc \u062d\u0630\u0641\u06cc</option></select></div>';
-            var no = m ? 0 : Object.keys(D.o).length;
-            h += '<div class="quick" style="margin-top:6px"><button onclick="sPaste(\'' + ctx + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0628\u062a \u0648\u0627\u0646\u0627</button><button onclick="sClr(\'' + ctx + '\')">\ud83e\uddf9 \u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646</button><button onclick="sTog(\'' + ctx + '\')">\u25b2 \u0628\u0633\u062a\u0646</button></div>';
-            if (!m && no) h += '<div class="mut">' + fa(no) + ' \u0636\u0631\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627 \u062b\u0628\u062a \u0634\u062f\u0647</div>';
-            h += '<div id="sres_' + ctx + '">' + sResHtml(ctx) + '</div></div>';
-            return h;
-          }
-          function sF(x) { return (Math.round(x * 1000) / 10).toFixed(1) + '%'; }
-          function sO(p) { return p > 0 ? (1 / p).toFixed(2) : '-'; }
-          function sText(ctx) {
-            var R = sCalc(ctx); if (R.err) return '';
-            var g = sGet(ctx), nm = sNames(ctx), A = sAll(R, g), L = [], by = {};
-            A.M.forEach(function (x) { by[x.k] = x; });
-            var it = function (x, l) { return l + ': ' + sF(x.p) + ' (' + sO(x.p) + ')' + (x.o ? ' [' + x.o.toFixed(2) + ' EV ' + (x.ev >= 0 ? '+' : '') + x.ev.toFixed(2) + ']' : ''); };
-            L.push('\ud83d\udcdd ' + nm[0] + ' - ' + nm[1] + ' (\u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc)');
-            L.push('\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631: ' + R.lh.toFixed(2) + ' - ' + R.la.toFixed(2) + ' (\u06a9\u0644 ' + (R.lh + R.la).toFixed(2) + ')' + (R.mk ? ' | \u0645\u062f\u0644 \u062e\u0627\u0645 ' + R.raw[0].toFixed(2) + ' - ' + R.raw[1].toFixed(2) : ''));
-            L.push('\u062f\u0631\u0635\u062f (\u0636\u0631\u06cc\u0628 \u0645\u0646\u0635\u0641\u0627\u0646\u0647) [\u0636\u0631\u06cc\u0628 \u0633\u0627\u06cc\u062a \u0648 EV]');
-            L.push(''); L.push('\u0646\u062a\u06cc\u062c\u0647:'); L.push(it(by['1'], '1 ' + nm[0])); L.push(it(by.X, 'X \u0645\u0633\u0627\u0648\u06cc')); L.push(it(by['2'], '2 ' + nm[1]));
-            L.push(''); L.push('\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647:'); L.push(it(by['1X'], '1X')); L.push(it(by.X2, 'X2')); L.push(it(by['12'], '12'));
-            L.push(''); L.push('\u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc:'); L.push(it(by['H1:0'], nm[0])); L.push(it(by['H2:0'], nm[1]));
-            L.push(''); L.push('\u06af\u0644 \u0632\u062f\u0646 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645:'); L.push(it(by.BY, '\u0628\u0644\u0647')); L.push(it(by.BN, '\u062e\u06cc\u0631'));
-            L.push(''); L.push('\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 (Over / Under):');
-            A.T.forEach(function (r) { L.push(it(r[0], r[0].l) + ' | ' + it(r[1], r[1].l)); });
-            L.push(''); L.push('\u0647\u0646\u062f\u06cc\u06a9\u067e (\u0645\u06cc\u0632\u0628\u0627\u0646 | \u0645\u0647\u0645\u0627\u0646):');
-            A.H.forEach(function (r) { L.push(it(r[0], nm[0] + ' ' + r[0].l) + ' | ' + it(r[1], nm[1] + ' ' + r[1].l)); });
-            L.push('');
-            if (!A.M.some(function (x) { return x.o; })) L.push('\u0636\u0631\u0627\u06cc\u0628 \u0633\u0627\u06cc\u062a \u0648\u0627\u0631\u062f \u0646\u0634\u062f\u0647');
-            else if (!A.V.length) L.push('\u274c \u0634\u0631\u0637 \u0627\u0631\u0632\u0634\u0645\u0646\u062f\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f');
-            else { L.push('\ud83d\udc8e \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u0627\u0627\u0631\u0632\u0634:'); A.V.forEach(function (x) { L.push((x.v ? '\ud83d\udc8e ' : '\ud83e\udd48 ') + sNameOf(x, nm) + ' \u0627\u0632 ' + x.o.toFixed(2) + ' | ' + sF(x.p) + ' | EV +' + x.ev.toFixed(2) + (x.p < 0.5 ? ' | \u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0627\u062e\u062a\u0634 \u0628\u06cc\u0634\u062a\u0631\u0647\u060c \u062a\u06a9\u06cc \u0648 \u06a9\u0645' : '')); }); }
-            return L.join('\n');
-          }
-          function sCopy(ctx) {
-            var t = sText(ctx); if (!t) { toast('\u0627\u0648\u0644 \u0622\u0645\u0627\u0631 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u0631\u0648 \u06a9\u0627\u0645\u0644 \u06a9\u0646'); return; }
-            var ok = false;
-            try { if (window.Android && Android.setClip) { Android.setClip(t); ok = true; } } catch (e) { ok = false; }
-            if (!ok) { try { var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); document.body.removeChild(ta); } catch (e2) { ok = false; } }
-            if (ok) toast('\u2705 \u06a9\u067e\u06cc \u0634\u062f\u060c \u0647\u0631 \u062c\u0627 \u062e\u0648\u0627\u0633\u062a\u06cc Paste \u06a9\u0646'); else prompt('\u0627\u06cc\u0646 \u0645\u062a\u0646 \u0631\u0648 \u06a9\u067e\u06cc \u06a9\u0646', t);
-          }
-          /* ---------- settings ---------- */
-          /* betting guide (update 17) */
-          function guideHtml() { return '<div class="box"><div class="row"><b>\ud83d\udcd6 \u0631\u0627\u0647\u0646\u0645\u0627\u06cc \u0634\u0631\u0637\u200c\u0628\u0646\u062f\u06cc</b><span class="x" onclick="go(\'set\')">\u21a9\ufe0f \u0628\u0631\u06af\u0634\u062a</span></div><div class="mut">\u062e\u0644\u0627\u0635\u0647 \u06f5\u06f0 \u062f\u0631\u0633 \u062f\u0641\u062a\u0631\u0686\u0647 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc\u200c\u0647\u0627. \u0642\u0628\u0644 \u0627\u0632 \u0647\u0631 \u0634\u0631\u0637\u060c \u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632 \u0631\u0648 \u0645\u0631\u0648\u0631 \u06a9\u0646.</div></div><div class="box"><b>\ud83c\udfaf \u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632 \u0642\u0628\u0644 \u0627\u0632 \u0634\u0631\u0637</b><ol class="gd"><li><b>\u0628\u0627\u0632\u0627\u0631 \u0686\u06cc \u0645\u06cc\u06af\u0647\u061f</b> \u0627\u06af\u0647 \u0628\u0631\u0622\u0648\u0631\u062f\u0645 \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f5\u066a \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u062a\u06cc\u0632 (Pinnacle) \u0641\u0631\u0642 \u062f\u0627\u0631\u0647\u060c \u062f\u0648 \u0634\u0627\u062e\u0635 \u0622\u0645\u0627\u0631\u06cc \u0645\u0633\u062a\u0642\u0644 \u0644\u0627\u0632\u0645\u0647. \u0648\u06af\u0631\u0646\u0647 \u0628\u0631\u0622\u0648\u0631\u062f \u0631\u0648 \u0628\u0628\u0631 \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631</li><li><b>\u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u06f5\u06f5\u066a \u0628\u0647 \u0628\u0627\u0644\u0627 \u0634\u0631\u0637 \u0646\u0632\u0646</b> (X2\u060c 1X \u06cc\u0627 \u0628\u0631\u062f \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641). \u06a9\u0627\u0631\u0646\u0627\u0645\u0647: \u06f0 \u0627\u0632 \u06f4 \u274c</li><li><b>\u0627\u0646\u062a\u0638\u0627\u0631 \u06af\u0644 \u0631\u0648 \u0627\u0632 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0645\u062f\u0644\u200c\u0647\u0627 \u0648 \u0628\u0627\u0632\u0627\u0631 \u067e\u0627\u06cc\u06cc\u0646\u200c\u062a\u0631 \u0646\u06cc\u0627\u0631.</b> \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644 \u0648\u0627\u0642\u0639\u06cc \u06f3.\u06f0\u06f5 \u0628\u0648\u062f\u0647 \u0648 \u0628\u0631\u0622\u0648\u0631\u062f\u0647\u0627\u0645 \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06f2.\u06f3 \u062a\u0627 \u06f2.\u06f7</li><li><b>Under 3.5 \u06a9\u0645\u200c\u0631\u06cc\u0633\u06a9 \u0646\u06cc\u0633\u062a.</b> \u062d\u062f\u0648\u062f \u06f3\u06f6\u066a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u06f4 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u062f\u0627\u0634\u062a\u0646. \u0633\u0642\u0641\u0634 \u06f7\u06f0\u066a\u0647. \u062a\u0648 \u0628\u0627\u0632\u06cc \u0646\u0627\u0628\u0631\u0627\u0628\u0631\u060c \u06cc\u0627 \u0648\u0642\u062a\u06cc \u062a\u06cc\u0645 \u0639\u0642\u0628\u200c\u0627\u0641\u062a\u0627\u062f\u0647 \u0628\u0627\u06cc\u062f \u0628\u06cc\u0627\u062f \u062c\u0644\u0648\u060c \u0646\u0632\u0646</li><li><b>Under 2.5 \u067e\u06cc\u0634\u0646\u0647\u0627\u062f \u0627\u0635\u0644\u06cc \u0646\u06cc\u0633\u062a.</b> \u0627\u0632 \u06f2\u06f2 \u0628\u0627\u0632\u06cc\u060c \u06f1\u06f5 \u062a\u0627 \u06f3 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u062f\u0627\u0634\u062a\u0646</li><li><b>BTTS \u0641\u0642\u0637 \u0628\u0627 \u0634\u0627\u062e\u0635 \u0641\u0635\u0644 \u06a9\u0627\u0645\u0644:</b> \u0628\u0631\u0627\u06cc \u00ab\u062e\u06cc\u0631\u00bb \u06a9\u0644\u06cc\u0646\u200c\u0634\u06cc\u062a \u06f5\u06f0\u066a \u0628\u0647 \u0628\u0627\u0644\u0627\u060c \u06cc\u0627 BTTS \u0632\u06cc\u0631 \u06f2\u06f0\u066a \u0647\u0645\u0631\u0627\u0647 \u0628\u0627 \u063a\u06cc\u0628\u062a \u06af\u0644\u0632\u0646 \u0627\u0635\u0644\u06cc. \u0628\u0631\u0627\u06cc \u00ab\u0628\u0644\u0647\u00bb \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u062a\u0648 \u062d\u062f\u0648\u062f \u06f8\u06f0\u066a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u06af\u0644 \u062e\u0648\u0631\u062f\u0647 \u0628\u0627\u0634\u0646\u060c \u0628\u0647\u200c\u0639\u0644\u0627\u0648\u0647 \u063a\u06cc\u0628\u062a \u0645\u062f\u0627\u0641\u0639 \u06a9\u0644\u06cc\u062f\u06cc. \u06a9\u0627\u0631\u0646\u0627\u0645\u0647: \u06f3 \u0627\u0632 \u06f3 \u2705</li><li><b>\u0636\u0631\u0628\u0627\u062a \u0627\u06cc\u0633\u062a\u06af\u0627\u0647\u06cc \u0647\u0631 \u062f\u0648 \u0637\u0631\u0641 \u0631\u0648 \u0628\u0627 \u0639\u062f\u062f \u0628\u0633\u0646\u062c:</b> \u06a9\u0631\u0646\u0631\u0632\u0646\u060c \u0632\u0646\u0646\u062f\u0647 \u0636\u0631\u0628\u0647 \u0622\u0632\u0627\u062f \u0648 \u0642\u062f \u0645\u062f\u0627\u0641\u0639\u200c\u0647\u0627</li><li><b>\u062a\u0631\u06a9\u06cc\u0628 \u0631\u0633\u0645\u06cc\u060c \u063a\u0627\u06cc\u0628\u200c\u0647\u0627\u060c \u0646\u06cc\u0645\u06a9\u062a\u060c \u062f\u0627\u0648\u0631 \u0648 \u0647\u0634\u062f\u0627\u0631 \u0647\u0648\u0627\u0634\u0646\u0627\u0633\u06cc \u0631\u0633\u0645\u06cc</b> \u0631\u0648 \u0642\u0628\u0644 \u0627\u0632 \u0628\u0633\u062a\u0646 \u0686\u06a9 \u06a9\u0646</li><li><b>\u0633\u0646\u0627\u0631\u06cc\u0648\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0645\u06cc\u200c\u0646\u0648\u06cc\u0633\u06cc \u062a\u0648 \u0639\u062f\u062f\u0647\u0627 \u0647\u0645 \u0628\u06cc\u0627\u062f:</b> \u06af\u0644 \u0632\u0648\u062f\u0647\u0646\u06af\u0627\u0645\u060c \u062a\u06cc\u0645 \u0639\u0642\u0628\u200c\u0627\u0641\u062a\u0627\u062f\u0647\u060c \u06a9\u0627\u0631\u062a \u0642\u0631\u0645\u0632\u060c \u062e\u0633\u062a\u06af\u06cc \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641 \u062a\u0648 \u0646\u06cc\u0645\u0647 \u062f\u0648\u0645</li><li><b>\u0641\u06cc\u0644\u062a\u0631 \u0646\u0647\u0627\u06cc\u06cc:</b> \u0636\u0631\u06cc\u0628 \u06f1.\u06f4\u06f5 \u0628\u0647 \u0628\u0627\u0644\u0627 \u0648 EV \u062d\u062f\u0627\u0642\u0644 \u06f0.\u06f0\u06f5+\u060c \u0648\u06af\u0631\u0646\u0647 \u00ab\u0634\u0631\u0637 \u0627\u0631\u0632\u0634\u0645\u0646\u062f\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f\u00bb. \u0627\u06af\u0647 \u0627\u062d\u062a\u0645\u0627\u0644 \u0632\u06cc\u0631 \u06f5\u06f0\u066a\u0647\u060c \u0641\u0642\u0637 \u062a\u06a9\u06cc \u0648 \u0628\u0627 \u0645\u0628\u0644\u063a \u06a9\u0645</li></ol></div><div class="box"><b>\ud83d\udcca \u06a9\u0627\u0631\u0646\u0627\u0645\u0647 (\u062a\u0627 \u06f4 \u0627\u06a9\u062a\u0628\u0631 \u06f2\u06f0\u06f2\u06f6)</b><ul class="gd"><li>\u06a9\u0644 \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u0647\u0627\u06cc \u0627\u0635\u0644\u06cc: \u06f7 \u0628\u0631\u062f\u060c \u06f8 \u0628\u0627\u062e\u062a</li><li>BTTS \u0628\u0627 \u0634\u0627\u062e\u0635 \u0642\u0648\u06cc: \u06f3 \u0627\u0632 \u06f3 \u2705</li><li>\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 \u06cc\u0627 \u0628\u0631\u062f \u062a\u06cc\u0645 \u06a9\u0645\u062a\u0631 \u0645\u062d\u0628\u0648\u0628 \u0648\u0642\u062a\u06cc \u0641\u06cc\u0648\u0631\u062f \u0632\u06cc\u0631 \u06f5\u06f5\u066a \u0628\u0648\u062f: \u06f2 \u0627\u0632 \u06f2 \u2705</li><li>\u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u06f5\u06f5\u066a \u0628\u0647 \u0628\u0627\u0644\u0627: \u06f0 \u0627\u0632 \u06f4 \u274c</li><li>Under 2.5: \u06f0 \u0627\u0632 \u06f3 \u274c \u00b7 Under 3.5: \u06f2 \u0627\u0632 \u06f3 \u00b7 Over 1.5: \u06f0 \u0627\u0632 \u06f1</li></ul></div><details class="box gdd"><summary><b>\u26bd \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u06af\u0644</b> <span class="mut">(\u06f9)</span></summary><ul class="gd"><li>\u062a\u06cc\u0645\u06cc \u06a9\u0647 \u062a\u0648 \u06f3 \u0628\u0627\u0632\u06cc \u0622\u062e\u0631 \u06f2 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u0632\u062f\u0647\u060c Under \u0631\u0648 \u0628\u0627 \u0627\u0637\u0645\u06cc\u0646\u0627\u0646 \u0628\u0627\u0644\u0627 \u0646\u06af\u06cc\u0631</li><li>\u0627\u06af\u0647 xGA \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06f1.\u06f4 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631\u0647\u060c Under 2.5 \u0646\u0632\u0646</li><li>\u062a\u0648\u0632\u06cc\u0639 \u06af\u0644 \u0631\u0648 \u0628\u0628\u06cc\u0646\u060c \u0646\u0647 \u0641\u0642\u0637 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646. \u062a\u06cc\u0645\u06cc \u06a9\u0647 \u0628\u0639\u062f \u0627\u0632 \u06af\u0644 \u062e\u0648\u0631\u062f\u0646 \u0628\u0647 \u0647\u0645 \u0645\u06cc\u200c\u0631\u06cc\u0632\u0647 \u067e\u0634\u062a\u200c\u0633\u0631\u0647\u0645 \u06af\u0644 \u0645\u06cc\u200c\u062e\u0648\u0631\u0647</li><li>\u0632\u0645\u06cc\u0646 \u062e\u06cc\u0633 \u0648 \u0628\u0627\u0631\u0648\u0646 \u062f\u0644\u06cc\u0644 Under \u0646\u06cc\u0633\u062a</li><li>\u0645\u0647\u0627\u062c\u0645 \u062f\u0627\u063a (\u06f5 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u062a\u0648 \u06f5 \u0628\u0627\u0632\u06cc \u0622\u062e\u0631) \u0631\u0648 \u00ab\u0627\u0641\u062a \u0628\u0627\u0632\u062f\u0647\u06cc\u00bb \u062d\u0633\u0627\u0628 \u0646\u06a9\u0646</li><li>\u0627\u0646\u062a\u0638\u0627\u0631 \u06af\u0644 \u062a\u06cc\u0645\u06cc \u06a9\u0647 \u06af\u0644 \u0646\u0645\u06cc\u200c\u0632\u0646\u0647 \u0631\u0648 \u0627\u0632 \u0622\u0645\u0627\u0631 \u062e\u0648\u062f\u0634 \u0628\u06af\u06cc\u0631\u060c \u0646\u0647 \u0627\u0632 \u0645\u062f\u0644\u200c\u0647\u0627</li><li>\u0646\u06cc\u0645\u0647 \u0627\u0648\u0644 \u06f0-\u06f0 \u0645\u0642\u0627\u0628\u0644 \u062a\u06cc\u0645 \u0622\u0645\u0627\u062a\u0648\u0631 \u06cc\u0639\u0646\u06cc Under \u0646\u06cc\u0633\u062a\u060c \u0686\u0648\u0646 \u0646\u06cc\u0645\u0647 \u062f\u0648\u0645 \u062e\u0633\u062a\u0647 \u0645\u06cc\u0634\u0646</li><li>\u0648\u0642\u062a\u06cc \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u0628\u0627 \u0645\u0633\u0627\u0648\u06cc \u0631\u0627\u0636\u06cc\u200c\u0627\u0646 \u0648 \u06cc\u0647 \u062d\u0645\u0644\u0647 \u0636\u0639\u06cc\u0641\u0647\u060c Over 1.5 \u0628\u0627\u0644\u0627\u06cc \u06f6\u06f5\u066a \u0646\u06cc\u0633\u062a</li><li>\u062f\u0631\u0633\u200c\u0647\u0627 \u0631\u0648 \u0628\u0627 \u0628\u06cc\u0634\u200c\u0628\u0631\u0622\u0648\u0631\u062f \u062c\u0628\u0631\u0627\u0646 \u0646\u06a9\u0646. \u0648\u0642\u062a\u06cc \u0647\u0645\u0647\u200c\u0686\u06cc \u06a9\u0645\u200c\u06af\u0644 \u0645\u06cc\u06af\u0647\u060c \u0628\u0631\u0622\u0648\u0631\u062f\u062a \u0631\u0648 \u0627\u0632 \u0627\u0648\u0646\u0627 \u0628\u0627\u0644\u0627\u062a\u0631 \u0646\u0628\u0631</li></ul></details><details class="box gdd"><summary><b>\ud83e\udd1d \u06af\u0644 \u0632\u062f\u0646 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 (BTTS)</b> <span class="mut">(\u06f4)</span></summary><ul class="gd"><li>\u06a9\u0644\u06cc\u0646\u200c\u0634\u06cc\u062a \u0645\u0642\u0627\u0628\u0644 \u062a\u06cc\u0645\u200c\u0647\u0627\u06cc \u0642\u0639\u0631 \u062c\u062f\u0648\u0644 \u062f\u0644\u06cc\u0644 \u062f\u0641\u0627\u0639 \u0642\u0648\u06cc \u0646\u06cc\u0633\u062a</li><li>\u062a\u06cc\u0645\u06cc \u06a9\u0647 \u0647\u06cc\u0686 \u06a9\u0644\u06cc\u0646\u200c\u0634\u06cc\u062a\u06cc \u0646\u062f\u0627\u0631\u0647\u060c \u062d\u062a\u06cc \u0645\u0642\u0627\u0628\u0644 \u062a\u06cc\u0645\u06cc \u06a9\u0647 \u06af\u0644 \u0646\u0645\u06cc\u200c\u0632\u0646\u0647 \u0647\u0645 \u0645\u0645\u06a9\u0646\u0647 \u06af\u0644 \u0628\u062e\u0648\u0631\u0647</li><li>\u0648\u0642\u062a\u06cc \u0634\u06a9\u0627\u0641 \u06a9\u06cc\u0641\u06cc\u062a \u0632\u06cc\u0627\u062f\u0647 \u0648 \u062a\u06cc\u0645 \u0642\u0648\u06cc \u0632\u0648\u062f \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0647\u060c \u06af\u0644 \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641 \u0642\u0637\u0639\u06cc \u0646\u06cc\u0633\u062a</li><li>\u062a\u0627 \u0648\u0642\u062a\u06cc \u0627\u0631\u0632\u0634 BTTS \u062e\u06cc\u0631 \u062a\u0648 \u0627\u067e \u0632\u06cc\u0631 \u06f1\u0647\u060c \u0641\u0642\u0637 \u0628\u0627 \u0636\u0631\u06cc\u0628 \u0627\u0631\u0632\u0634\u0645\u0646\u062f \u0648 \u062a\u06a9\u06cc</li></ul></details><details class="box gdd"><summary><b>\ud83c\udfc6 \u0646\u062a\u06cc\u062c\u0647 \u0648 \u0641\u06cc\u0648\u0631\u062f</b> <span class="mut">(\u06f6)</span></summary><ul class="gd"><li>\u0645\u06cc\u0632\u0628\u0627\u0646\u06cc \u06a9\u0647 \u0642\u0644\u0639\u0647 \u062e\u0648\u0646\u06af\u06cc \u062f\u0627\u0631\u0647 \u0648 \u0627\u0631\u0632\u0634 \u062a\u06cc\u0645\u0634 \u0686\u0646\u062f \u0628\u0631\u0627\u0628\u0631\u0647\u060c \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u0628\u0627\u0632\u0627\u0631 \u062f\u0631\u0628\u0627\u0631\u0647\u200c\u0634 \u062f\u0631\u0633\u062a\u200c\u062a\u0631 \u0627\u0632 \u0645\u062f\u0644\u200c\u0647\u0627\u0633\u062a</li><li>\u062a\u06cc\u0645 \u0645\u06cc\u0647\u0645\u0627\u0646\u06cc \u06a9\u0647 \u0628\u0639\u062f \u0627\u0632 \u06af\u0644 \u0639\u0642\u0628 \u0645\u06cc\u200c\u0634\u06cc\u0646\u0647\u060c \u062f\u0642\u06cc\u0642\u0647\u200c\u0647\u0627\u06cc \u0622\u062e\u0631 \u06af\u0644 \u0645\u06cc\u200c\u062e\u0648\u0631\u0647. \u062c\u0644\u0648 \u0627\u0641\u062a\u0627\u062f\u0646\u0634 \u0631\u0648 \u0642\u0637\u0639\u06cc \u0628\u0631\u0627\u06cc X2 \u062d\u0633\u0627\u0628 \u0646\u06a9\u0646</li><li>\u0648\u0642\u062a\u06cc \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641 \u0632\u0648\u062f \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0647\u060c \u062a\u06cc\u0645 \u0642\u0648\u06cc \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u0646\u06cc\u0645\u0647 \u062f\u0648\u0645 \u0628\u0631\u0645\u06cc\u200c\u06af\u0631\u062f\u0647</li><li>\u0631\u06a9\u0648\u0631\u062f \u062e\u0648\u0646\u06af\u06cc \u0648 \u0628\u06cc\u0631\u0648\u0646 \u0631\u0648 \u0628\u0627 \u06a9\u06cc\u0641\u06cc\u062a \u062d\u0631\u06cc\u0641 \u0628\u0633\u0646\u062c. \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u062f\u0648\u0633\u062a\u0627\u0646\u0647 \u0628\u0627 \u062a\u06cc\u0645\u200c\u0647\u0627\u06cc \u062e\u06cc\u0644\u06cc \u0636\u0639\u06cc\u0641 \u062d\u0633\u0627\u0628 \u0646\u06cc\u0633\u062a\u0646</li><li>\u0627\u0633\u062a\u0639\u0641\u0627\u06cc \u0645\u0631\u0628\u06cc \u0628\u0627 \u062c\u0645\u0644\u0647 \u00ab\u0627\u0639\u062a\u0645\u0627\u062f \u0628\u0627\u0632\u06cc\u06a9\u0646\u200c\u0647\u0627 \u0631\u0648 \u0627\u0632 \u062f\u0633\u062a \u062f\u0627\u062f\u06cc\u0645\u00bb \u06cc\u0639\u0646\u06cc \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641\u200c\u062a\u0631 \u0634\u062f\u0647</li><li>xG \u0628\u0627\u0644\u0627 \u0628\u0627 \u062a\u0628\u062f\u06cc\u0644 \u0636\u0639\u06cc\u0641 \u062a\u0648 \u06a9\u0648\u062a\u0627\u0647\u200c\u0645\u062f\u062a \u062f\u0631\u0633\u062a \u0646\u0645\u06cc\u0634\u0647. \u0628\u0631\u0627\u06cc \u0628\u0631\u062f \u062a\u06cc\u0645 \u0628\u062f\u0634\u0627\u0646\u0633 \u0631\u0648\u06cc \u00ab\u0628\u0631\u06af\u0634\u062a \u0628\u0647 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646\u00bb \u062d\u0633\u0627\u0628 \u0646\u06a9\u0646</li></ul></details><details class="box gdd"><summary><b>\ud83c\udfab \u0633\u0627\u062e\u062a\u0646 \u0628\u0644\u06cc\u0637</b> <span class="mut">(\u06f4)</span></summary><ul class="gd"><li>\u0641\u0642\u0637 \u067e\u0627\u06cc\u0647\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0627\u062d\u062a\u0645\u0627\u0644 \u00d7 \u0636\u0631\u06cc\u0628\u0634\u0648\u0646 \u0628\u0627\u0644\u0627\u06cc \u06f1\u0647</li><li>\u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u0647\u0627\u06cc \u0636\u0631\u06cc\u0628\u200c\u0628\u0627\u0644\u0627 (\u0645\u062b\u0644 \u06f2.\u06f5 \u0628\u0647 \u0628\u0627\u0644\u0627) \u0631\u0648 \u062a\u06a9\u06cc \u0628\u0628\u0646\u062f\u060c \u0646\u0647 \u062a\u0648 \u0645\u06cc\u06a9\u0633</li><li>\u0647\u06cc\u0686\u200c\u0648\u0642\u062a \u0632\u06cc\u0631 \u062d\u062f \u0636\u0631\u06cc\u0628\u06cc \u06a9\u0647 \u0628\u0631\u0627\u06cc \u062e\u0648\u062f\u062a \u06af\u0630\u0627\u0634\u062a\u06cc \u0646\u0628\u0646\u062f</li><li>\u06a9\u0627\u0631\u062a \u0642\u0631\u0645\u0632 \u0641\u0642\u0637 \u0627\u0632 \u0628\u0627\u0632\u06cc\u06a9\u0646 \u062e\u0634\u0646 \u0646\u0645\u06cc\u0627\u062f. \u062f\u0631\u0648\u0627\u0632\u0647\u200c\u0628\u0627\u0646\u06cc \u06a9\u0647 \u0627\u0632 \u0639\u0642\u0628 \u0628\u0627\u0632\u06cc \u0645\u06cc\u200c\u0633\u0627\u0632\u0647 \u0645\u0642\u0627\u0628\u0644 \u067e\u0631\u0633 \u0647\u0645 \u0631\u06cc\u0633\u06a9\u0647. \u0622\u0645\u0627\u0631 \u062f\u0627\u0648\u0631 \u0628\u0647\u200c\u062a\u0646\u0647\u0627\u06cc\u06cc \u062d\u062f\u0627\u06a9\u062b\u0631 \u06f0.\u06f1 \u06af\u0644 \u0627\u0636\u0627\u0641\u0647</li></ul></details><details class="box gdd"><summary><b>\ud83e\udde0 \u0630\u0647\u0646\u06cc\u062a</b> <span class="mut">(\u06f6)</span></summary><ul class="gd"><li>\u00ab\u0634\u0631\u0637 \u0627\u0631\u0632\u0634\u0645\u0646\u062f\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f\u00bb \u06cc\u0647 \u062a\u0635\u0645\u06cc\u0645 \u062d\u0631\u0641\u0647\u200c\u0627\u06cc\u0647\u060c \u0646\u0647 \u0634\u06a9\u0633\u062a</li><li>\u0627\u062e\u062a\u0644\u0627\u0641 \u0628\u0632\u0631\u06af \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06cc\u0639\u0646\u06cc \u06cc\u0647 \u0686\u06cc\u0632\u06cc \u0631\u0648 \u0646\u062f\u06cc\u062f\u06cc\u060c \u0646\u0647 \u0627\u06cc\u0646\u06a9\u0647 \u0627\u0631\u0632\u0634 \u067e\u06cc\u062f\u0627 \u06a9\u0631\u062f\u06cc</li><li>\u06cc\u0647 \u0628\u0627\u062e\u062a \u0628\u0627 \u0627\u062d\u062a\u0645\u0627\u0644 \u06f4\u06f0 \u062a\u0627 \u06f6\u06f0 \u062f\u0631\u0635\u062f \u062f\u0631\u0633 \u0646\u06cc\u0633\u062a\u060c \u0648\u0627\u0631\u06cc\u0627\u0646\u0633\u0647. \u062f\u0631\u0633 \u062c\u062f\u06cc\u062f \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0627\u0636\u0627\u0641\u0647 \u0645\u06cc\u0634\u0647 \u06a9\u0647 \u06cc\u0647 \u0627\u0644\u06af\u0648 \u06f3 \u0628\u0627\u0631 \u062a\u06a9\u0631\u0627\u0631 \u0634\u062f\u0647 \u0628\u0627\u0634\u0647</li><li>EV \u0645\u062b\u0628\u062a \u06cc\u0639\u0646\u06cc \u0627\u0631\u0632\u0634 \u062f\u0631 \u0628\u0644\u0646\u062f\u0645\u062f\u062a\u060c \u0646\u0647 \u0627\u06cc\u0646\u06a9\u0647 \u0627\u06cc\u0646 \u0634\u0631\u0637 \u0627\u062d\u062a\u0645\u0627\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0631\u0647</li><li>\u0639\u0645\u0644\u06a9\u0631\u062f \u0647\u0631 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u0628\u0627 \u062a\u0639\u062f\u0627\u062f \u0646\u0645\u0648\u0646\u0647\u060c \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0636\u0631\u06cc\u0628 \u0648 \u0633\u0648\u062f \u0648\u0627\u0642\u0639\u06cc \u0628\u0633\u0646\u062c\u060c \u0646\u0647 \u0641\u0642\u0637 \u062f\u0631\u0635\u062f \u0628\u0631\u062f</li><li>\u0646\u062a\u06cc\u062c\u0647\u200c\u0647\u0627\u06cc \u062f\u0648\u0631\u0627\u0641\u062a\u0627\u062f\u0647 (\u0645\u062b\u0644 \u06f0-\u06f7) \u0631\u0648 \u0645\u0628\u0646\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u06a9\u0644 \u0631\u0648\u0634 \u0646\u06a9\u0646</li></ul></details><div class="box mut">\u0627\u06cc\u0646 \u0631\u0627\u0647\u0646\u0645\u0627 \u0628\u0631\u0627\u06cc \u0633\u0631\u06af\u0631\u0645\u06cc \u0628\u0627 \u0633\u06a9\u0647 \u0645\u062c\u0627\u0632\u06cc\u0647. \u0647\u06cc\u0686 \u0631\u0648\u0634\u06cc \u0628\u0631\u062f \u0631\u0648 \u062a\u0636\u0645\u06cc\u0646 \u0646\u0645\u06cc\u200c\u06a9\u0646\u0647.</div>'; }
-          function showGuide() { go('set'); $('set').innerHTML = guideHtml(); window.scrollTo(0, 0); }
-          function renderSet() {
-            var r = ld('remaining', ''), afr = ld('afrem', null);
-            $('set').innerHTML = '<div class="box"><b>\ud83d\udcd6 \u0631\u0627\u0647\u0646\u0645\u0627\u06cc \u0634\u0631\u0637\u200c\u0628\u0646\u062f\u06cc</b><div class="mut">\u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632 \u06f1\u06f0 \u0633\u0624\u0627\u0644\u06cc\u060c \u06a9\u0627\u0631\u0646\u0627\u0645\u0647 \u0648 \u062e\u0644\u0627\u0635\u0647 \u06f5\u06f0 \u062f\u0631\u0633</div><button class="btn blue" onclick="showGuide()">\u0628\u0627\u0632 \u06a9\u0631\u062f\u0646 \u0631\u0627\u0647\u0646\u0645\u0627</button></div>' + profBox() +
-              '<div class="box"><b>\ud83d\udd11 \u06a9\u0644\u06cc\u062f API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">\u0630\u062e\u06cc\u0631\u0647 \u06a9\u0644\u06cc\u062f</button>' +
-              (r ? '<div class="mut" style="margin-top:8px">\u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647 \u0627\u06cc\u0646 \u0645\u0627\u0647: ' + esc(r) + '</div>' : '') + '</div>' +
-              '<div class="box"><b>\ud83c\udf10 \u06a9\u0644\u06cc\u062f API-Football (\u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627)</b><div class="mut">\u0631\u0627\u06cc\u06af\u0627\u0646\u060c \u06f1\u06f0\u06f0 \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u062f\u0631 \u0631\u0648\u0632. \u0628\u0631\u0646\u0627\u0645\u0647 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1\u06f2\u06f0\u06f0 \u0644\u06cc\u06af\u060c \u062a\u0648 \u062a\u0628 \u00ab\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627\u00bb.</div><input id="afk" class="ltr" placeholder="API-Football key" value="' + esc(afKey()) + '"><div class="quick"><button onclick="saveAF()">\u0630\u062e\u06cc\u0631\u0647 \u06a9\u0644\u06cc\u062f</button><button onclick="testAF()">\ud83e\uddea \u062a\u0633\u062a \u06a9\u0644\u06cc\u062f</button></div>' + (afr ? '<div class="mut" style="margin-top:8px">\u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647 \u0627\u0645\u0631\u0648\u0632: ' + fa(afr.n) + ' (' + agoTxt(afr.t) + ')</div>' : '') + '</div>' +
-              '<div class="box"><b>\ud83d\udd04 \u0622\u067e\u062f\u06cc\u062a \u0628\u0631\u0646\u0627\u0645\u0647</b><div class="mut">\u0646\u0633\u062e\u0647 \u0641\u0639\u0644\u06cc: ' + (BUILD ? 'v' + fa(BUILD) : '-') + '</div><button class="btn blue" onclick="checkUpdate(true)">\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a</button></div>' +
-              '<div class="box"><b>\ud83c\udf0d \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc ESPN</b><div class="mut">' + (ESV && ESV.ok ? fa(Object.keys(ESV.ok).length) + ' \u0644\u06cc\u06af \u0627\u0632 \u0644\u06cc\u0633\u062a\u062a \u062a\u0648 ESPN \u067e\u06cc\u062f\u0627 \u0634\u062f. \u0647\u0641\u062a\u0647\u200c\u0627\u06cc \u06cc\u0647 \u0628\u0627\u0631 \u062e\u0648\u062f\u06a9\u0627\u0631 \u0686\u06a9 \u0645\u06cc\u0634\u0647.' : '\u0647\u0646\u0648\u0632 \u0686\u06a9 \u0646\u0634\u062f\u0647.') + '</div><button class="btn" onclick="probeES(true)">' + (ESVR ? '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc...' : '\ud83d\udd04 \u0628\u0631\u0631\u0633\u06cc \u062f\u0648\u0628\u0627\u0631\u0647 (\u0631\u0627\u06cc\u06af\u0627\u0646)') + '</button></div>' +
-              '<div class="box"><b>\ud83e\ude99 \u0645\u062f\u06cc\u0631\u06cc\u062a \u0633\u06a9\u0647</b><div class="mut">\u0645\u0648\u062c\u0648\u062f\u06cc \u0641\u0639\u0644\u06cc: ' + fc(W.coins) + '</div><input id="coin" type="number" step="0.01" inputmode="decimal" placeholder="\u062a\u0639\u062f\u0627\u062f \u0633\u06a9\u0647">' +
-              '<div class="quick"><button onclick="coins(1)">\u2795 \u0627\u0636\u0627\u0641\u0647 \u06a9\u0646</button><button onclick="coins(0)">\u270f\ufe0f \u062a\u0646\u0638\u06cc\u0645 \u0645\u0648\u062c\u0648\u062f\u06cc</button></div></div>' +
-              '<div class="box"><b>\ud83d\udd14 \u06cc\u0627\u062f\u0622\u0648\u0631 \u0628\u0627\u0632\u06cc</b><div class="mut">\u06cc\u06a9 \u0633\u0627\u0639\u062a \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0631\u0648\u0634\u0648\u0646 \u0634\u0631\u0637 \u0645\u06cc\u200c\u0628\u0646\u062f\u06cc (\u06cc\u0627 \u0632\u0646\u06af\u0648\u0644\u0647\u200c\u0634\u0648\u0646 \u0631\u0648 \u0631\u0648\u0634\u0646 \u0645\u06cc\u200c\u06a9\u0646\u06cc) \u0646\u0648\u062a\u06cc\u0641\u06cc\u06a9\u06cc\u0634\u0646 \u0645\u06cc\u0627\u062f.</div></div>' +
-              bgBox() +
-              '<div class="box"><b>\ud83c\udf81 \u062c\u0627\u06cc\u0632\u0647 \u0631\u0648\u0632\u0627\u0646\u0647</b><div class="mut">\u0647\u0631 \u06f2\u06f4 \u0633\u0627\u0639\u062a ' + fmt(BONUS) + ' \u0633\u06a9\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646</div><button class="btn" onclick="bonus()">\u062f\u0631\u06cc\u0627\u0641\u062a \u062c\u0627\u06cc\u0632\u0647</button></div>' +
-              '<div class="box"><b>\u267b\ufe0f \u0634\u0631\u0648\u0639 \u062f\u0648\u0628\u0627\u0631\u0647</b><div class="mut">\u0641\u0642\u0637 \u0628\u0631\u0627\u06cc \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0641\u0639\u0644\u06cc: \u0633\u06a9\u0647\u200c\u0647\u0627 ' + fmt(START) + ' \u0645\u06cc\u0634\u0647 \u0648 \u062a\u0627\u0631\u06cc\u062e\u0686\u0647\u200c\u0627\u0634 \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0647</div><button class="btn sec" onclick="resetAll()">\u0631\u06cc\u0633\u062a</button></div>' +
-              '<div class="box mut">\u0627\u06cc\u0646 \u0627\u067e \u0641\u0642\u0637 \u0628\u0631\u0627\u06cc \u0633\u0631\u06af\u0631\u0645\u06cc\u0647 \u0648 \u0628\u0627 \u0633\u06a9\u0647 \u0645\u062c\u0627\u0632\u06cc \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647\u060c \u067e\u0648\u0644 \u0648\u0627\u0642\u0639\u06cc \u062f\u0631 \u06a9\u0627\u0631 \u0646\u06cc\u0633\u062a.<br>\u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631: \u0647\u06cc\u0686 \u0644\u06cc\u06af\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u062f\u0627\u0646\u0644\u0648\u062f \u0646\u0645\u06cc\u0634\u0647. \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647. \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u06cc\u0647 \u0644\u06cc\u06af \u06f2 (\u062a\u0627 \u0622\u062e\u0631 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u062a\u0648 \u062d\u0627\u0641\u0638\u0647 \u0645\u06cc\u200c\u0645\u0648\u0646\u0647)\u060c \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 \u0647\u0631 \u0628\u0627\u0632\u06cc \u06f2\u060c \u0686\u06a9 \u0646\u062a\u0627\u06cc\u062c \u06f2 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0644\u06cc\u06af. \u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0648 \u0628\u0633\u062a\u0646 \u0634\u0631\u0637\u200c\u0647\u0627 \u0627\u0632 ESPN \u0648 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647 (\u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0627\u067e \u0628\u0627\u0632\u0647). \u0627\u06af\u0647 ESPN \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0631\u0648 \u067e\u06cc\u062f\u0627 \u0646\u06a9\u0646\u0647\u060c \u0642\u0628\u0644 \u0627\u0632 \u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631 \u0627\u0632\u062a \u0645\u06cc\u200c\u067e\u0631\u0633\u0647.</div>';
-          }
-          /* profiles UI (update 14) */
-          function profBox() {
-            var h = '<div class="box"><b>\ud83d\udc64 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644\u200c\u0647\u0627</b><div class="mut">\u0647\u0631 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0633\u06a9\u0647\u060c \u0634\u0631\u0637\u200c\u0647\u0627 \u0648 \u0622\u0645\u0627\u0631 \u062c\u062f\u0627 \u062f\u0627\u0631\u0647. \u0645\u062b\u0644\u0627\u064b \u06cc\u06a9\u06cc \u0628\u0627 \u06a9\u0645\u06a9 Brain \u0648 \u06cc\u06a9\u06cc \u0628\u0627 \u0639\u0642\u0644 \u062e\u0648\u062f\u062a\u060c \u0628\u0639\u062f \u0622\u0645\u0627\u0631\u0634\u0648\u0646 \u0631\u0648 \u06a9\u0646\u0627\u0631 \u0647\u0645 \u0645\u0642\u0627\u06cc\u0633\u0647 \u06a9\u0646.</div>';
-            PR.l.forEach(function (p) {
-              var on = p.id == PR.cur, w = on ? W : ld(pk2(p.id, 'wallet'), null), bs = on ? BETS : ld(pk2(p.id, 'bets'), []), wn = 0, ls = 0, stk = 0, ret = 0;
-              bs.forEach(function (b) { if (b.st == 'w') wn++; if (b.st == 'l') ls++; if (b.st == 'w' || b.st == 'l') { stk += b.stake; ret += b.win; } });
-              var roi = stk ? Math.round((ret - stk) * 100 / stk) : null;
-              h += '<div class="pr1' + (on ? ' on' : '') + '" onclick="switchProf(\'' + p.id + '\')"><div><b>' + esc(p.n) + '</b>' + (on ? ' <span class="mut">(\u0641\u0639\u0627\u0644)</span>' : '') +
-                '<div class="mut">\ud83e\ude99 ' + fc(w ? w.coins : START) + ' | ' + fa(bs.length) + ' \u0634\u0631\u0637 | \u0628\u0631\u062f ' + fa(wn) + ' \u0628\u0627\u062e\u062a ' + fa(ls) + (roi !== null ? ' | \u0628\u0627\u0632\u062f\u0647 <span class="ltr">' + (roi >= 0 ? '+' : '') + roi + '\u066a</span>' : '') + '</div></div><span class="gold">' + (on ? '\u2705' : '\u203a') + '</span></div>';
-            });
-            h += '<div class="quick" style="margin-top:8px"><button onclick="newProf()">\u2795 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u062c\u062f\u06cc\u062f</button><button onclick="renProf()">\u270f\ufe0f \u062a\u063a\u06cc\u06cc\u0631 \u0627\u0633\u0645</button>' + (PR.cur != 'p0' ? '<button onclick="delProf()">\ud83d\uddd1\ufe0f \u062d\u0630\u0641</button>' : '') + '</div></div>';
-            return h;
-          }
-          function loadProf() {
-            W = ld(pk('wallet'), null); if (!W) { W = { coins: START, last: 0 }; sv(pk('wallet'), W); }
-            BETS = ld(pk('bets'), []); slip = ld(pk('slip'), []); NOTE = '';
-            renderBal(); updateCnt();
-          }
-          function switchProf(id) {
-            if (id == PR.cur) return;
-            PR.cur = id; sv('profs', PR); loadProf(); settle(); renderSet(); liveTick(false);
-            toast('\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0641\u0639\u0627\u0644: ' + pn());
-          }
-          function newProf() {
-            var n = prompt('\u0627\u0633\u0645 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u062c\u062f\u06cc\u062f:', PR.l.length == 1 ? '\ud83e\udde0 \u0628\u0627 \u0639\u0642\u0644 \u062e\u0648\u062f\u0645' : '\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 ' + fa(PR.l.length + 1));
-            if (n === null) return; n = String(n).trim().slice(0, 30); if (!n) return;
-            var id = 'p' + Date.now(); PR.l.push({ id: id, n: n }); PR.cur = id; sv('profs', PR);
-            loadProf(); renderSet(); toast('\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + n + '\u00bb \u0628\u0627 ' + fmt(START) + ' \u0633\u06a9\u0647 \u0633\u0627\u062e\u062a\u0647 \u0634\u062f');
-          }
-          function renProf() {
-            var n = prompt('\u0627\u0633\u0645 \u062c\u062f\u06cc\u062f \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0641\u0639\u0644\u06cc:', pn()); if (n === null) return; n = String(n).trim().slice(0, 30); if (!n) return;
-            PR.l.forEach(function (p) { if (p.id == PR.cur) p.n = n; }); sv('profs', PR); renderBal(); renderSet();
-          }
-          function delProf() {
-            if (PR.cur == 'p0') return;
-            if (!confirm('\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + pn() + '\u00bb \u0628\u0627 \u0647\u0645\u0647 \u0634\u0631\u0637\u200c\u0647\u0627\u0634 \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return;
-            var id = PR.cur; ['wallet', 'bets', 'slip'].forEach(function (k) { sv(pk2(id, k), null); });
-            PR.l = PR.l.filter(function (p) { return p.id != id; }); PR.cur = 'p0'; sv('profs', PR); loadProf(); renderSet(); toast('\u067e\u0627\u06a9 \u0634\u062f');
-          }
-
-          function saveKey() {
-            sv('key', $('k').value.trim()); sv('sports2', null); toast('\u06a9\u0644\u06cc\u062f \u0630\u062e\u06cc\u0631\u0647 \u0634\u062f'); renderSet();
-            loadSports(function () { renderLeagues(); if (reg != 'all') loadOdds(false); });
-          }
-          function coins(add) {
-            var v = r2(+$('coin').value || 0);
-            if (v < 0 || (add && v == 0)) { toast('\u06cc\u0647 \u0639\u062f\u062f \u062f\u0631\u0633\u062a \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
-            W.coins = add ? r2(W.coins + v) : v; saveAll(); renderSet();
-            toast(add ? fc(v) + ' \u0633\u06a9\u0647 \u0627\u0636\u0627\u0641\u0647 \u0634\u062f' : '\u0645\u0648\u062c\u0648\u062f\u06cc \u0634\u062f ' + fc(v));
-          }
-
-          /* ---------- reminders ---------- */
-          var REM = ld('rem', {});
-          function setRem(m, on, silent) {
-            var at = new Date(m.time).getTime() - 3600000;
-            if (on) {
-              if (at <= Date.now()) { if (!silent) toast('\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06cc\u06a9 \u0633\u0627\u0639\u062a \u0628\u0647 \u0628\u0627\u0632\u06cc \u0645\u0648\u0646\u062f\u0647'); return; }
-              REM[m.id] = { t: at, title: '\u26bd \u06cc\u06a9 \u0633\u0627\u0639\u062a \u062f\u06cc\u06af\u0647 \u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0645\u06cc\u0634\u0647', text: m.home + ' - ' + m.away + ' | \u0633\u0627\u0639\u062a ' + hm(m.time) };
-              try { Android.alarm(m.id, String(at), REM[m.id].title, REM[m.id].text); } catch (e) {}
-              if (!silent) toast('\ud83d\udd14 \u06cc\u06a9 \u0633\u0627\u0639\u062a \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc \u062e\u0628\u0631\u062a \u0645\u06cc\u200c\u06a9\u0646\u0645');
-            } else {
-              delete REM[m.id];
-              try { Android.cancelAlarm(m.id); } catch (e) {}
-              if (!silent) toast('\ud83d\udd15 \u06cc\u0627\u062f\u0622\u0648\u0631 \u062e\u0627\u0645\u0648\u0634 \u0634\u062f');
-            }
-            sv('rem', REM);
-          }
-          function bell(id) { var m = MATCHES[id]; if (!m) return; setRem(m, !REM[id], false); rerender(); }
-          function syncRem() {
-            var now = Date.now();
-            Object.keys(REM).forEach(function (id) {
-              var r = REM[id];
-              if (r.t <= now) delete REM[id];
-              else { try { Android.alarm(id, String(r.t), r.title, r.text); } catch (e) {} }
-            });
-            sv('rem', REM);
-          }
-          /* ---------- app update ---------- */
-          function checkUpdate(manual) {
-            if (!BUILD || REPO.indexOf('/') < 0) { if (manual) toast('\u0622\u067e\u062f\u06cc\u062a \u0641\u0642\u0637 \u062a\u0648 \u0646\u0633\u062e\u0647 \u0633\u0627\u062e\u062a\u0647\u200c\u0634\u062f\u0647 \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647'); return; }
-            if (!manual && Date.now() - ld('updT', 0) < 12 * 3600000) { showUpd(false); return; }
-            if (manual) toast('\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a...');
-            http('https://api.github.com/repos/' + REPO + '/releases/latest', function (r) {
-              if (r.status != 200) { if (manual) toast('\u062e\u0637\u0627 \u062f\u0631 \u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a (' + r.status + ')\u060c VPN \u0631\u0648 \u0686\u06a9 \u06a9\u0646'); showUpd(false); return; }
-              try {
-                var j = JSON.parse(r.body), n = parseInt(String(j.tag_name).replace(/\D/g, ''), 10) || 0;
-                var a = (j.assets || []).filter(function (x) { return /\.apk$/.test(x.name); })[0];
-                sv('upd', { n: n, url: a ? a.browser_download_url : j.html_url }); sv('updT', Date.now());
-              } catch (e) {}
-              showUpd(manual);
-            });
-          }
-          function showUpd(manual) {
-            var u = ld('upd', null), el = $('upd');
-            if (u && u.n > BUILD) el.innerHTML = '<div class="box upd"><div class="row"><b>\ud83c\udd95 \u0646\u0633\u062e\u0647 \u062c\u062f\u06cc\u062f (v' + fa(u.n) + ') \u0622\u0645\u0627\u062f\u0647\u200c\u0633\u062a</b></div><button class="btn" onclick="getUpd()">\u2b07\ufe0f \u062f\u0627\u0646\u0644\u0648\u062f \u0648 \u0646\u0635\u0628</button></div>';
-            else { el.innerHTML = ''; if (manual) toast('\u0622\u062e\u0631\u06cc\u0646 \u0646\u0633\u062e\u0647 \u0631\u0648 \u062f\u0627\u0631\u06cc \u2705'); }
-            if (manual && u && u.n > BUILD) { go('matches'); }
-          }
-          function getUpd() { var u = ld('upd', null); if (!u) return; try { Android.openUrl(u.url); toast('\u0628\u0639\u062f \u0627\u0632 \u062f\u0627\u0646\u0644\u0648\u062f\u060c \u0641\u0627\u06cc\u0644 \u0631\u0648 \u0628\u0627\u0632 \u06a9\u0646 \u0648 \u00ab\u0628\u0647\u200c\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc\u00bb \u0631\u0648 \u0628\u0632\u0646'); } catch (e) { toast('\u0645\u0631\u0648\u0631\u06af\u0631 \u0628\u0627\u0632 \u0646\u0634\u062f'); } }
-
-          function bonus() {
-            var n = Date.now();
-            if (n - (W.last || 0) < 86400000) { toast(fmt(Math.ceil((86400000 - (n - W.last)) / 3600000)) + ' \u0633\u0627\u0639\u062a \u062f\u06cc\u06af\u0647 \u062f\u0648\u0628\u0627\u0631\u0647 \u0628\u06cc\u0627'); return; }
-            W.last = n; W.coins = r2(W.coins + BONUS); saveAll(); toast('\ud83c\udf81 ' + fmt(BONUS) + ' \u0633\u06a9\u0647 \u06af\u0631\u0641\u062a\u06cc');
-          }
-          function resetAll() {
-            if (!confirm('\u0645\u0637\u0645\u0626\u0646\u06cc\u061f \u0647\u0645\u0647 \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + pn() + '\u00bb \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0646')) return;
-            W = { coins: START, last: 0 }; BETS = []; slip = []; sv(pk('slip'), slip); saveAll(); updateCnt(); renderSet(); toast('\u0631\u06cc\u0633\u062a \u0634\u062f');
-          }
-
-          /* ---------- PrimaTips paste (update 31) ---------- */
-          /* user selects the whole PrimaTips match page, copies it, and the percentages of 1X2, double chance, O/U 1.5/2.5/3.5 and BTTS are read from the text.
-             PrimaTips own coefficients are ignored on purpose, only the percentages are used as statistical analysis. */
-          var PTD = ld('ptd', {}), PTO = {};
-          (function () { var n = Date.now(), ch = false; for (var k in PTD) { if (!PTD[k] || !PTD[k]._t || new Date(PTD[k]._t).getTime() + 3 * 86400000 < n) { delete PTD[k]; ch = true; } } if (ch) sv('ptd', PTD); })();
-          var PTK = [['1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646'], ['X', '\u0645\u0633\u0627\u0648\u06cc'], ['2', '\u06f2 \u0645\u0647\u0645\u0627\u0646'], ['1X', '1X'], ['X2', 'X2'], ['12', '12'], ['O15', 'Over 1.5'], ['U15', 'Under 1.5'], ['O25', 'Over 2.5'], ['U25', 'Under 2.5'], ['O35', 'Over 3.5'], ['U35', 'Under 3.5'], ['BY', 'BTTS \u0628\u0644\u0647'], ['BN', 'BTTS \u062e\u06cc\u0631']];
-
-          function ptTok(a) { return a.join(' ').split(' ').filter(function (x) { return x; }); }
-          function parsePT(text) {
-            var ls = String(text).split(/\r?\n/).map(function (x) { return String(x).replace(/[\u200c\u200e\u200f\u00a0\t]/g, ' ').replace(/\s+/g, ' ').trim(); }).filter(function (x) { return x; });
-            var H = [[/^standard 1x2$/i, 'x12', 3], [/^double chance$/i, 'dc', 2], [/^over\/under 1\.5$/i, 'o15', 2], [/^over\/under 2\.5$/i, 'o25', 2], [/^over\/under 3\.5$/i, 'o35', 2], [/^both teams to score$/i, 'bt', 2]];
-            var KM = { x12: ['1', 'X', '2'], dc: ['1X', 'X2'], o15: ['O15', 'U15'], o25: ['O25', 'U25'], o35: ['O35', 'U35'], bt: ['BY', 'BN'] };
-            var hits = [], P = {}, got = 0, seen = {};
-            ls.forEach(function (x, i) { H.forEach(function (h) { if (h[0].test(x)) hits.push({ i: i, k: h[1], n: h[2] }); }); });
-            hits.forEach(function (h, j) {
-              if (seen[h.k]) return; seen[h.k] = 1;
-              var end = j + 1 < hits.length ? hits[j + 1].i : ls.length;
-              var tk = ptTok(ls.slice(h.i + 1, end)), pi = -1, t, pc = [];
-              for (t = 0; t < tk.length; t++) if (/^probability$/i.test(tk[t])) { pi = t; break; }
-              if (pi < 0) return;
-              for (t = pi + 1; t < tk.length && pc.length < h.n; t++) if (/^\d+(\.\d+)?%$/.test(tk[t])) pc.push(parseFloat(tk[t]) / 100);
-              if (pc.length < h.n) return;
-              KM[h.k].forEach(function (k, z) { P[k] = pc[z]; got++; });
-            });
-            var names = [], form = [];
-            ls.forEach(function (x, i) {
-              var m = /^(.+) last (\d+) games$/i.exec(x); if (!m || /^h2h$/i.test(m[1])) return;
-              names.push(m[1]);
-              var j = i + 1; while (j < ls.length && !/ (last|next) \d+ games$/i.test(ls[j])) j++;
-              var tk = ptTok(ls.slice(i + 1, j)), k = tk.indexOf('+3.5'), f = null;
-              if (k >= 0) {
-                var nums = [], prc = [], t;
-                for (t = k + 1; t < tk.length && (nums.length < 6 || prc.length < 6); t++) {
-                  if (/^\d+$/.test(tk[t]) && nums.length < 6 && !prc.length) nums.push(+tk[t]);
-                  else if (/^\d+%$/.test(tk[t]) && prc.length < 6) prc.push(parseFloat(tk[t]) / 100);
-                }
-                if (nums.length == 6 && prc.length == 6) f = { n: +m[2], w: nums[0], d: nums[1], l: nums[2], o15: nums[3], o25: nums[4], o35: nums[5], pw: prc[0], pd: prc[1], pl: prc[2], p15: prc[3], p25: prc[4], p35: prc[5] };
-              }
-              form.push(f);
-            });
-            return { p: P, got: got, names: names, form: form };
-          }
-          function ptSwap(P) {
-            var Q = {}, k, M = { '1': '2', '2': '1', '1X': 'X2', 'X2': '1X' };
-            for (k in P) Q[M[k] || k] = P[k];
-            return Q;
-          }
-          /* effective probabilities: if PrimaTips double chance does not match its own 1X2 (it is a two-way split that always sums to 100%), 1X, X2 and 12 are rebuilt from 1X2 unless the user switches to the raw numbers */
-          function ptEff(d) {
-            var P = {}, k, dv = {}, warns = [], bad = false;
-            for (k in d.p) P[k] = d.p[k];
-            var have = P['1'] !== undefined && P.X !== undefined && P['2'] !== undefined;
-            if (have) {
-              var s = P['1'] + P.X + P['2'];
-              if (Math.abs(s - 1) > 0.03) warns.push('\u062c\u0645\u0639 \u06f1 \u0648 \u0645\u0633\u0627\u0648\u06cc \u0648 \u06f2 ' + pc(s) + ' \u0634\u062f\u0647\u060c \u0646\u0647 \u06f1\u06f0\u06f0\u066a');
-              if (P['12'] === undefined) { P['12'] = P['1'] + P['2']; dv['12'] = 1; }
-              if (P['1X'] !== undefined && Math.abs(P['1'] + P.X - P['1X']) > 0.05) bad = true;
-              if (P.X2 !== undefined && Math.abs(P.X + P['2'] - P.X2) > 0.05) bad = true;
-              if (P['1X'] === undefined || (bad && !d.raw)) { P['1X'] = P['1'] + P.X; dv['1X'] = 1; }
-              if (P.X2 === undefined || (bad && !d.raw)) { P.X2 = P.X + P['2']; dv.X2 = 1; }
-            }
-            if (bad) warns.push(d.raw ? '\u062f\u0631\u0635\u062f\u0647\u0627\u06cc 1X \u0648 X2 \u062e\u0648\u062f PrimaTips (' + pc(d.p['1X']) + ' \u0648 ' + pc(d.p.X2) + ') \u0628\u0627 \u06f1X\u06f2 \u0627\u0634 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646 \u0648 \u0647\u0645\u06cc\u0646\u200c\u0647\u0627 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0634\u062f' : '\u062f\u0631\u0635\u062f\u0647\u0627\u06cc 1X \u0648 X2 \u062e\u0648\u062f PrimaTips (' + pc(d.p['1X']) + ' \u0648 ' + pc(d.p.X2) + ') \u0628\u0627 \u06f1X\u06f2 \u0627\u0634 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646 (1X \u0648 X2 \u0647\u0631 \u062f\u0648 \u0634\u0627\u0645\u0644 \u0645\u0633\u0627\u0648\u06cc\u0646\u060c \u067e\u0633 \u062c\u0645\u0639\u0634\u0648\u0646 \u0646\u0628\u0627\u06cc\u062f \u06f1\u06f0\u06f0\u066a \u0628\u0634\u0647). \u0628\u0631\u0627\u06cc \u0647\u0645\u06cc\u0646 \u0627\u0632 \u062c\u0645\u0639 \u06f1X\u06f2 \u062f\u0648\u0628\u0627\u0631\u0647 \u062d\u0633\u0627\u0628 \u0634\u062f');
-            if (P.O15 !== undefined && P.O25 !== undefined && P.O15 < P.O25) warns.push('Over 1.5 \u06a9\u0645\u062a\u0631 \u0627\u0632 Over 2.5 \u0634\u062f\u0647\u060c \u0639\u062f\u062f\u0647\u0627 \u0642\u0627\u0628\u0644 \u0627\u062a\u06a9\u0627 \u0646\u06cc\u0633\u062a\u0646');
-            if (P.O25 !== undefined && P.O35 !== undefined && P.O25 < P.O35) warns.push('Over 2.5 \u06a9\u0645\u062a\u0631 \u0627\u0632 Over 3.5 \u0634\u062f\u0647\u060c \u0639\u062f\u062f\u0647\u0627 \u0642\u0627\u0628\u0644 \u0627\u062a\u06a9\u0627 \u0646\u06cc\u0633\u062a\u0646');
-            return { p: P, dv: dv, bad: bad, warns: warns };
-          }
-          function ptP(id, p) { var d = PTD[id]; if (!d || !d.p) return null; var P = ptEff(d).p; return P[p] !== undefined ? P[p] : null; }
-          function ptHas(id, p) { return ptP(id, p) !== null; }
-
-          /* suggested stake (update 31): EV x 100 coins (EV +0.25 = 25), half when odds > 2.7, quarter when > 3.7, and it grows with profit above the 1000 start (1100 coins = +10%). Below 1000 it stays normal */
-          function stakeF(o) { return o > 3.7 ? 0.25 : (o > 2.7 ? 0.5 : 1); }
-          function stakeG(bank) { return bank > START ? bank / START : 1; }
-          function stakeRec(ev, o, bank) {
-            if (!(ev > 0) || !(o > 1) || !(bank > 0)) return 0;
-            var s = Math.max(1, Math.round(ev * 100 * stakeF(o) * stakeG(bank)));
-            return Math.min(s, Math.floor(bank));
-          }
-          function kelly(p, o, bank, mixed) {
-            if (!(o > 1) || !(p > 0) || !(bank > 0)) return null;
-            var pe = Math.min(p, 0.8), ev = pe * o - 1;
-            if (ev <= 0) return { s: 0, ev: ev, why: '\u0627\u0631\u0632\u0634 \u0646\u062f\u0627\u0631\u0647' };
-            var s = stakeRec(ev, o, bank);
-            return { s: s, share: s / bank, ev: ev, f: stakeF(o), g: stakeG(bank), low: ev < 0.05 };
-          }
-          function kWhy(k) {
-            return 'EV\u00d7\u06f1\u06f0\u06f0 = ' + fa(Math.round(k.ev * 100)) + (k.f == 0.5 ? '\u060c \u0646\u0635\u0641 \u0686\u0648\u0646 \u0636\u0631\u06cc\u0628 \u0628\u0627\u0644\u0627\u06cc \u06f2.\u06f7' : (k.f == 0.25 ? '\u060c \u06cc\u06a9\u200c\u0686\u0647\u0627\u0631\u0645 \u0686\u0648\u0646 \u0636\u0631\u06cc\u0628 \u0628\u0627\u0644\u0627\u06cc \u06f3.\u06f7' : '')) + (k.g > 1 ? '\u060c \u00d7' + fc(k.g) + ' \u0633\u0648\u062f \u0633\u0631\u0645\u0627\u06cc\u0647' : '') + (k.low ? '\u060c EV \u0645\u0631\u0632\u06cc' : '');
-          }
-          function kTxt(k) { return k.s ? fa(k.s) + ' \u0633\u06a9\u0647 (' + kWhy(k) + ')' : '\u06f0 (' + k.why + ')'; }
-          function slipSug() {
-            if (!slip.length) return null;
-            var p = 1, ok = true;
-            slip.forEach(function (x) { if (!x.my) ok = false; else p *= x.my / 100; });
-            if (!ok) return null;
-            var k = kelly(p, totalOdd(), W.coins, slip.length > 1); if (k) k.p = p;
-            return k;
-          }
-          function sugHtml() {
-            var k = slipSug();
-            if (!k) return '<div class="mut" style="line-height:1.8">\ud83d\udcb0 \u00ab\u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646\u00bb \u0631\u0648 \u0628\u0631\u0627\u06cc \u0647\u0645\u0647 \u067e\u0627\u06cc\u0647\u200c\u0647\u0627 \u0628\u0646\u0648\u06cc\u0633 (\u06cc\u0627 \u0627\u0632 PrimaTips \u0628\u06cc\u0627\u0631) \u062a\u0627 \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc \u0628\u06cc\u0627\u062f</div>';
-            if (!k.s) return '<div class="warn">\ud83d\udcb0 \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc: ' + kTxt(k) + '</div>';
-            return '<div class="note" style="white-space:normal">\ud83d\udcb0 \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc: <b class="gold">' + fa(k.s) + '</b> \u0633\u06a9\u0647 (' + kWhy(k) + ')' + (k.p < 0.5 ? '<br>\u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0631\u062f \u06a9\u0644 \u0632\u06cc\u0631 \u06f5\u06f0\u066a\u0647\u060c \u062a\u06a9\u06cc \u0648 \u0628\u0627 \u0645\u0628\u0644\u063a \u06a9\u0645' : '') + '<br><span class="mut">\u0627\u062d\u062a\u0645\u0627\u0644 \u06a9\u0644 ' + pc(k.p) + ' | \u0636\u0631\u06cc\u0628 \u06a9\u0644 ' + totalOdd().toFixed(2) + ' | EV +' + k.ev.toFixed(2) + (slip.length > 1 ? ' | \u0645\u06cc\u06a9\u0633: \u0641\u0631\u0636 \u0634\u062f\u0647 \u067e\u0627\u06cc\u0647\u200c\u0647\u0627 \u0645\u0633\u062a\u0642\u0644\u0646' : '') + '</span><div class="quick" style="margin-top:6px"><button onclick="qs(' + k.s + ')">\u0628\u0630\u0627\u0631 \u062a\u0648 \u0645\u0628\u0644\u063a \u0634\u0631\u0637</button></div></div>';
-          }
-          function sugUpd() { var e = $('sugw'); if (e) e.innerHTML = sugHtml(); }
-
-          function ptRow(m, k, l, p, dv) {
-            var o = getOdd(m, k), q = o ? nv(m, k) : null, cap = k == 'U35' ? 0.7 : 0.8, pe = Math.min(p, cap);
-            var ev = o ? pe * o - 1 : null, ed = q === null ? null : p - q, ag = against(m, k) ? true : false;
-            var v = (o && o >= 1.45 && ev >= 0.05 && !ag && (ed === null || ed >= 0.05)) ? 1 : 0;
-            var kk = (v && o) ? kelly(p, o, W.coins, false) : null;
-            return { k: k, l: l + (dv ? ' *' : ''), p: p, pe: pe, o: o, q: q, ev: ev, ed: ed, ag: ag, v: v, st: kk ? kk.s : 0, kk: kk };
-          }
-          function ptVd(x) { return x.ag ? '\u26a0\ufe0f \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f' : (x.v ? '\ud83d\udc8e \u0627\u0631\u0632\u0634 \u062f\u0627\u0631\u0647' : (x.ev >= 0.05 ? '\ud83d\udfe1 EV \u062e\u0648\u0628\u0647 \u0648\u0644\u06cc \u0641\u06cc\u0644\u062a\u0631 \u0631\u062f \u06a9\u0631\u062f' : (x.ev >= 0 ? '\ud83d\udfe1 \u0645\u0631\u0632\u06cc' : '\u274c \u0627\u0631\u0632\u0634 \u0646\u062f\u0627\u0631\u0647'))); }
-          function ptTog(id) { PTO[id] = !PTO[id]; rerender(); }
-          function ptRaw(id) { var d = PTD[id]; if (!d) return; d.raw = !d.raw; sv('ptd', PTD); rerender(); }
-          function ptClr(id) { if (!confirm('\u062a\u062d\u0644\u06cc\u0644 PrimaTips \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return; delete PTD[id]; sv('ptd', PTD); rerender(); }
-          function ptPaste(id) {
-            var m = MATCHES[id]; if (!m) return;
-            if (started(m)) { toast('\u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0634\u062f\u0647'); return; }
-            var t = '';
-            try { if (window.Android && Android.clip) t = Android.clip(); } catch (e) { t = ''; }
-            if (!t || !parsePT(t).got) {
-              t = prompt('\ud83d\udccb \u0635\u0641\u062d\u0647 \u0628\u0627\u0632\u06cc \u0631\u0648 \u062a\u0648 PrimaTips \u06a9\u0627\u0645\u0644 \u0627\u0646\u062a\u062e\u0627\u0628 (Select all) \u0648 \u06a9\u067e\u06cc \u06a9\u0646\u060c \u0628\u0639\u062f \u0627\u06cc\u0646\u062c\u0627 Paste \u06a9\u0646\n' + m.home + ' - ' + m.away, '');
-              if (!t) return;
-            }
-            var P = parsePT(t);
-            if (!P.got) { toast('\u062a\u0648 \u0627\u06cc\u0646 \u0645\u062a\u0646 \u062f\u0631\u0635\u062f PrimaTips \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f'); return; }
-            var nx = P.names, sw = false;
-            if (nx.length >= 2) {
-              var s1 = sim1(nx[0], m.home) + sim1(nx[1], m.away), s2 = sim1(nx[0], m.away) + sim1(nx[1], m.home);
-              if (Math.max(s1, s2) < 1.0 && !confirm('\u26a0\ufe0f \u0627\u0633\u0645 \u062a\u06cc\u0645\u200c\u0647\u0627 \u0628\u0627 \u0647\u0645 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646.\nPrimaTips: ' + nx[0] + ' - ' + nx[1] + '\n\u062a\u0648 \u0627\u067e: ' + m.home + ' - ' + m.away + '\n\n\u0628\u0627\u0632 \u0647\u0645 \u062b\u0628\u062a \u0628\u0634\u0647\u061f')) return;
-              if (s2 >= s1 + 0.5) { P.p = ptSwap(P.p); sw = true; }
-            }
-            PTD[id] = { _t: m.time, t: Date.now(), p: P.p, form: P.form, names: nx, sw: sw, raw: false };
-            sv('ptd', PTD); PTO[id] = true;
-            slip.forEach(function (x) { if (x.id != id) return; var q = ptP(id, x.pick); if (q !== null) { x.my = Math.round(q * 100); x.mp = x.my; x.src = 'pt'; } });
-            sv(pk('slip'), slip);
-            toast('\u2705 ' + fa(P.got) + ' \u062f\u0631\u0635\u062f PrimaTips \u062b\u0628\u062a \u0634\u062f' + (sw ? ' (\u062c\u0627\u06cc \u0645\u06cc\u0632\u0628\u0627\u0646 \u0648 \u0645\u0647\u0645\u0627\u0646 \u0639\u0648\u0636 \u0634\u062f)' : ''));
-            rerender();
-          }
-          function ptForm(n, f) {
-            if (!f) return '';
-            return '<div class="note" style="white-space:normal"><b>' + esc(n) + '</b> (' + fa(f.n) + ' \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631)<br>\u0628\u0631\u062f ' + fa(f.w) + '\u060c \u0645\u0633\u0627\u0648\u06cc ' + fa(f.d) + '\u060c \u0628\u0627\u062e\u062a ' + fa(f.l) + ' (' + pc(f.pw) + ' / ' + pc(f.pd) + ' / ' + pc(f.pl) + ')<br>\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1.\u06f5 \u06af\u0644: ' + fa(f.o15) + ' \u0628\u0627\u0632\u06cc (' + pc(f.p15) + ') | \u06f2.\u06f5: ' + fa(f.o25) + ' (' + pc(f.p25) + ') | \u06f3.\u06f5: ' + fa(f.o35) + ' (' + pc(f.p35) + ')</div>';
-          }
-          function ptPanel(m) {
-            if (started(m)) return '';
-            var d = PTD[m.id];
-            if (!PTO[m.id]) return '<div class="more" onclick="ptTog(\'' + m.id + '\')">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 PrimaTips (\u0686\u0633\u0628\u0627\u0646\u062f\u0646)' + (d ? ' \u2705' : '') + '</div>';
-            var h = '<div class="hpp"><div class="lbl">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 PrimaTips</div><div class="mut" style="line-height:1.9">\u0635\u0641\u062d\u0647 \u0647\u0645\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0631\u0648 \u062a\u0648 PrimaTips \u06a9\u0627\u0645\u0644 \u0627\u0646\u062a\u062e\u0627\u0628 (Select all) \u0648 \u06a9\u067e\u06cc \u06a9\u0646\u060c \u0628\u0639\u062f \u00ab\u0686\u0633\u0628\u0627\u0646\u062f\u0646\u00bb \u0631\u0648 \u0628\u0632\u0646. \u0641\u0642\u0637 \u062f\u0631\u0635\u062f\u0647\u0627\u06cc \u062a\u062d\u0644\u06cc\u0644\u06cc \u062e\u0648\u0646\u062f\u0647 \u0645\u06cc\u0634\u0646 \u0648 \u0636\u0631\u0627\u06cc\u0628 \u062e\u0648\u062f PrimaTips \u0646\u0627\u062f\u06cc\u062f\u0647 \u06af\u0631\u0641\u062a\u0647 \u0645\u06cc\u0634\u0646.</div>';
-            h += '<div class="quick" style="margin-top:6px"><button onclick="ptPaste(\'' + m.id + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646</button>' + (d ? '<button onclick="ptClr(\'' + m.id + '\')">\ud83e\uddf9 \u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646</button>' : '') + '<button onclick="ptTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646</button></div>';
-            if (!d) return h + '</div>';
-            var E = ptEff(d), rows = [];
-            PTK.forEach(function (z) { if (E.p[z[0]] !== undefined) rows.push(ptRow(m, z[0], z[1], E.p[z[0]], E.dv[z[0]])); });
-            E.warns.forEach(function (t) { h += '<div class="warn">\u26a0\ufe0f ' + esc(t) + '</div>'; });
-            if (E.bad) h += '<div class="quick" style="margin-top:4px"><button onclick="ptRaw(\'' + m.id + '\')">' + (d.raw ? '\u21a9\ufe0f \u0628\u0631\u06af\u0631\u062f \u0628\u0647 \u062d\u0633\u0627\u0628 \u0627\u0632 \u06f1X\u06f2' : '\u2699\ufe0f \u0647\u0645\u0648\u0646 \u06f1X \u0648 X2 \u062e\u0648\u062f PrimaTips \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0628\u0634\u0647') + '</button></div>';
-            if (d.sw) h += '<div class="mut">\u062c\u0627\u06cc \u0645\u06cc\u0632\u0628\u0627\u0646 \u0648 \u0645\u0647\u0645\u0627\u0646 \u0646\u0633\u0628\u062a \u0628\u0647 PrimaTips \u0639\u0648\u0636 \u0634\u062f (\u06f1 \u0648 \u06f2\u060c 1X \u0648 X2)</div>';
-            h += '<div class="mut" style="margin-top:6px">\u0628\u0627\u0646\u06a9\u0631\u0648\u0644: ' + fc(W.coins) + ' \u0633\u06a9\u0647 | \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc: EV\u00d7\u06f1\u06f0\u06f0 \u0633\u06a9\u0647\u060c \u0646\u0635\u0641 \u0628\u0631\u0627\u06cc \u0636\u0631\u06cc\u0628 \u0628\u0627\u0644\u0627\u06cc \u06f2.\u06f7 \u0648 \u06cc\u06a9\u200c\u0686\u0647\u0627\u0631\u0645 \u0628\u0627\u0644\u0627\u06cc \u06f3.\u06f7\u060c \u0628\u0627 \u0633\u0648\u062f \u0633\u0631\u0645\u0627\u06cc\u0647 \u0628\u0627\u0644\u0627\u06cc \u06f1\u06f0\u06f0\u06f0 \u0628\u06cc\u0634\u062a\u0631 \u0645\u06cc\u0634\u0647</div>';
-            h += '<table class="tbl"><tr><th>\u0628\u0627\u0632\u0627\u0631</th><th>PrimaTips</th><th>\u0648\u0627\u0642\u0639\u06cc</th><th>\u0636\u0631\u06cc\u0628</th><th>EV</th><th>\u0645\u0628\u0644\u063a</th></tr>';
-            rows.forEach(function (x) {
-              var ec = x.ev === null ? '-' : '<b class="ltr" style="color:' + (x.ev >= 0.05 ? 'var(--green)' : (x.ev >= 0 ? 'var(--gold)' : 'var(--red)')) + '">' + (x.ev >= 0 ? '+' : '') + x.ev.toFixed(2) + '</b>';
-              h += '<tr' + (x.v ? ' class="best"' : '') + ' onclick="mAdd(\'' + m.id + '\',\'' + x.k + '\')"><td>' + (x.v ? '\ud83d\udc8e ' : '') + (x.ag ? '\u26a0\ufe0f ' : '') + '<span class="ltr">' + x.l + '</span></td><td><b>' + pc(x.p) + '</b></td><td class="gold">' + fo2(x.p > 0 ? 1 / x.p : 0) + '</td><td>' + (x.o ? x.o.toFixed(2) : '-') + '</td><td>' + ec + '</td><td>' + (x.st ? '<b class="gold">' + fa(x.st) + '</b>' : '-') + '</td></tr>';
-            });
-            h += '</table>';
-            var w = rows.filter(function (x) { return x.o; }).sort(function (a, b) { return b.ev - a.ev; });
-            h += '<div class="note" style="white-space:normal"><b>\ud83d\udcb0 \u0627\u0631\u0632\u0634 \u0648\u0627\u0642\u0639\u06cc \u0636\u0631\u06cc\u0628\u200c\u0647\u0627</b>';
-            if (!w.length) h += '<br><span class="mut">\u0636\u0631\u0627\u06cc\u0628 \u0633\u0627\u06cc\u062a \u0631\u0648 \u0628\u0686\u0633\u0628\u0648\u0646 (\u0628\u062a \u0648\u0627\u0646\u0627) \u06cc\u0627 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647 \u062a\u0627 \u0636\u0631\u06cc\u0628 \u0648\u0627\u0642\u0639\u06cc \u06a9\u0646\u0627\u0631 \u0636\u0631\u06cc\u0628 \u0633\u0627\u06cc\u062a \u0628\u06cc\u0627\u062f</span>';
-            else w.slice(0, 10).forEach(function (x) { h += '<br><span class="ltr">' + x.l + '</span>: \u0633\u0627\u06cc\u062a <b>' + x.o.toFixed(2) + '</b> | \u0648\u0627\u0642\u0639\u06cc <b class="gold">' + fo2(1 / x.p) + '</b> | \u062d\u062f\u0627\u0642\u0644 ' + fo2(1.05 / Math.max(x.pe, 0.01)) + (x.q !== null ? ' | \u0628\u0627\u0632\u0627\u0631 ' + pct(x.q) : '') + ' | ' + ptVd(x) + (x.v ? ' | \ud83d\udcb0 \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc ' + kTxt(x.kk) : ''); });
-            h += '</div>';
-            if (d.form && (d.form[0] || d.form[1])) {
-              var nm = d.names || [];
-              h += '<details class="gdd" style="margin-top:6px"><summary class="mut">\ud83d\udd0e \u0641\u0631\u0645 \u06f1\u06f2 \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631 \u0627\u0632 PrimaTips</summary>' + ptForm(nm[0] || m.home, d.form[0]) + ptForm(nm[1] || m.away, d.form[1]) + '</details>';
-            }
-            h += '<div class="mut" style="line-height:1.8;margin-top:4px">\u00ab\u0648\u0627\u0642\u0639\u06cc\u00bb \u0636\u0631\u06cc\u0628 \u0645\u0646\u0635\u0641\u0627\u0646\u0647 \u0627\u0632 \u062f\u0631\u0635\u062f PrimaTips\u0647. \u00ab\u062d\u062f\u0627\u0642\u0644\u00bb \u06a9\u0645\u062a\u0631\u06cc\u0646 \u0636\u0631\u06cc\u0628\u06cc\u0647 \u06a9\u0647 EV \u0631\u0648 \u0628\u0647 \u06f0.\u06f0\u06f5+ \u0645\u06cc\u200c\u0631\u0633\u0648\u0646\u0647. \u0633\u062a\u0627\u0631\u0647 (*) \u06cc\u0639\u0646\u06cc \u0627\u0632 \u06f1X\u06f2 \u062d\u0633\u0627\u0628 \u0634\u062f\u0647. \u0631\u0648\u06cc \u0647\u0631 \u0633\u0637\u0631 \u0628\u0632\u0646\u06cc \u0645\u06cc\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637 \u0648 \u00ab\ud83c\udfaf \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646\u00bb \u0627\u0632 PrimaTips \u067e\u0631 \u0645\u06cc\u0634\u0647.</div>';
-            return h + '</div>';
-          }
-          /* ---------- phone notifications: goals + bet results, also when the app is closed (update 31) ---------- */
-          var BGTX = { g: '\u26bd \u06af\u0644! ', gv: '\ud83d\udeab \u06af\u0644 \u0645\u0631\u062f\u0648\u062f \u0634\u062f (VAR)\u060c \u0646\u062a\u06cc\u062c\u0647 \u0627\u0644\u0627\u0646: ', tk: '\ud83c\udfab ', mix: '\u0645\u06cc\u06a9\u0633 {n} \u067e\u0627\u06cc\u0647', one: '\u062a\u06a9\u06cc', coin: '\u0633\u06a9\u0647', nw: '\u0641\u0639\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0631\u06cc \u2705', nl: '\u0641\u0639\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0627\u0632\u06cc \u274c', nv: '\u0641\u0639\u0644\u0627\u064b \u0628\u0631\u06af\u0634\u062a \u067e\u0648\u0644 \u21a9\ufe0f',
-            rw: '\ud83c\udf89 \u0634\u0631\u0637\u062a \u0628\u0631\u062f \u0634\u062f! {x} \u0633\u06a9\u0647 \u06af\u0631\u0641\u062a\u06cc', rl: '\u274c \u0634\u0631\u0637\u062a \u0628\u0627\u062e\u062a \u0634\u062f ({x} \u0633\u06a9\u0647)', rv: '\u21a9\ufe0f \u0634\u0631\u0637 \u0628\u0627\u0637\u0644 \u0634\u062f\u060c {x} \u0633\u06a9\u0647 \u0628\u0631\u06af\u0634\u062a', st: '\u0645\u0628\u0644\u063a', od: '\u0636\u0631\u06cc\u0628', pp: '\u0645\u0639\u0648\u0642',
-            mw: '\u2705', ml: '\u274c', mv: '\u21a9\ufe0f', mp: '\u23f3', ch: '\u06af\u0644\u200c\u0647\u0627 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0634\u0631\u0637\u200c\u0647\u0627' };
-          function bgOn() { return !ld('bgoff', 0); }
-          function nfmt(n) { return String(Math.round(n * 100) / 100); }
-          function bgNote(id, title, text) { if (!bgOn()) return; try { if (window.Android && Android.notif) Android.notif(String(id), title, text); } catch (e) {} }
-          function betKind(b) { return b.sel.length > 1 ? BGTX.mix.replace('{n}', b.sel.length) : BGTX.one; }
-          function bgClean(o, days) { var now = Date.now(); Object.keys(o).forEach(function (k) { var v = o[k], t = typeof v == 'number' ? v : (v && v.t) || 0; if (now - t > days * 86400000) delete o[k]; }); }
-          function bgImport() {
-            var S = ld('bgs', {}), ch = false;
-            BETS.forEach(function (b) {
-              if (b.st != 'p') return;
-              b.sel.forEach(function (x) {
-                var s = S[x.id], L = LIVE[x.id]; if (x.res != 'p' || !s || s.st == 'pre') return;
-                if (L && L.st == 'post') return;
-                if (L && (s.t || 0) <= (L.t || 0)) return;
-                if (s.pp) { LIVE[x.id] = { hs: 0, as: 0, st: 'post', pp: 1, clk: '', t: s.t }; ch = true; return; }
-                { LIVE[x.id] = { hs: s.hs, as: s.as, st: s.st, clk: s.st == 'post' ? 'FT' : (s.el || ''), t: s.t, eid: L ? L.eid : '', sw: L ? L.sw : 0 }; ch = true; }
-              });
-            });
-            return ch;
-          }
-          function goalCheck() {
-            var S = ld('bgs', {}), ch = false, now = Date.now(), by = {};
-            BETS.forEach(function (b) { if (b.st == 'p') b.sel.forEach(function (x) { if (x.res == 'p') (by[x.id] = by[x.id] || []).push({ b: b, x: x }); }); });
-            Object.keys(by).forEach(function (id) {
-              var L = LIVE[id]; if (!L || L.pp || L.st == 'pre') return;
-              var s = S[id], ot = s ? s.hs + s.as : 0, nt = L.hs + L.as, lst = L.st == 'x' ? 'in' : L.st;
-              /* update 34: a final result is never overwritten, and only newer data counts (a VAR call can take a goal back) */
-              if (s && (s.st == 'post' || (s.t || 0) > (L.t || 0))) return;
-              var diff = !s || s.hs != L.hs || s.as != L.as;
-              if (s && !diff && s.st == lst) { if (s.el != (L.clk || '')) { s.el = L.clk || ''; s.t = L.t || now; ch = true; } return; }
-              if (L.st != 'post' && diff && (nt > ot || s)) {
-                var x0 = by[id][0].x, ls = [], var0 = !!s && nt <= ot;
-                by[id].forEach(function (o) { var r = resX(o.x.pick, L.hs, L.as); ls.push(BGTX.tk + pl(o.x) + ' @' + o.x.odd.toFixed(2) + ' | ' + betKind(o.b) + ' | ' + nfmt(o.b.stake) + ' ' + BGTX.coin + ' | ' + BGTX['n' + r]); });
-                bgNote(var0 ? 'v' + id + '_' + L.hs + '_' + L.as : 'g' + id + '_' + nt, (var0 ? BGTX.gv : BGTX.g) + x0.home + ' ' + L.hs + ' - ' + L.as + ' ' + x0.away + (L.clk ? ' (' + L.clk + ')' : ''), ls.join('\n'));
-              }
-              S[id] = { hs: L.hs, as: L.as, st: lst, el: L.clk || '', t: L.t || now }; ch = true;
-            });
-            if (ch) { bgClean(S, 5); sv('bgs', S); }
-          }
-          function betNote(b) {
-            var N = ld('bgn', {}); if (N[b.id]) return;
-            N[b.id] = Date.now(); bgClean(N, 10); sv('bgn', N);
-            var t = b.st == 'w' ? BGTX.rw.replace('{x}', nfmt(b.win)) : (b.st == 'l' ? BGTX.rl.replace('{x}', nfmt(b.stake)) : BGTX.rv.replace('{x}', nfmt(b.win)));
-            var ls = [(PR.l.length > 1 ? '[' + pn() + '] ' : '') + betKind(b) + ' | ' + BGTX.st + ' ' + nfmt(b.stake) + ' | ' + BGTX.od + ' ' + nfmt(b.odd)];
-            b.sel.forEach(function (x) { ls.push((BGTX['m' + x.res] || '') + ' ' + x.home + ' ' + (x.score || '-') + ' ' + x.away + ' | ' + pl(x) + ' @' + x.odd.toFixed(2)); });
-            bgNote('b' + b.id, t, ls.join('\n'));
-          }
-          function afIdOf(x) {
-            if (/^af\d+$/.test(x.id)) return { id: +x.id.slice(2), sw: 0 };
-            var c = ld('af_' + dk(new Date(x.time).getTime()), null), hit = null;
-            if (c && c.d) c.d.forEach(function (m) { if (!hit && sameM(m, x)) hit = { id: +String(m.id).slice(2), sw: (sim1(m.home, x.away) + sim1(m.away, x.home) > sim1(m.home, x.home) + sim1(m.away, x.away)) ? 1 : 0 }; });
-            return hit || { id: 0, sw: 0 };
-          }
-          function bgSync() {
-            var now = Date.now(), legs = {}, bets = [], multi = PR.l.length > 1;
-            try {
-              PR.l.forEach(function (p) {
-                var bs = p.id == PR.cur ? BETS : ld(pk2(p.id, 'bets'), []);
-                bs.forEach(function (b) {
-                  if (b.st != 'p') return;
-                  var bl = [];
-                  b.sel.forEach(function (x) {
-                    var k = new Date(x.time).getTime();
-                    bl.push({ i: x.id, h: x.home, a: x.away, pk: x.pick, pl: pl(x), o: x.odd, r: x.res, sc: x.score || '' });
-                    if (x.res != 'p' || now - k > 84 * 3600000 || legs[x.id]) return;
-                    var L = LIVE[x.id] || {}, af = afKey() ? afIdOf(x) : { id: 0, sw: 0 }, d1 = ymd(k), d2 = ymd(k - 5 * 3600000);
-                    legs[x.id] = { i: x.id, h: x.home, a: x.away, t: k, af: af.id, afs: af.sw, es: esl(x.lg) || '', d: d1, d2: d2 == d1 ? '' : d2, eid: L.eid || '', sw: L.sw ? 1 : 0 };
-                  });
-                  bets.push({ id: b.
+            var h = '<div class="hpp"><div class="lbl">\ud83d\udcdd \u062a\u062d\u0644\u06cc\u0644 \u0628\u0627 \u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc</div><div class="mut" style="line-height:1.9">\u062a\u0639\u062f\u0627\u062f \u0628\u0631\u062f\u060c \u0645\u0633\u0627\u0648\u06cc \u06
