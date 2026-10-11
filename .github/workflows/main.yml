@@ -1200,7 +1200,7 @@ jobs:
           var ODDS_TTL = 3 * 3600000, SCORE_TTL = 10 * 60000, EX_TTL = 60 * 60000, SPORTS_TTL = 12 * 3600000, END_MS = 150 * 60000, START = 1000, BONUS = 100;
           var BUILD = parseInt('__BUILD__', 10) || 0, REPO = '__REPO__';
           var OPENC = {}, OPENK = {}, BF = 'all', ALLK = [], OT = {};
-          var reg = 'pop', cur = POP[0], DF = 'all', CUR = null, CURM = false, NL = 0, MATCHES = {}, OPEN = {}, EX = {}, SPORTS = [], cbs = {}, cbn = 0;
+          var reg = 'day', cur = POP[0], DF = 'all', CUR = null, CURM = false, NL = 0, MATCHES = {}, OPEN = {}, EX = {}, SPORTS = [], cbs = {}, cbn = 0;
 
           function $(id) { return document.getElementById(id); }
           var LDC = LDC || {};
@@ -1444,8 +1444,7 @@ jobs:
             return (p.length ? p : POP).map(function (k) { return { key: k }; });
           }
           function renderLeagues() {
-            var h = '<div class="leagues">' + chip('\ud83d\udcc2 \u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627 \u0648 \u0644\u06cc\u06af\u200c\u0647\u0627', reg == 'browse', "pickReg('browse')") +
-              chip('\u2b50 \u0645\u062d\u0628\u0648\u0628', reg == 'pop', "pickReg('pop')") + chip('\u23f0 \u0628\u0647 \u062a\u0631\u062a\u06cc\u0628 \u0633\u0627\u0639\u062a', reg == 'all', "pickReg('all')") + chip('\ud83d\udcc5 \u0627\u0645\u0631\u0648\u0632', reg == 'day', "pickReg('day')") + chip('\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627', reg == 'af', "pickReg('af')") + '</div>';
+            var h = '<div class="leagues">' + chip('\ud83d\udcc5 \u0627\u0645\u0631\u0648\u0632', reg == 'day', "pickReg('day')") + chip('\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627', reg == 'af', "pickReg('af')") + '</div>';
             if (reg == 'pop') {
               h += '<div class="leagues">';
               leaguesFor('pop').forEach(function (s) { h += chip(lname(s.key), s.key == cur, "pickLeague('" + s.key + "')", 'sm'); });
@@ -2751,10 +2750,10 @@ jobs:
             var best = null; rows.forEach(function (r) { if (!best && r.n >= 3) best = r; });
             h += '<table class="tbl"><tr><th>\u0628\u0627\u0632\u0627\u0631</th><th>\u2705</th><th>\u274c</th><th>\u062f\u0631\u0635\u062f \u0628\u0631\u062f</th><th>\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0636\u0631\u06cc\u0628</th><th>\u0633\u0648\u062f \u0648\u0632\u0646\u06cc</th></tr>';
             rows.forEach(function (r) {
-              h += '<tr' + (best && r.k == best.k ? ' class="best"' : '') + '><td>' + (best && r.k == best.k ? '\ud83c\udfc6 ' : '') + r.t + '</td><td style="color:var(--green)">' + fa(r.w) + '</td><td style="color:var(--red)">' + fa(r.l) + '</td>' +
+              h += '<tr' + (best && r.k == best.k ? ' class="best"' : '') + '><td>' + (best && r.k == best.k ? '\ud83c\udfc6 ' : '') + cauL(r.k, r.t) + '</td><td style="color:var(--green)">' + fa(r.w) + '</td><td style="color:var(--red)">' + fa(r.l) + '</td>' +
                 '<td><b style="color:' + (r.r >= 50 ? 'var(--green)' : 'var(--red)') + '">' + fa(r.r) + '\u066a</b></td><td class="ltr">' + r.ao.toFixed(2) + '</td><td class="ltr" style="color:' + (r.pnl >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (r.pnl >= 0 ? '+' : '') + r.pnl.toFixed(2) + '</td></tr>';
             });
-            h += '</table><div class="mut" style="margin-top:8px;line-height:1.8">\u0647\u0631 \u0627\u0646\u062a\u062e\u0627\u0628 \u062c\u062f\u0627 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647\u060c \u0686\u0647 \u062a\u06a9\u06cc \u0686\u0647 \u062f\u0627\u062e\u0644 \u0645\u06cc\u06a9\u0633. \ud83c\udfc6 = \u0628\u0647\u062a\u0631\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0628\u0627 \u062d\u062f\u0627\u0642\u0644 \u06f3 \u0646\u062a\u06cc\u062c\u0647. \u0627\u06af\u0647 \u062f\u0631\u0635\u062f \u0628\u0631\u062f \u0627\u0632 ' + '\u00ab\u06f1\u06f0\u06f0 \u062a\u0642\u0633\u06cc\u0645 \u0628\u0631 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0636\u0631\u06cc\u0628\u00bb \u0628\u06cc\u0634\u062a\u0631 \u0628\u0627\u0634\u0647\u060c \u062a\u0648 \u0627\u0648\u0646 \u0628\u0627\u0632\u0627\u0631 \u0627\u0632 \u0628\u0646\u06af\u0627\u0647 \u062c\u0644\u0648\u062a\u0631\u06cc.</div></div>';
+            h += '</table><div class="mut" style="margin-top:8px;line-height:1.8">\ud83e\uddca = \u0628\u0627\u0632\u0627\u0631 \u0645\u062d\u062a\u0627\u0637: \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u062f\u0644 \u0646\u0635\u0641 \u0628\u0647 \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631 \u06a9\u0634\u06cc\u062f\u0647 \u0645\u06cc\u0634\u0647 \u0648 \u0628\u0631\u0627\u06cc \ud83d\udc8e \u062d\u062f\u0627\u0642\u0644 EV +0.10 \u0648 \u06f8\u066a \u0628\u0627\u0644\u0627\u062a\u0631 \u0627\u0632 \u0628\u0627\u0632\u0627\u0631 \u0644\u0627\u0632\u0645\u0647 (\u0628\u0631\u062f \u0645\u0647\u0645\u0627\u0646\u060c \u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2\u060c \u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5\u060c \u0648 \u0647\u0631 \u0628\u0627\u0632\u0627\u0631\u06cc \u0628\u0627 \u06f1\u06f0 \u0646\u062a\u06cc\u062c\u0647 \u0648 \u0633\u0648\u062f \u0648\u0632\u0646\u06cc \u0632\u06cc\u0631 \u06f1-). \u0647\u0631 \u0627\u0646\u062a\u062e\u0627\u0628 \u062c\u062f\u0627 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647\u060c \u0686\u0647 \u062a\u06a9\u06cc \u0686\u0647 \u062f\u0627\u062e\u0644 \u0645\u06cc\u06a9\u0633. \ud83c\udfc6 = \u0628\u0647\u062a\u0631\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0628\u0627 \u062d\u062f\u0627\u0642\u0644 \u06f3 \u0646\u062a\u06cc\u062c\u0647. \u0627\u06af\u0647 \u062f\u0631\u0635\u062f \u0628\u0631\u062f \u0627\u0632 ' + '\u00ab\u06f1\u06f0\u06f0 \u062a\u0642\u0633\u06cc\u0645 \u0628\u0631 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0636\u0631\u06cc\u0628\u00bb \u0628\u06cc\u0634\u062a\u0631 \u0628\u0627\u0634\u0647\u060c \u062a\u0648 \u0627\u0648\u0646 \u0628\u0627\u0632\u0627\u0631 \u0627\u0632 \u0628\u0646\u06af\u0627\u0647 \u062c\u0644\u0648\u062a\u0631\u06cc.</div></div>';
             return h;
           }
           function calib() {
@@ -2804,6 +2803,84 @@ jobs:
           }
           function cell(t, v, col) { return '<div class="cell"><span class="mut">' + t + '</span><b' + (col ? ' style="color:' + col + '"' : '') + '>' + v + '</b></div>'; }
           function pickBF(f) { BF = f; renderBets(); }
+          /* ---------- loss review (update 38): one AI prompt per lost pick, paste the answer, and a combined prompt every 20 reviews ---------- */
+          var RVO = false, RVB = ld('rvb', 0);
+          function lgPlain(k) { if (isAF(k)) { var a = AFLG[k]; return a ? a.n + ' (' + a.c + ')' : ''; } var t = String(lname(k) || '').replace(/<[^>]+>/g, ''); return t.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"'); }
+          function rvList() {
+            var out = [];
+            BETS.forEach(function (b) { b.sel.forEach(function (x, j) { if (x.res == 'l') out.push({ b: b, x: x, j: j }); }); });
+            out.sort(function (a, c) { return new Date(c.x.time) - new Date(a.x.time); });
+            return out;
+          }
+          function rvQ(b, x) {
+            var oth = b.sel.length > 1 ? '\u0645\u06cc\u06a9\u0633 ' + b.sel.length + ' \u067e\u0627\u06cc\u0647' : '\u062a\u06a9\u06cc';
+            var t = '\u062a\u0648 \u06cc\u0647 \u062a\u062d\u0644\u06cc\u0644\u06af\u0631 \u062d\u0631\u0641\u0647\u200c\u0627\u06cc \u0641\u0648\u062a\u0628\u0627\u0644 \u0648 \u0634\u0631\u0637\u200c\u0628\u0646\u062f\u06cc \u0622\u0645\u0627\u0631\u06cc \u0647\u0633\u062a\u06cc. \u0627\u06cc\u0646 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc \u0645\u0646 \u0628\u0627\u062e\u062a. \u0627\u06af\u0647 \u0628\u0647 \u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u062f\u0633\u062a\u0631\u0633\u06cc \u062f\u0627\u0631\u06cc\u060c \u06af\u0632\u0627\u0631\u0634 \u0648 \u0622\u0645\u0627\u0631 \u0647\u0645\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0631\u0648 \u0686\u06a9 \u06a9\u0646. \u06a9\u0648\u062a\u0627\u0647\u060c \u062f\u0642\u06cc\u0642 \u0648 \u0628\u062f\u0648\u0646 \u062d\u0627\u0634\u06cc\u0647 \u062c\u0648\u0627\u0628 \u0628\u062f\u0647.\n\n';
+            t += '\u0628\u0627\u0632\u06cc: ' + x.home + ' - ' + x.away + (lgPlain(x.lg) ? ' | ' + lgPlain(x.lg) : '') + ' | ' + new Date(x.time).toISOString().slice(0, 10) + '\n';
+            t += '\u0634\u0631\u0637 \u0645\u0646: ' + pl(x) + ' (\u06a9\u062f ' + x.pick + ') \u0628\u0627 \u0636\u0631\u06cc\u0628 ' + x.odd.toFixed(2) + ' | ' + oth + ' | \u0645\u0628\u0644\u063a ' + nfmt(b.stake) + ' \u0633\u06a9\u0647\n';
+            t += '\u0646\u062a\u06cc\u062c\u0647 \u0646\u0647\u0627\u06cc\u06cc (\u06f9\u06f0 \u062f\u0642\u06cc\u0642\u0647): ' + (x.score || '?') + '\n';
+            t += '\u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646: ' + (x.my ? x.my + '%' : '\u062b\u0628\u062a \u0646\u0634\u062f\u0647') + ' | \u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0627\u0632\u0627\u0631 \u0628\u062f\u0648\u0646 \u062d\u0627\u0634\u06cc\u0647: ' + (x.nv ? Math.round(x.nv * 100) + '%' : '\u0646\u0627\u0645\u0639\u0644\u0648\u0645') + ' | \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u062f\u0644 \u0627\u067e: ' + (x.mp ? x.mp + '%' + (x.src == 'pt' ? ' (PrimaTips + \u0645\u062f\u0644 \u062e\u0648\u062f\u0645)' : ' (\u0645\u062f\u0644 \u0622\u0645\u0627\u0631\u06cc)') : '\u0646\u062f\u0627\u0634\u062a') + '\n';
+            if (x.cl) t += '\u0636\u0631\u06cc\u0628 \u0644\u062d\u0638\u0647 \u0634\u0631\u0648\u0639: ' + x.cl.toFixed(2) + ' (CLV ' + ((x.odd / x.cl - 1) * 100).toFixed(1) + '%)\n';
+            if (x.ctr) t += '\u0627\u06cc\u0646 \u0634\u0631\u0637 \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u0628\u0627\u0632\u0627\u0631 \u0628\u0648\u062f.\n';
+            if (b.note) t += '\u062f\u0644\u06cc\u0644 \u0645\u0646 \u0645\u0648\u0642\u0639 \u0628\u0633\u062a\u0646: ' + b.note + '\n';
+            t += '\n\u0633\u0624\u0627\u0644\u200c\u0647\u0627:\n1. \u0686\u0647 \u0627\u062a\u0641\u0627\u0642\u200c\u0647\u0627\u06cc \u06a9\u0644\u06cc\u062f\u06cc \u0628\u0627\u0639\u062b \u0627\u06cc\u0646 \u0646\u062a\u06cc\u062c\u0647 \u0634\u062f\u061f (\u06af\u0644\u200c\u0647\u0627 \u0648 \u062f\u0642\u06cc\u0642\u0647\u200c\u0634\u0648\u0646\u060c \u06a9\u0627\u0631\u062a \u0642\u0631\u0645\u0632\u060c \u067e\u0646\u0627\u0644\u062a\u06cc\u060c \u0645\u0635\u062f\u0648\u0645\u06cc\u062a\u060c \u062a\u0639\u0648\u06cc\u0636\u060c VAR)\n2. \u0628\u0627 \u0627\u0637\u0644\u0627\u0639\u0627\u062a\u06cc \u06a9\u0647 \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0628\u0648\u062f (\u0641\u0631\u0645\u060c \u063a\u0627\u06cc\u0628\u200c\u0647\u0627\u060c \u062a\u0631\u06a9\u06cc\u0628\u060c \u0627\u0646\u06af\u06cc\u0632\u0647\u060c \u062c\u062f\u0648\u0644\u060c \u0622\u0645\u0627\u0631 \u06af\u0644) \u0627\u06cc\u0646 \u0646\u062a\u06cc\u062c\u0647 \u0686\u0642\u062f\u0631 \u0642\u0627\u0628\u0644 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc \u0628\u0648\u062f\u061f\n3. \u0627\u06cc\u0631\u0627\u062f \u0627\u0632 \u0645\u062f\u0644 \u0648 \u062a\u062d\u0644\u06cc\u0644 \u0628\u0648\u062f \u06cc\u0627 \u0628\u0627\u0632\u06cc \u0648\u0627\u0642\u0639\u0627\u064b \u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc \u0628\u0648\u062f\u061f\n4. \u0627\u06af\u0647 \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 \u0628\u0648\u062f\u060c \u06a9\u062f\u0648\u0645 \u0639\u0627\u0645\u0644 \u0631\u0648 \u0645\u062f\u0644 \u06a9\u0645 \u06cc\u0627 \u0632\u06cc\u0627\u062f \u0648\u0632\u0646 \u062f\u0627\u062f\u0647\u061f\n\n';
+            t += '\u062c\u0648\u0627\u0628 \u0631\u0648 \u062f\u0642\u06cc\u0642\u0627\u064b \u0628\u0627 \u0647\u0645\u06cc\u0646 \u0642\u0627\u0644\u0628 \u0648 \u062d\u062f\u0627\u06a9\u062b\u0631 \u06f8 \u062e\u0637 \u0628\u062f\u0647:\n\u062d\u06a9\u0645: \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 / \u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc / \u062a\u0631\u06a9\u06cc\u0628\u06cc\n\u0627\u0637\u0645\u06cc\u0646\u0627\u0646: ..%\n\u0639\u0644\u062a \u0627\u0635\u0644\u06cc: ...\n\u0627\u062a\u0641\u0627\u0642 \u06a9\u0644\u06cc\u062f\u06cc \u0628\u0627\u0632\u06cc: ...\n\u0639\u0627\u0645\u0644\u06cc \u06a9\u0647 \u0645\u062f\u0644 \u0628\u0627\u06cc\u062f \u0627\u0636\u0627\u0641\u0647 \u06cc\u0627 \u0627\u0635\u0644\u0627\u062d \u06a9\u0646\u0647: ...\n\u0628\u0627\u0632\u0627\u0631 \u0628\u0647\u062a\u0631 \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc: ...\n\u062f\u0631\u0633 \u0628\u0631\u0627\u06cc \u062f\u0641\u0639\u0647 \u0628\u0639\u062f: ...';
+            return t;
+          }
+          function rvKey(o) { return o.b.id + '_' + o.j; }
+          function rvVd(a) { a = String(a || ''); if (!a) return ''; var m = /\u062d\u06a9\u0645\s*[:\uff1a]?\s*([^\n]+)/.exec(a), t = m ? m[1] : a; if (/\u062a\u0631\u06a9\u06cc\u0628\u06cc|mixed/i.test(t)) return '\u2696\ufe0f'; if (/\u0627\u06cc\u0631\u0627\u062f\s*(\u0627\u0632\s*)?\u0645\u062f\u0644|model/i.test(t)) return '\ud83d\udee0'; if (/\u063a\u06cc\u0631\s*\u0642\u0627\u0628\u0644|\u0628\u062f\u0634\u0627\u0646\u0633\u06cc|unpredict/i.test(t)) return '\ud83c\udfb2'; return '\ud83d\udcdd'; }
+          function rvCopy(bid, j) { var o = null; rvList().forEach(function (z) { if (z.b.id == bid && z.j == j) o = z; }); if (!o) return; try { Android.setClip(rvQ(o.b, o.x)); toast('\ud83d\udccb \u0633\u0624\u0627\u0644 \u06a9\u067e\u06cc \u0634\u062f\u060c \u0628\u062f\u0647 \u0628\u0647 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc'); } catch (e) { prompt('\u06a9\u067e\u06cc \u06a9\u0646:', rvQ(o.b, o.x)); } }
+          function rvSet(bid, j, v) {
+            BETS.forEach(function (b) { if (b.id != bid || !b.sel[j]) return; var x = b.sel[j]; v = String(v || '').trim(); if (v) { x.rv = { a: v.slice(0, 3000), t: Date.now(), bt: x.rv && x.rv.bt ? x.rv.bt : 0 }; } else delete x.rv; });
+            sv(pk('bets'), BETS);
+          }
+          function rvPaste(bid, j) {
+            var t = ''; try { t = Android.clip(); } catch (e) { t = ''; }
+            if (!t) { t = prompt('\u062c\u0648\u0627\u0628 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc \u0631\u0648 \u0627\u06cc\u0646\u062c\u0627 Paste \u06a9\u0646:', ''); if (!t) return; }
+            rvSet(bid, j, t); renderBets(); toast('\u2705 \u062c\u0648\u0627\u0628 \u0630\u062e\u06cc\u0631\u0647 \u0634\u062f');
+          }
+          function rvEdit(bid, j) {
+            var cur = ''; BETS.forEach(function (b) { if (b.id == bid && b.sel[j] && b.sel[j].rv) cur = b.sel[j].rv.a; });
+            var t = prompt('\u062c\u0648\u0627\u0628 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc (\u0648\u06cc\u0631\u0627\u06cc\u0634 \u06cc\u0627 \u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646):', cur); if (t === null) return; rvSet(bid, j, t); renderBets();
+          }
+          function rvDone() { return rvList().filter(function (o) { return o.x.rv && o.x.rv.a && !o.x.rv.bt; }); }
+          function rvAll() {
+            var L = rvDone().slice(0, 20); if (!L.length) return '';
+            var c = { m: 0, u: 0, x: 0 };
+            var t = '\u062a\u0648 \u06cc\u0647 \u062a\u062d\u0644\u06cc\u0644\u06af\u0631 \u0627\u0631\u0634\u062f \u0645\u062f\u0644\u200c\u0647\u0627\u06cc \u0622\u0645\u0627\u0631\u06cc \u0634\u0631\u0637\u200c\u0628\u0646\u062f\u06cc \u0641\u0648\u062a\u0628\u0627\u0644 \u0647\u0633\u062a\u06cc. \u067e\u0627\u06cc\u06cc\u0646 ' + L.length + ' \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc \u0628\u0627\u062e\u062a\u0647 \u0645\u0646 \u0647\u0633\u062a\u060c \u0647\u0631 \u06a9\u062f\u0648\u0645 \u0628\u0627 \u0627\u0637\u0644\u0627\u0639\u0627\u062a \u0634\u0631\u0637 \u0648 \u062a\u062d\u0644\u06cc\u0644\u06cc \u06a9\u0647 \u0642\u0628\u0644\u0627\u064b \u06cc\u0647 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc \u062f\u0631\u0628\u0627\u0631\u0647 \u0639\u0644\u062a \u0628\u0627\u062e\u062a\u0634 \u062f\u0627\u062f\u0647. \u0627\u067e \u0645\u0646 \u0628\u0627 \u0645\u062f\u0644 \u067e\u0648\u0627\u0633\u0648\u0646 Dixon-Coles \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647 (\u0641\u0631\u0645 \u06f1\u06f0 \u062a\u0627 \u06f1\u06f2 \u0628\u0627\u0632\u06cc \u0628\u0627 \u0648\u0632\u0646 \u06a9\u0627\u0647\u0634\u06cc\u060c \u0642\u062f\u0631\u062a \u062d\u0631\u06cc\u0641 \u0627\u0632 \u062c\u062f\u0648\u0644\u060c \u0622\u0645\u0627\u0631 \u062e\u0648\u0646\u0647 \u0648 \u0628\u06cc\u0631\u0648\u0646\u060c \u0631\u0648\u062f\u0631\u0631\u0648\u060c \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644 \u0644\u06cc\u06af\u060c \u06f7\u06f5\u066a \u0645\u062f\u0644 \u062e\u0648\u062f\u0645 + \u06f2\u06f5\u066a \u062f\u0631\u0635\u062f\u0647\u0627\u06cc PrimaTips\u060c \u0648 \u0628\u0631\u0627\u06cc \u0628\u0639\u0636\u06cc \u0628\u0627\u0632\u0627\u0631\u0647\u0627 \u06a9\u0634\u0634 \u06f5\u06f0\u066a \u0628\u0647 \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631).\n\n';
+            L.forEach(function (o, i) {
+              var x = o.x, v = rvVd(x.rv.a); if (v == '\ud83d\udee0') c.m++; else if (v == '\ud83c\udfb2') c.u++; else if (v == '\u2696\ufe0f') c.x++;
+              t += '--- ' + (i + 1) + ') ' + x.home + ' - ' + x.away + (lgPlain(x.lg) ? ' | ' + lgPlain(x.lg) : '') + '\n';
+              t += '\u0634\u0631\u0637: ' + x.pick + ' @' + x.odd.toFixed(2) + ' | ' + (o.b.sel.length > 1 ? '\u0645\u06cc\u06a9\u0633' : '\u062a\u06a9\u06cc') + ' | \u0646\u062a\u06cc\u062c\u0647 ' + (x.score || '?') + ' | \u0645\u0646 ' + (x.my ? x.my + '%' : '-') + ' | \u0628\u0627\u0632\u0627\u0631 ' + (x.nv ? Math.round(x.nv * 100) + '%' : '-') + ' | \u0645\u062f\u0644 ' + (x.mp ? x.mp + '%' : '-') + '\n';
+              t += '\u062a\u062d\u0644\u06cc\u0644: ' + String(x.rv.a).replace(/\s*\n\s*/g, ' | ').slice(0, 600) + '\n';
+            });
+            t += '\n\u062e\u0644\u0627\u0635\u0647 \u062d\u06a9\u0645\u200c\u0647\u0627: \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 ' + c.m + '\u060c \u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc ' + c.u + '\u060c \u062a\u0631\u06a9\u06cc\u0628\u06cc ' + c.x + '.\n\n';
+            t += '\u06a9\u0627\u0631\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0645\u06cc\u200c\u062e\u0648\u0627\u0645:\n1. \u0627\u0644\u06af\u0648\u0647\u0627\u06cc \u062a\u06a9\u0631\u0627\u0631\u06cc \u0631\u0648 \u067e\u06cc\u062f\u0627 \u06a9\u0646: \u06a9\u062f\u0648\u0645 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u060c \u0644\u06cc\u06af\u200c\u0647\u0627\u060c \u0628\u0627\u0632\u0647 \u0636\u0631\u06cc\u0628 \u0648 \u0628\u0627\u0632\u0647 \u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u06cc\u0634\u062a\u0631\u06cc\u0646 \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 \u0631\u0648 \u062f\u0627\u0634\u062a\u0646\u061f\n2. \u062c\u062f\u0627 \u06a9\u0646 \u0686\u0646\u062f \u062a\u0627 \u0648\u0627\u0642\u0639\u0627\u064b \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 \u0628\u0648\u062f\u0647 \u0648 \u0686\u0646\u062f \u062a\u0627 \u0628\u062f\u0634\u0627\u0646\u0633\u06cc \u0637\u0628\u06cc\u0639\u06cc (\u0628\u0627 \u062a\u0648\u062c\u0647 \u0628\u0647 \u0627\u062d\u062a\u0645\u0627\u0644\u200c\u0647\u0627\u060c \u0628\u0627\u062e\u062a\u0646 \u06cc\u0647 \u0634\u0631\u0637 \u06f6\u06f0\u066a \u0639\u0627\u062f\u06cc\u0647).\n3. \u0627\u062d\u062a\u0645\u0627\u0644\u200c\u0647\u0627\u06cc \u0645\u0646 \u0648 \u0645\u062f\u0644 \u0646\u0633\u0628\u062a \u0628\u0647 \u0628\u0627\u0632\u0627\u0631 \u0628\u06cc\u0634\u200c\u0627\u0632\u062d\u062f \u062e\u0648\u0634\u200c\u0628\u06cc\u0646 \u0628\u0648\u062f\u0646 \u06cc\u0627 \u0646\u0647\u061f \u0628\u0627 \u0639\u062f\u062f \u0628\u06af\u0648.\n4. \u067e\u06cc\u0634\u0646\u0647\u0627\u062f \u0639\u062f\u062f\u06cc \u0628\u0631\u0627\u06cc \u062a\u0646\u0638\u06cc\u0645 \u0645\u062f\u0644 \u0628\u062f\u0647: \u0648\u0632\u0646 \u0645\u0632\u06cc\u062a \u062e\u0648\u0646\u0647\u060c \u0645\u06cc\u0632\u0627\u0646 \u06a9\u0634\u0634 \u0628\u0647 \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0628\u0627\u0632\u0627\u0631\u060c \u0633\u0642\u0641 \u0627\u062d\u062a\u0645\u0627\u0644\u060c \u062d\u062f\u0627\u0642\u0644 EV \u0648 \u062d\u062f\u0627\u0642\u0644 \u0641\u0627\u0635\u0644\u0647 \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0628\u0627\u0632\u0627\u0631\u060c \u0648 \u0647\u0631 \u0639\u0627\u0645\u0644 \u062c\u062f\u06cc\u062f\u06cc \u06a9\u0647 \u0628\u0627\u06cc\u062f \u0627\u0636\u0627\u0641\u0647 \u0628\u0634\u0647.\n5. \u062d\u062f\u0627\u06a9\u062b\u0631 \u06f5 \u0642\u0627\u0646\u0648\u0646 \u0645\u0634\u062e\u0635 \u0648 \u0642\u0627\u0628\u0644 \u0627\u062c\u0631\u0627 \u0628\u0631\u0627\u06cc \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u0628\u0639\u062f\u06cc \u0628\u0646\u0648\u06cc\u0633.\n\u062c\u0648\u0627\u0628 \u0631\u0648 \u0645\u0631\u062a\u0628\u060c \u0628\u0627 \u062a\u06cc\u062a\u0631 \u0648 \u06a9\u0648\u062a\u0627\u0647 \u0628\u062f\u0647.';
+            return t;
+          }
+          function rvAllCopy() { var t = rvAll(); if (!t) return; try { Android.setClip(t); toast('\ud83d\udccb \u0622\u0646\u0627\u0644\u06cc\u0632 \u06a9\u0644\u06cc \u06a9\u067e\u06cc \u0634\u062f'); } catch (e) { prompt('\u06a9\u067e\u06cc \u06a9\u0646:', t); } }
+          function rvArch() {
+            var L = rvDone().slice(0, 20); if (!L.length) return;
+            if (!confirm('\u0627\u06cc\u0646 ' + L.length + ' \u0628\u0631\u0631\u0633\u06cc \u0628\u0627\u06cc\u06af\u0627\u0646\u06cc \u0628\u0634\u0646 \u062a\u0627 \u062f\u0633\u062a\u0647 \u0628\u0639\u062f\u06cc \u0627\u0632 \u0635\u0641\u0631 \u0634\u0631\u0648\u0639 \u0628\u0634\u0647\u061f (\u067e\u0627\u06a9 \u0646\u0645\u06cc\u0634\u0646)')) return;
+            RVB++; sv('rvb', RVB); L.forEach(function (o) { o.x.rv.bt = RVB; }); sv(pk('bets'), BETS); renderBets();
+          }
+          function rvTog() { RVO = !RVO; renderBets(); }
+          function rvBox() {
+            var L = rvList(), done = rvDone(), todo = L.filter(function (o) { return !o.x.rv || !o.x.rv.a; });
+            if (!L.length) return '';
+            var h = '<div class="box"><div class="row" onclick="rvTog()"><b>' + (RVO ? '\u25be ' : '\u25b8 ') + '\ud83d\udd0d \u0628\u0631\u0631\u0633\u06cc \u0628\u0627\u062e\u062a\u200c\u0647\u0627</b><span class="mut">' + fa(done.length) + ' \u0627\u0632 \u06f2\u06f0 \u062a\u062d\u0644\u06cc\u0644\u200c\u0634\u062f\u0647 | ' + fa(todo.length) + ' \u0645\u0646\u062a\u0638\u0631</span></div>';
+            if (done.length >= 20) h += '<div class="note" style="white-space:normal">\ud83c\udfaf \u0628\u0647 \u06f2\u06f0 \u0628\u0631\u0631\u0633\u06cc \u0631\u0633\u06cc\u062f\u06cc! \u0622\u0646\u0627\u0644\u06cc\u0632 \u06a9\u0644\u06cc \u0631\u0648 \u06a9\u067e\u06cc \u06a9\u0646 \u0648 \u0628\u062f\u0647 \u0628\u0647 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc \u062a\u0627 \u0628\u06af\u0647 \u0627\u06cc\u0631\u0627\u062f \u0627\u0632 \u06a9\u062c\u0627\u06cc \u0645\u062f\u0644\u0647.<div class="quick" style="margin-top:6px"><button onclick="rvAllCopy()">\ud83d\udce6 \u06a9\u067e\u06cc \u0622\u0646\u0627\u0644\u06cc\u0632 \u06a9\u0644\u06cc \u06f2\u06f0 \u0628\u0627\u0632\u06cc</button><button onclick="rvArch()">\ud83d\uddc2 \u0628\u0627\u06cc\u06af\u0627\u0646\u06cc \u0648 \u0634\u0631\u0648\u0639 \u062f\u0633\u062a\u0647 \u0628\u0639\u062f</button></div></div>';
+            if (!RVO) return h + '</div>';
+            h += '<div class="mut" style="line-height:1.9;margin-top:6px">\u0628\u0631\u0627\u06cc \u0647\u0631 \u0628\u0627\u062e\u062a: \u00ab\ud83d\udccb \u06a9\u067e\u06cc \u0633\u0624\u0627\u0644\u00bb \u0631\u0648 \u0628\u0632\u0646\u060c \u062a\u0648 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc Paste \u06a9\u0646\u060c \u062c\u0648\u0627\u0628\u0634 \u0631\u0648 \u06a9\u067e\u06cc \u06a9\u0646 \u0648 \u00ab\ud83d\udce5 \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u062c\u0648\u0627\u0628\u00bb \u0631\u0648 \u0628\u0632\u0646. \ud83d\udee0 \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 | \ud83c\udfb2 \u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc | \u2696\ufe0f \u062a\u0631\u06a9\u06cc\u0628\u06cc</div>';
+            if (done.length && done.length < 20) h += '<div class="quick" style="margin-top:6px"><button onclick="rvAllCopy()">\ud83d\udce6 \u06a9\u067e\u06cc \u0622\u0646\u0627\u0644\u06cc\u0632 \u06a9\u0644\u06cc \u0647\u0645\u06cc\u0646 ' + fa(done.length) + ' \u062a\u0627 (\u0632\u0648\u062f\u062a\u0631 \u0627\u0632 \u06f2\u06f0)</button></div>';
+            L.slice(0, 40).forEach(function (o) {
+              var x = o.x, a = x.rv && x.rv.a, vd = rvVd(a), arch = x.rv && x.rv.bt;
+              h += '<div class="sl"><div class="row"><span class="ltr">' + esc(x.home) + ' - ' + esc(x.away) + ' (' + esc(x.score || '?') + ')</span><span>' + (arch ? '\ud83d\uddc2' : (vd || '\u23f3')) + '</span></div>' +
+                '<div class="row"><span>\u274c ' + esc(pl(x)) + '</span><b class="ltr">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + (x.my ? ' | \u0645\u0646 ' + fa(x.my) + '\u066a' : '') + (x.nv ? ' | \u0628\u0627\u0632\u0627\u0631 ' + pct(x.nv) : '') + '</div>';
+              if (a) h += '<div class="note" style="white-space:pre-wrap;max-height:160px;overflow:auto">' + esc(a) + '</div>';
+              h += '<div class="quick" style="margin-top:4px"><button onclick="rvCopy(\'' + o.b.id + '\',' + o.j + ')">\ud83d\udccb \u06a9\u067e\u06cc \u0633\u0624\u0627\u0644</button><button onclick="rvPaste(\'' + o.b.id + '\',' + o.j + ')">\ud83d\udce5 \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u062c\u0648\u0627\u0628</button>' + (a ? '<button onclick="rvEdit(\'' + o.b.id + '\',' + o.j + ')">\u270f\ufe0f</button>' : '') + '</div></div>';
+            });
+            return h + '</div>';
+          }
           function renderBets() {
             var el = $('bets');
             if (!BETS.length) { el.innerHTML = '<div class="empty">\u0647\u0646\u0648\u0632 \u0634\u0631\u0637\u06cc \u062a\u0648 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + esc(pn()) + '\u00bb \u0646\u0628\u0633\u062a\u06cc</div>'; return; }
@@ -2817,6 +2894,7 @@ jobs:
               cell('\u0628\u0627\u0644\u0627\u062a\u0631\u06cc\u0646 \u0636\u0631\u06cc\u0628 \u0628\u0631\u062f\u0647', s.bigOdd ? s.bigOdd.toFixed(2) : '-') + cell('\u062a\u06a9\u06cc / \u0645\u06cc\u06a9\u0633 \u0628\u0631\u062f\u0647', fa(s.sw) + ' \u0627\u0632 ' + fa(s.sn) + ' / ' + fa(s.mw) + ' \u0627\u0632 ' + fa(s.mn)) +
               '</div></div>';
             h += marketTable();
+            h += rvBox();
             h += calib();
             h += mdlCard();
             h += '<div class="leagues">' + chip('\u0647\u0645\u0647', BF == 'all', "pickBF('all')", 'sm') + chip('\u23f3 \u062f\u0631 \u0627\u0646\u062a\u0638\u0627\u0631', BF == 'p', "pickBF('p')", 'sm') +
@@ -3091,7 +3169,8 @@ jobs:
             for (i = 0; i <= 10; i++) for (j = 0; j <= 10; j++) { var r = resX(p, i, j); if (r == 'w') w += R.M[i][j]; else if (r == 'l') l += R.M[i][j]; }
             return w + l > 0 ? w / (w + l) : null;
           }
-          function mdlMy(id, p) { var pq = ptP(id, p); if (pq !== null) return Math.round(pq * 100); if (!SRES[id] && SMN[id] && MATCHES[id]) { var sc = sCalc(id); if (!sc.err) SRES[id] = sc; } var R = SRES[id] || MDLC[id]; if (!R) return null; var q = mPr(R, p); return q === null ? null : Math.round(q * 100); }
+          function mdlMy(id, p) { var r = mdlMy0(id, p); if (r === null) return null; var mm = MATCHES[id], q = mm ? nv(mm, p) : null; return Math.round(cauP(p, r / 100, q) * 100); }
+          function mdlMy0(id, p) { var pq = ptP(id, p); if (pq !== null) return Math.round(pq * 100); if (!SRES[id] && SMN[id] && MATCHES[id]) { var sc = sCalc(id); if (!sc.err) SRES[id] = sc; } var R = SRES[id] || MDLC[id]; if (!R) return null; var q = mPr(R, p); return q === null ? null : Math.round(q * 100); }
           function mForm(gs) { return gs.slice(0, 10).map(function (g) { return g.f > g.a ? 'W' : (g.f < g.a ? 'L' : 'D'); }).join(' '); }
           function mRun(m, force) {
             var s = esl(m.lg);
@@ -3156,9 +3235,9 @@ jobs:
           function mVal(m, R) {
             var out = [];
             MDK.forEach(function (k) {
-              var p = mPr(R, k[0]), o = getOdd(m, k[0]), q = o ? nv(m, k[0]) : null;
+              var o = getOdd(m, k[0]), q = o ? nv(m, k[0]) : null, p = cauP(k[0], mPr(R, k[0]), q);
               var ev = o ? p * o - 1 : null;
-              out.push({ k: k[0], l: k[1], p: p, o: o, q: q, ev: ev, v: (o && ev >= 0.05 && (q === null || p - q >= 0.05)) ? 1 : 0 });
+              out.push({ k: k[0], l: cauL(k[0], k[1]), p: p, o: o, q: q, ev: ev, v: (o && ev >= cauEV(k[0]) && (q === null || p - q >= cauED(k[0]))) ? 1 : 0 });
             });
             return out;
           }
@@ -3437,14 +3516,15 @@ jobs:
           function sRow(R, g, k, l) {
             var p = mPr(R, k), o = g(k), q = o ? sNv(g, k) : null;
             if (p === null) p = 0;
+            p = cauP(k, p, q);
             var ev = o ? p * o - 1 : null, ed = q === null ? null : p - q;
             var q1 = sNv(g, '1'), q2 = sNv(g, '2'), ag = false;
             if (q1 !== null && q1 >= FAVT && { '2': 1, 'X': 1, 'X2': 1, 'H2:0': 1 }[k]) ag = true;
             if (q2 !== null && q2 >= FAVT && { '1': 1, 'X': 1, '1X': 1, 'H1:0': 1 }[k]) ag = true;
-            var ok = o && o >= 1.45 && ev >= 0.05 && !ag && (ed === null || ed >= 0.05);
+            var ok = o && o >= 1.45 && ev >= cauEV(k) && !ag && (ed === null || ed >= cauED(k));
             var v = ok ? 1 : 0;
-            var v2 = !v && o && o >= 1.40 && ev >= 0.03 && !ag && (ed === null || ed >= 0.03) ? 1 : 0;
-            return { k: k, l: l, p: p, o: o, q: q, ev: ev, ed: ed, v: v, v2: v2, ag: ag };
+            var v2 = !v && !isCau(k) && o && o >= 1.40 && ev >= 0.03 && !ag && (ed === null || ed >= 0.03) ? 1 : 0;
+            return { k: k, l: cauL(k, l), p: p, o: o, q: q, ev: ev, ed: ed, v: v, v2: v2, ag: ag };
           }
           function sAll(R, g) {
             var M = SMK.map(function (x) { return sRow(R, g, x[0], x[1]); }), T = [], H = [];
@@ -3921,12 +4001,29 @@ jobs:
           }
           function sugUpd() { var e = $('sugw'); if (e) e.innerHTML = sugHtml(); }
 
+          /* cautious markets (update 38): away win, draw-or-away and Under 2.5 lost money in Saeed's history, plus any market with 10+ results and weighted profit below -1.
+             their probability is pulled halfway to the market, and a \ud83d\udc8e needs EV +0.10 and 8% above the market */
+          var CAU_FIX = { '2': 1, 'X2': 1, 'U25': 1 }, CAUC = { t: 0, s: {} };
+          function cauSet() {
+            if (Date.now() - CAUC.t < 30000) return CAUC.s;
+            var g = {}, s = {}, k;
+            BETS.forEach(function (b) { b.sel.forEach(function (x) { if (x.res != 'w' && x.res != 'l') return; var q = x.pick == 'O' ? 'O25' : (x.pick == 'U' ? 'U25' : x.pick), o = g[q] = g[q] || { n: 0, p: 0 }; o.n++; o.p += x.res == 'w' ? x.odd - 1 : -1; }); });
+            for (k in CAU_FIX) s[k] = 'fix';
+            for (k in g) if (g[k].n >= 10 && g[k].p < -1) s[k] = 'auto';
+            CAUC = { t: Date.now(), s: s }; return s;
+          }
+          function isCau(k) { return !!cauSet()[k]; }
+          function cauP(k, p, q) { if (p === null || p === undefined || !isCau(k)) return p; return (q !== null && q !== undefined) ? 0.5 * p + 0.5 * q : p * 0.92; }
+          function cauEV(k) { return isCau(k) ? 0.10 : 0.05; }
+          function cauED(k) { return isCau(k) ? 0.08 : 0.05; }
+          function cauL(k, l) { return (isCau(k) ? '\ud83e\uddca ' : '') + l; }
           function ptRow(m, k, l, p, dv) {
-            var o = getOdd(m, k), q = o ? nv(m, k) : null, cap = k == 'U35' ? 0.7 : 0.8, pe = Math.min(p, cap);
+            var o = getOdd(m, k), q = o ? nv(m, k) : null, cap = k == 'U35' ? 0.7 : 0.8;
+            p = cauP(k, p, q); var pe = Math.min(p, cap);
             var ev = o ? pe * o - 1 : null, ed = q === null ? null : p - q, ag = against(m, k) ? true : false;
-            var v = (o && o >= 1.45 && ev >= 0.05 && !ag && (ed === null || ed >= 0.05)) ? 1 : 0;
+            var v = (o && o >= 1.45 && ev >= cauEV(k) && !ag && (ed === null || ed >= cauED(k))) ? 1 : 0;
             var kk = (v && o) ? kelly(p, o, W.coins, false) : null;
-            return { k: k, l: l + (dv ? ' *' : ''), p: p, pe: pe, o: o, q: q, ev: ev, ed: ed, ag: ag, v: v, st: kk ? kk.s : 0, kk: kk };
+            return { k: k, l: cauL(k, l) + (dv ? ' *' : ''), p: p, pe: pe, o: o, q: q, ev: ev, ed: ed, ag: ag, v: v, st: kk ? kk.s : 0, kk: kk };
           }
           function ptVd(x) { return x.ag ? '\u26a0\ufe0f \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f' : (x.v ? '\ud83d\udc8e \u0627\u0631\u0632\u0634 \u062f\u0627\u0631\u0647' : (x.ev >= 0.05 ? '\ud83d\udfe1 EV \u062e\u0648\u0628\u0647 \u0648\u0644\u06cc \u0641\u06cc\u0644\u062a\u0631 \u0631\u062f \u06a9\u0631\u062f' : (x.ev >= 0 ? '\ud83d\udfe1 \u0645\u0631\u0632\u06cc' : '\u274c \u0627\u0631\u0632\u0634 \u0646\u062f\u0627\u0631\u0647'))); }
           function ptTog(id) { PTO[id] = !PTO[id]; rerender(); }
@@ -4090,7 +4187,7 @@ jobs:
           setTimeout(function () { if (bgImport()) afterLive(); else bgSync(); }, 1500);
           setTimeout(function () { liveTick(false); }, 2500);
           setInterval(function () { if (pageOn('matches') || pageOn('bets')) liveTick(false); if (pageOn('matches') && (reg == 'browse' || reg == 'day')) liveCounts(); }, 60000);
-          loadSports(function () { renderLeagues(); loadOdds(false); });
+          loadSports(function () { renderLeagues(); if (reg == 'day' || reg == 'af') pickReg(reg); else loadOdds(false); });
           setTimeout(function () { checkUpdate(false); }, 1200);
           </script>
           </body>
