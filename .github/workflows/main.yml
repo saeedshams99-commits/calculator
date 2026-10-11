@@ -3719,14 +3719,14 @@ jobs:
             var hits = [], P = {}, got = 0, seen = {};
             ls.forEach(function (x, i) { H.forEach(function (h) { if (h[0].test(x)) hits.push({ i: i, k: h[1], n: h[2] }); }); });
             hits.forEach(function (h, j) {
-              if (seen[h.k]) return; seen[h.k] = 1;
+              if (seen[h.k]) return;
               var end = j + 1 < hits.length ? hits[j + 1].i : ls.length;
               var tk = ptTok(ls.slice(h.i + 1, end)), pi = -1, t, pc = [];
               for (t = 0; t < tk.length; t++) if (/^probability$/i.test(tk[t])) { pi = t; break; }
               if (pi < 0) return;
               for (t = pi + 1; t < tk.length && pc.length < h.n; t++) if (/^\d+(\.\d+)?%$/.test(tk[t])) pc.push(parseFloat(tk[t]) / 100);
               if (pc.length < h.n) return;
-              KM[h.k].forEach(function (k, z) { P[k] = pc[z]; got++; });
+              seen[h.k] = 1; KM[h.k].forEach(function (k, z) { P[k] = pc[z]; got++; });
             });
             var names = [], form = [];
             ls.forEach(function (x, i) {
@@ -3745,6 +3745,113 @@ jobs:
               form.push(f);
             });
             return { p: P, got: got, names: names, form: form };
+          }
+          /* ---------- own model from the PrimaTips raw stats (update 37): 75% own model + 25% PrimaTips percentages ---------- */
+          var PT_W = 0.25;
+          function ptLines(text) { return String(text).split(/\r?\n/).map(function (x) { return String(x).replace(/[\u200c\u200e\u200f\u00a0\t]/g, ' ').replace(/\s+/g, ' ').trim(); }).filter(function (x) { return x; }); }
+          function ptGames(ls, a, b) {
+            var out = [], i;
+            for (i = a; i < b - 3; i++) {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(ls[i])) continue;
+              var s = /^(\d+)\s*-\s*(\d+)$/.exec(ls[i + 2]);
+              if (!s) continue;
+              out.push({ d: ls[i], h: ls[i + 1], a: ls[i + 3], hs: +s[1], as: +s[2] });
+              i += 3;
+            }
+            return out;
+          }
+          function ptNum(ls, i, lab) { var r = ls[i].slice(lab.length).trim(), m = /^(-?\d+(?:\.\d+)?)%?$/.exec(r); if (m) return parseFloat(m[1]); if (!r && ls[i + 1] && /^-?\d+(\.\d+)?%?$/.test(ls[i + 1])) return parseFloat(ls[i + 1]); return null; }
+          function ptPair(ls, i, lab) { var t = ls[i].slice(lab.length).trim().split(' '); if (t.length >= 2) { var a = parseFloat(t[0]), b = parseFloat(t[1]); if (!isNaN(a) && !isNaN(b)) return [a, b]; } return null; }
+          function parseST(text) {
+            var ls = ptLines(text), S = { g: [[], []], h2h: [], tb: {}, ts: null, tv: null, lg: {}, names: [] }, i, j;
+            for (i = 0; i < ls.length; i++) {
+              var m = /^(.+) last (\d+) games$/i.exec(ls[i]); if (!m) continue;
+              j = i + 1; while (j < ls.length && !/ (last|next) \d+ games$/i.test(ls[j]) && !/^table /i.test(ls[j])) j++;
+              var gs = ptGames(ls, i + 1, j);
+              if (/^h2h$/i.test(m[1])) S.h2h = gs; else if (S.names.length < 2) { S.g[S.names.length] = gs; S.names.push(m[1]); }
+            }
+            for (i = 0; i < ls.length; i++) if (/^no team mp w d l gf ga g pts$/i.test(ls[i])) {
+              for (j = i + 1; j + 2 < ls.length; j++) {
+                if (/^chronology/i.test(ls[j])) break;
+                if (!/^\d+$/.test(ls[j])) continue;
+                var nm = ls[j + 1], nu = ls[j + 2].split(' ');
+                if (nu.length >= 8 && nu.every(function (x) { return /^[+-]?\d+$/.test(x); })) { S.tb[nm.toLowerCase()] = { n: nm, mp: +nu[0], w: +nu[1], d: +nu[2], l: +nu[3], gf: +nu[4], ga: +nu[5], pts: +nu[7] }; j += 2; }
+              }
+              break;
+            }
+            var ti = -1; for (i = 0; i < ls.length; i++) if (/^teams league statistic$/i.test(ls[i])) { ti = i; break; }
+            if (ti >= 0) {
+              var blocks = [], cur = null;
+              for (i = ti + 1; i < ls.length && !/^overall statistics/i.test(ls[i]); i++) {
+                var L = ls[i];
+                if (/^wins /i.test(L)) { cur = {}; blocks.push(cur); }
+                if (!cur) continue;
+                [['wins', 'w'], ['draws', 'd'], ['losses', 'l'], ['average scored', 'sc'], ['average conceded', 'cn'], ['both teams to score', 'bt'], ['over 2.5', 'o25'], ['over 1.5', 'o15']].forEach(function (z) { if (L.toLowerCase().indexOf(z[0] + ' ') == 0) { var p = ptPair([L], 0, z[0]); if (p) cur[z[1]] = p; } });
+              }
+              if (blocks[0]) S.ts = blocks[0];
+              if (blocks[1]) S.tv = blocks[1];
+            }
+            var oi = -1; for (i = 0; i < ls.length; i++) if (/^overall statistics/i.test(ls[i])) { oi = i; break; }
+            if (oi >= 0) {
+              for (i = oi + 1; i < Math.min(ls.length, oi + 60); i++) {
+                var x = ls[i].toLowerCase();
+                if (/ next \d+ games$/.test(x)) break;
+                if (x.indexOf('home goals per game') == 0) S.lg.hg = ptNum(ls, i, 'home goals per game');
+                else if (x.indexOf('away goals per game') == 0) S.lg.ag = ptNum(ls, i, 'away goals per game');
+                else if (x.indexOf('goals per game') == 0) S.lg.gg = ptNum(ls, i, 'goals per game');
+                else if (x.indexOf('both teams to score') == 0) S.lg.bt = ptNum(ls, i, 'both teams to score');
+                else if (x.indexOf('over 2.5') == 0) S.lg.o25 = ptNum(ls, i, 'over 2.5');
+                else if (/^matches\s*\(\d+\)/.test(x)) S.lg.n = +(/\((\d+)\)/.exec(x)[1]);
+              }
+            }
+            S.ok = (S.g[0].length >= 4 && S.g[1].length >= 4) ? 1 : 0;
+            return S;
+          }
+          function stTeam(tb, n) { if (!n) return null; var k = String(n).toLowerCase(); if (tb[k]) return tb[k]; var best = null, bs = 0; for (var q in tb) { var s = sim1(n, tb[q].n); if (s > bs) { bs = s; best = tb[q]; } } return bs >= 0.67 ? best : null; }
+          function stSide(S, t, ven, muH, muA, mu, hfa) {
+            /* t: 0 = upcoming home team, 1 = upcoming away team; ven = 1 home / 0 away. returns attack and defence ratios vs league average, plus sample sizes */
+            var nm = S.names[t], K = 4, sf = 0, sa = 0, sw = 0, nB = 0, sb = 0, nS = 0, sS = 0, nC = 0;
+            S.g[t].slice(0, 12).forEach(function (g, i) {
+              var home = sim1(g.h, nm) >= sim1(g.a, nm), gf = home ? g.hs : g.as, ga = home ? g.as : g.hs, opp = home ? g.a : g.h;
+              var ot = stTeam(S.tb, opp), oa = 1, od = 1, w = Math.pow(0.9, i);
+              if (ot && ot.mp > 0) { oa = (ot.gf + K * mu) / (ot.mp + K) / mu; od = (ot.ga + K * mu) / (ot.mp + K) / mu; } else w *= 0.5;
+              if (home == !!ven) w *= 1.5;
+              var vf = home ? Math.sqrt(hfa) : 1 / Math.sqrt(hfa);
+              sf += w * (gf / vf) / Math.max(0.4, od); sa += w * (ga * vf) / Math.max(0.4, oa); sw += w;
+              nB++; if (gf > 0 && ga > 0) sb++; if (gf > 0) nS++; if (ga == 0) nC++;
+            });
+            var fa = (sf / mu + K) / (sw + K), fd = (sa / mu + K) / (sw + K), parts = [{ a: fa, d: fd, w: 0.45 * sw / (sw + K) }];
+            var tt = stTeam(S.tb, nm);
+            if (tt && tt.mp > 0) parts.push({ a: (tt.gf + K * mu) / (tt.mp + K) / mu, d: (tt.ga + K * mu) / (tt.mp + K) / mu, w: 0.35 * tt.mp / (tt.mp + K) });
+            else if (S.ts && S.ts.sc && S.ts.w) { var n0 = S.ts.w[t] + S.ts.d[t] + S.ts.l[t]; if (n0 > 0) parts.push({ a: (S.ts.sc[t] * n0 + K * mu) / (n0 + K) / mu, d: (S.ts.cn[t] * n0 + K * mu) / (n0 + K) / mu, w: 0.35 * n0 / (n0 + K) }); }
+            if (S.tv && S.tv.sc && S.tv.w) {
+              var nv = S.tv.w[t] + S.tv.d[t] + S.tv.l[t], vm = ven ? muH : muA, vo = ven ? muA : muH;
+              if (nv > 0) parts.push({ a: (S.tv.sc[t] * nv + K * vm) / (nv + K) / vm, d: (S.tv.cn[t] * nv + K * vo) / (nv + K) / vo, w: 0.20 * nv / (nv + K) });
+            }
+            var W = 0, A = 0, D = 0;
+            parts.forEach(function (p) { W += p.w; A += p.w * Math.log(p.a); D += p.w * Math.log(p.d); });
+            return { at: W ? Math.exp(A / W) : 1, df: W ? Math.exp(D / W) : 1, n: S.g[t].length, bt: nB ? sb / nB : null, mp: tt ? tt.mp : 0 };
+          }
+          function stModel(S) {
+            if (!S || !S.ok) return null;
+            var muH = S.lg.hg, muA = S.lg.ag, tbs = 0, tgf = 0;
+            for (var k in S.tb) { tbs += S.tb[k].mp; tgf += S.tb[k].gf; }
+            if (!(muH > 0) || !(muA > 0)) { var gpg = S.lg.gg > 0 ? S.lg.gg : (tbs ? 2 * tgf / tbs : 2.6); muH = gpg * 0.53; muA = gpg * 0.47; }
+            var mu = (muH + muA) / 2, hfa = clp(muH / muA, 1, 1.5);
+            var A = stSide(S, 0, 1, muH, muA, mu, hfa), B = stSide(S, 1, 0, muH, muA, mu, hfa);
+            var lh = muH * A.at * B.df, la = muA * B.at * A.df;
+            var hh = S.h2h.slice(0, 6), n1 = 0, g1 = 0, g2 = 0;
+            hh.forEach(function (g) { var y = +g.d.slice(0, 4); if (y < new Date().getFullYear() - 4) return; var home = sim1(g.h, S.names[0]) >= sim1(g.a, S.names[0]); g1 += home ? g.hs : g.as; g2 += home ? g.as : g.hs; n1++; });
+            if (n1) { lh *= Math.pow((g1 + 2 * lh) / (n1 + 2) / lh, 0.25); la *= Math.pow((g2 + 2 * la) / (n1 + 2) / la, 0.25); }
+            lh = clp(lh, 0.2, 4); la = clp(la, 0.2, 4);
+            var bts = [], R;
+            if (A.bt !== null) bts.push(A.bt); if (B.bt !== null) bts.push(B.bt);
+            if (S.lg.bt > 0) bts.push(S.lg.bt / 100);
+            if (S.ts && S.ts.bt) bts.push((S.ts.bt[0] + S.ts.bt[1]) / 200);
+            R = { lh: lh, la: la, rho: MP.rho !== undefined ? MP.rho : -0.08, bttsHist: bts.length ? bts.reduce(function (a, b) { return a + b; }, 0) / bts.length : null };
+            var P = {};
+            PTK.forEach(function (z) { var q = mPr(R, z[0]); if (q !== null) P[z[0]] = Math.round(q * 1000) / 1000; });
+            return { p: P, lh: Math.round(lh * 100) / 100, la: Math.round(la * 100) / 100, n0: A.n, n1: B.n, h2h: n1, tb: A.mp || B.mp ? 1 : 0, ven: S.tv ? 1 : 0, lg: S.lg.hg ? 1 : 0, at: [A.at, B.at], df: [A.df, B.df] };
           }
           function ptSwap(P) {
             var Q = {}, k, M = { '1': '2', '2': '1', '1X': 'X2', 'X2': '1X' };
@@ -3766,9 +3873,15 @@ jobs:
               if (P.X2 === undefined || (bad && !d.raw)) { P.X2 = P.X + P['2']; dv.X2 = 1; }
             }
             if (bad) warns.push(d.raw ? '\u062f\u0631\u0635\u062f\u0647\u0627\u06cc 1X \u0648 X2 \u062e\u0648\u062f PrimaTips (' + pc(d.p['1X']) + ' \u0648 ' + pc(d.p.X2) + ') \u0628\u0627 \u06f1X\u06f2 \u0627\u0634 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646 \u0648 \u0647\u0645\u06cc\u0646\u200c\u0647\u0627 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0634\u062f' : '\u062f\u0631\u0635\u062f\u0647\u0627\u06cc 1X \u0648 X2 \u062e\u0648\u062f PrimaTips (' + pc(d.p['1X']) + ' \u0648 ' + pc(d.p.X2) + ') \u0628\u0627 \u06f1X\u06f2 \u0627\u0634 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646 (1X \u0648 X2 \u0647\u0631 \u062f\u0648 \u0634\u0627\u0645\u0644 \u0645\u0633\u0627\u0648\u06cc\u0646\u060c \u067e\u0633 \u062c\u0645\u0639\u0634\u0648\u0646 \u0646\u0628\u0627\u06cc\u062f \u06f1\u06f0\u06f0\u066a \u0628\u0634\u0647). \u0628\u0631\u0627\u06cc \u0647\u0645\u06cc\u0646 \u0627\u0632 \u062c\u0645\u0639 \u06f1X\u06f2 \u062f\u0648\u0628\u0627\u0631\u0647 \u062d\u0633\u0627\u0628 \u0634\u062f');
-            if (P.O15 !== undefined && P.O25 !== undefined && P.O15 < P.O25) warns.push('Over 1.5 \u06a9\u0645\u062a\u0631 \u0627\u0632 Over 2.5 \u0634\u062f\u0647\u060c \u0639\u062f\u062f\u0647\u0627 \u0642\u0627\u0628\u0644 \u0627\u062a\u06a9\u0627 \u0646\u06cc\u0633\u062a\u0646');
-            if (P.O25 !== undefined && P.O35 !== undefined && P.O25 < P.O35) warns.push('Over 2.5 \u06a9\u0645\u062a\u0631 \u0627\u0632 Over 3.5 \u0634\u062f\u0647\u060c \u0639\u062f\u062f\u0647\u0627 \u0642\u0627\u0628\u0644 \u0627\u062a\u06a9\u0627 \u0646\u06cc\u0633\u062a\u0646');
-            return { p: P, dv: dv, bad: bad, warns: warns };
+            var PTr = {}, MDr = null;
+            for (k in P) PTr[k] = P[k];
+            if (d.m && d.m.p) {
+              MDr = d.m.p;
+              PTK.forEach(function (z) { var a = PTr[z[0]], b = MDr[z[0]], q = z[0]; if (a !== undefined && b !== undefined) P[q] = PT_W * a + (1 - PT_W) * b; else if (b !== undefined) P[q] = b; });
+            }
+            if (PTr.O15 !== undefined && PTr.O25 !== undefined && PTr.O15 < PTr.O25) warns.push('Over 1.5 \u06a9\u0645\u062a\u0631 \u0627\u0632 Over 2.5 \u0634\u062f\u0647\u060c \u0639\u062f\u062f\u0647\u0627 \u0642\u0627\u0628\u0644 \u0627\u062a\u06a9\u0627 \u0646\u06cc\u0633\u062a\u0646');
+            if (PTr.O25 !== undefined && PTr.O35 !== undefined && PTr.O25 < PTr.O35) warns.push('Over 2.5 \u06a9\u0645\u062a\u0631 \u0627\u0632 Over 3.5 \u0634\u062f\u0647\u060c \u0639\u062f\u062f\u0647\u0627 \u0642\u0627\u0628\u0644 \u0627\u062a\u06a9\u0627 \u0646\u06cc\u0633\u062a\u0646');
+            return { p: P, dv: dv, bad: bad, warns: warns, pt: PTr, md: MDr };
           }
           function ptP(id, p) { var d = PTD[id]; if (!d || !d.p) return null; var P = ptEff(d).p; return P[p] !== undefined ? P[p] : null; }
           function ptHas(id, p) { return ptP(id, p) !== null; }
@@ -3836,11 +3949,13 @@ jobs:
               if (Math.max(s1, s2) < 1.0 && !confirm('\u26a0\ufe0f \u0627\u0633\u0645 \u062a\u06cc\u0645\u200c\u0647\u0627 \u0628\u0627 \u0647\u0645 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646.\nPrimaTips: ' + nx[0] + ' - ' + nx[1] + '\n\u062a\u0648 \u0627\u067e: ' + m.home + ' - ' + m.away + '\n\n\u0628\u0627\u0632 \u0647\u0645 \u062b\u0628\u062a \u0628\u0634\u0647\u061f')) return;
               if (s2 >= s1 + 0.5) { P.p = ptSwap(P.p); sw = true; }
             }
-            PTD[id] = { _t: m.time, t: Date.now(), p: P.p, form: P.form, names: nx, sw: sw, raw: false };
+            var ST = parseST(t), MD = stModel(ST);
+            if (MD && sw) MD.p = ptSwap(MD.p);
+            PTD[id] = { _t: m.time, t: Date.now(), p: P.p, form: P.form, names: nx, sw: sw, raw: false, m: MD };
             sv('ptd', PTD); PTO[id] = true;
             slip.forEach(function (x) { if (x.id != id) return; var q = ptP(id, x.pick); if (q !== null) { x.my = Math.round(q * 100); x.mp = x.my; x.src = 'pt'; } });
             sv(pk('slip'), slip);
-            toast('\u2705 ' + fa(P.got) + ' \u062f\u0631\u0635\u062f PrimaTips \u062b\u0628\u062a \u0634\u062f' + (sw ? ' (\u062c\u0627\u06cc \u0645\u06cc\u0632\u0628\u0627\u0646 \u0648 \u0645\u0647\u0645\u0627\u0646 \u0639\u0648\u0636 \u0634\u062f)' : ''));
+            toast('\u2705 ' + fa(P.got) + ' \u062f\u0631\u0635\u062f PrimaTips \u062b\u0628\u062a \u0634\u062f' + (MD ? '\u060c \u0645\u062f\u0644 \u062e\u0648\u062f\u0645 \u0627\u0632 ' + fa(MD.n0 + MD.n1) + ' \u0628\u0627\u0632\u06cc \u0633\u0627\u062e\u062a\u0647 \u0634\u062f' : '\u060c \u0622\u0645\u0627\u0631 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f (\u0641\u0642\u0637 \u062f\u0631\u0635\u062f\u0647\u0627)') + (sw ? ' (\u062c\u0627\u06cc \u0645\u06cc\u0632\u0628\u0627\u0646 \u0648 \u0645\u0647\u0645\u0627\u0646 \u0639\u0648\u0636 \u0634\u062f)' : ''));
             rerender();
           }
           function ptForm(n, f) {
@@ -3855,17 +3970,19 @@ jobs:
             h += '<div class="quick" style="margin-top:6px"><button onclick="ptPaste(\'' + m.id + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646</button>' + (d ? '<button onclick="ptClr(\'' + m.id + '\')">\ud83e\uddf9 \u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646</button>' : '') + '<button onclick="ptTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646</button></div>';
             if (!d) return h + '</div>';
             var E = ptEff(d), rows = [];
-            PTK.forEach(function (z) { if (E.p[z[0]] !== undefined) rows.push(ptRow(m, z[0], z[1], E.p[z[0]], E.dv[z[0]])); });
+            PTK.forEach(function (z) { if (E.p[z[0]] !== undefined) { var rr = ptRow(m, z[0], z[1], E.p[z[0]], E.dv[z[0]]); rr.pt = E.pt ? E.pt[z[0]] : undefined; rr.md = E.md ? E.md[z[0]] : undefined; rows.push(rr); } });
+            if (d.m) { var mi = d.m, nm2 = d.names || []; h += '<div class="note" style="white-space:normal"><b>\ud83e\uddee \u0645\u062f\u0644 \u062e\u0648\u062f\u0645 (\u06f7\u06f5\u066a) + PrimaTips (\u06f2\u06f5\u066a)</b><br>\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631: ' + esc(nm2[d.sw ? 1 : 0] || m.home) + ' <b class="gold">' + fc(d.sw ? mi.la : mi.lh) + '</b> - <b class="gold">' + fc(d.sw ? mi.lh : mi.la) + '</b> ' + esc(nm2[d.sw ? 0 : 1] || m.away) + '<br><span class="mut">\u0648\u0631\u0648\u062f\u06cc: ' + fa(mi.n0) + ' + ' + fa(mi.n1) + ' \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631 (\u0648\u0632\u0646 \u06a9\u0627\u0647\u0634\u06cc\u060c \u0642\u062f\u0631\u062a \u062d\u0631\u06cc\u0641 \u0627\u0632 \u062c\u062f\u0648\u0644\u060c \u062e\u0648\u0646\u0647/\u0628\u06cc\u0631\u0648\u0646)' + (mi.tb ? '\u060c \u062c\u062f\u0648\u0644 \u0644\u06cc\u06af' : '') + (mi.ven ? '\u060c \u0622\u0645\u0627\u0631 \u062e\u0648\u0646\u0647 \u0648 \u0628\u06cc\u0631\u0648\u0646' : '') + (mi.h2h ? '\u060c ' + fa(mi.h2h) + ' \u0631\u0648\u062f\u0631\u0631\u0648' : '') + (mi.lg ? '\u060c \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644 \u0644\u06cc\u06af' : '') + '. \u067e\u0648\u0627\u0633\u0648\u0646 \u0628\u0627 \u0627\u0635\u0644\u0627\u062d Dixon-Coles</span></div>'; }
             E.warns.forEach(function (t) { h += '<div class="warn">\u26a0\ufe0f ' + esc(t) + '</div>'; });
             if (E.bad) h += '<div class="quick" style="margin-top:4px"><button onclick="ptRaw(\'' + m.id + '\')">' + (d.raw ? '\u21a9\ufe0f \u0628\u0631\u06af\u0631\u062f \u0628\u0647 \u062d\u0633\u0627\u0628 \u0627\u0632 \u06f1X\u06f2' : '\u2699\ufe0f \u0647\u0645\u0648\u0646 \u06f1X \u0648 X2 \u062e\u0648\u062f PrimaTips \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0628\u0634\u0647') + '</button></div>';
             if (d.sw) h += '<div class="mut">\u062c\u0627\u06cc \u0645\u06cc\u0632\u0628\u0627\u0646 \u0648 \u0645\u0647\u0645\u0627\u0646 \u0646\u0633\u0628\u062a \u0628\u0647 PrimaTips \u0639\u0648\u0636 \u0634\u062f (\u06f1 \u0648 \u06f2\u060c 1X \u0648 X2)</div>';
             h += '<div class="mut" style="margin-top:6px">\u0628\u0627\u0646\u06a9\u0631\u0648\u0644: ' + fc(W.coins) + ' \u0633\u06a9\u0647 | \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc: EV\u00d7\u06f1\u06f0\u06f0 \u0633\u06a9\u0647\u060c \u0646\u0635\u0641 \u0628\u0631\u0627\u06cc \u0636\u0631\u06cc\u0628 \u0628\u0627\u0644\u0627\u06cc \u06f2.\u06f7 \u0648 \u06cc\u06a9\u200c\u0686\u0647\u0627\u0631\u0645 \u0628\u0627\u0644\u0627\u06cc \u06f3.\u06f7\u060c \u0628\u0627 \u0633\u0648\u062f \u0633\u0631\u0645\u0627\u06cc\u0647 \u0628\u0627\u0644\u0627\u06cc \u06f1\u06f0\u06f0\u06f0 \u0628\u06cc\u0634\u062a\u0631 \u0645\u06cc\u0634\u0647</div>';
-            h += '<table class="tbl"><tr><th>\u0628\u0627\u0632\u0627\u0631</th><th>PrimaTips</th><th>\u0648\u0627\u0642\u0639\u06cc</th><th>\u0636\u0631\u06cc\u0628</th><th>EV</th><th>\u0645\u0628\u0644\u063a</th></tr>';
+            h += '<table class="tbl"><tr><th>\u0628\u0627\u0632\u0627\u0631</th>' + (d.m ? '<th>PT</th><th>\u0645\u062f\u0644</th><th>\u062a\u0631\u06a9\u06cc\u0628</th>' : '<th>PrimaTips</th><th>\u0648\u0627\u0642\u0639\u06cc</th>') + '<th>\u0636\u0631\u06cc\u0628</th><th>EV</th><th>\u0645\u0628\u0644\u063a</th></tr>';
             rows.forEach(function (x) {
               var ec = x.ev === null ? '-' : '<b class="ltr" style="color:' + (x.ev >= 0.05 ? 'var(--green)' : (x.ev >= 0 ? 'var(--gold)' : 'var(--red)')) + '">' + (x.ev >= 0 ? '+' : '') + x.ev.toFixed(2) + '</b>';
-              h += '<tr' + (x.v ? ' class="best"' : '') + ' onclick="mAdd(\'' + m.id + '\',\'' + x.k + '\')"><td>' + (x.v ? '\ud83d\udc8e ' : '') + (x.ag ? '\u26a0\ufe0f ' : '') + '<span class="ltr">' + x.l + '</span></td><td><b>' + pc(x.p) + '</b></td><td class="gold">' + fo2(x.p > 0 ? 1 / x.p : 0) + '</td><td>' + (x.o ? x.o.toFixed(2) : '-') + '</td><td>' + ec + '</td><td>' + (x.st ? '<b class="gold">' + fa(x.st) + '</b>' : '-') + '</td></tr>';
+              h += '<tr' + (x.v ? ' class="best"' : '') + ' onclick="mAdd(\'' + m.id + '\',\'' + x.k + '\')"><td>' + (x.v ? '\ud83d\udc8e ' : '') + (x.ag ? '\u26a0\ufe0f ' : '') + '<span class="ltr">' + x.l + '</span></td>' + (d.m ? '<td>' + (x.pt !== undefined ? pc(x.pt) : '-') + '</td><td>' + (x.md !== undefined && x.md !== null ? pc(x.md) : '-') + '</td><td><b>' + pc(x.p) + '</b></td>' : '<td><b>' + pc(x.p) + '</b></td><td class="gold">' + fo2(x.p > 0 ? 1 / x.p : 0) + '</td>') + '<td>' + (x.o ? x.o.toFixed(2) : '-') + '</td><td>' + ec + '</td><td>' + (x.st ? '<b class="gold">' + fa(x.st) + '</b>' : '-') + '</td></tr>';
             });
             h += '</table>';
+            if (d.m) { var far = rows.filter(function (x) { return x.md !== undefined && x.md !== null && x.q !== null && Math.abs(x.md - x.q) > 0.15; }); if (far.length) h += '<div class="warn">\u26a0\ufe0f \u0645\u062f\u0644 \u062a\u0648 \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631\u0647\u0627 \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1\u06f5\u066a \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0641\u0631\u0642 \u062f\u0627\u0631\u0647: ' + far.map(function (x) { return x.l; }).join('\u060c ') + '. \u0628\u0627\u0632\u0627\u0631 \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u0627\u0637\u0644\u0627\u0639\u0627\u062a\u06cc \u062f\u0627\u0631\u0647 \u06a9\u0647 \u062a\u0648 \u0622\u0645\u0627\u0631 \u0646\u06cc\u0633\u062a (\u063a\u0627\u06cc\u0628\u200c\u0647\u0627\u060c \u0627\u0646\u06af\u06cc\u0632\u0647\u060c \u062a\u0631\u06a9\u06cc\u0628)\u060c \u067e\u0633 \u0628\u0627 \u0645\u0628\u0644\u063a \u06a9\u0645.</div>'; }
             var w = rows.filter(function (x) { return x.o; }).sort(function (a, b) { return b.ev - a.ev; });
             h += '<div class="note" style="white-space:normal"><b>\ud83d\udcb0 \u0627\u0631\u0632\u0634 \u0648\u0627\u0642\u0639\u06cc \u0636\u0631\u06cc\u0628\u200c\u0647\u0627</b>';
             if (!w.length) h += '<br><span class="mut">\u0636\u0631\u0627\u06cc\u0628 \u0633\u0627\u06cc\u062a \u0631\u0648 \u0628\u0686\u0633\u0628\u0648\u0646 (\u0628\u062a \u0648\u0627\u0646\u0627) \u06cc\u0627 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647 \u062a\u0627 \u0636\u0631\u06cc\u0628 \u0648\u0627\u0642\u0639\u06cc \u06a9\u0646\u0627\u0631 \u0636\u0631\u06cc\u0628 \u0633\u0627\u06cc\u062a \u0628\u06cc\u0627\u062f</span>';
