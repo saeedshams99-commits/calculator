@@ -1283,6 +1283,7 @@ jobs:
           function openM(id) {
             if (!MATCHES[id]) return;
             SCR.m = scrY(); SEL = id; renderDet(); window.scrollTo(0, 0);
+            if (!XI[id] && !started(MATCHES[id])) xFetch(id, false);
           }
           function closeM() { SEL = null; renderDet(); scrRestore(SCR.m || 0); }
           function renderDet() {
@@ -1808,7 +1809,7 @@ jobs:
             if (!fx.id || !t.home || !t.away) return null;
             var k = 'af_' + lg.id;
             if (!AFLG[k] || AFLG[k].n != lg.name) AFLG[k] = { n: lg.name || '?', c: lg.country || 'World' };
-            var m = { id: 'af' + fx.id, lg: k, home: t.home.name, away: t.away.name, time: fx.date, h: null, d: null, a: null, ov: null, un: null, fx: 1, st: AFP[st] || 'pre', ss: st, ft: Date.now() };
+            var m = { id: 'af' + fx.id, lg: k, home: t.home.name, away: t.away.name, time: fx.date, h: null, d: null, a: null, ov: null, un: null, fx: 1, st: AFP[st] || 'pre', ss: st, ft: Date.now(), vc: (fx.venue || {}).city || '', vn: (fx.venue || {}).name || '' };
             if (AFX[st]) m.pp = 1;
             var g = f.goals || {}, ft = (f.score || {}).fulltime || {}, hs = g.home, as = g.away;
             if ((st == 'AET' || st == 'PEN') && ft.home !== null && ft.home !== undefined) { hs = ft.home; as = ft.away; }
@@ -1866,6 +1867,7 @@ jobs:
                 ds[dk(k)] = 1;
               });
             });
+            SH.forEach(function (x) { if (x.res != 'p' || !isAF(x.lg)) return; var k = new Date(x.time).getTime(); if (k + 100 * 60000 > now || now - k > 84 * 3600000) return; var L = LIVE[x.mid]; if (L && L.st == 'post') return; ds[dk(k)] = 1; });
             var ks = Object.keys(ds), left = ks.length;
             if (!left) { if (done) done(); return; }
             AFSE = '';
@@ -2083,13 +2085,22 @@ jobs:
               x.cl = o; x.clt = Date.now(); sv(pk('bets'), BETS); renderBets(); toast('\u0636\u0631\u06cc\u0628 \u0627\u0644\u0627\u0646 \u062b\u0628\u062a \u0634\u062f: ' + o.toFixed(2));
             });
           }
+          /* closing-odds reminder (update 39): 5 minutes before kickoff a notification asks for the closing odds (CLV) */
+          function clRem(b) {
+            if (!b) return;
+            b.sel.forEach(function (x, j) {
+              var at = new Date(x.time).getTime() - 5 * 60000; if (at <= Date.now() || x.cl) return;
+              try { Android.alarm('cl' + b.id + '_' + j, String(at), '\ud83d\udcc8 \u06f5 \u062f\u0642\u06cc\u0642\u0647 \u0628\u0647 \u0634\u0631\u0648\u0639: \u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u0631\u0648 \u062b\u0628\u062a \u06a9\u0646', x.home + ' - ' + x.away + ' | ' + pl(x) + ' @' + x.odd.toFixed(2) + ' | \u062a\u0648 \u00ab\u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u0645\u0646\u00bb \u0631\u0648\u06cc \u00ab\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u062f\u0633\u062a\u06cc\u00bb \u0628\u0632\u0646'); } catch (e) {}
+            });
+          }
           function setCL(bid, j) {
             var b = findBet(bid); if (!b || !b.sel[j]) return;
-            var x = b.sel[j], v = prompt('\u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc (\u0644\u062d\u0638\u0647 \u0634\u0631\u0648\u0639 \u0628\u0627\u0632\u06cc) \u0627\u06cc\u0646 \u0627\u0646\u062a\u062e\u0627\u0628 \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646:', x.cl || '');
+            var x = b.sel[j], dv0 = ''; try { var ct = Android.clip ? Android.clip() : ''; if (ct) { var po = parseOdds(ct); if (po && po.o && po.o[x.pick]) dv0 = String(po.o[x.pick]); } } catch (e) {}
+            var v = prompt('\u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc (\u0644\u062d\u0638\u0647 \u0634\u0631\u0648\u0639 \u0628\u0627\u0632\u06cc) \u0627\u06cc\u0646 \u0627\u0646\u062a\u062e\u0627\u0628 \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646:', dv0 || x.cl || '');
             if (v === null) return;
             v = parseFloat(String(v).replace(/[\u06f0-\u06f9]/g, function (d) { return '\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9'.indexOf(d); }).replace('\u066b', '.'));
             if (!(v > 1)) { toast('\u06cc\u0647 \u0636\u0631\u06cc\u0628 \u062f\u0631\u0633\u062a \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
-            x.cl = r2(v); x.clt = Date.now(); sv(pk('bets'), BETS); renderBets(); toast('\u0630\u062e\u06cc\u0631\u0647 \u0634\u062f \u2705');
+            x.cl = r2(v); x.clt = Date.now(); try { Android.cancelAlarm('cl' + b.id + '_' + j); } catch (e) {} sv(pk('bets'), BETS); renderBets(); toast('\u0630\u062e\u06cc\u0631\u0647 \u0634\u062f \u2705');
           }
           function exRef(id) { if (MATCHES[id] && !started(MATCHES[id])) fetchEx(MATCHES[id]); }
           function more(id) {
@@ -2163,7 +2174,7 @@ jobs:
             var h = '<div class="match"><div class="mt"><span>' + tag + hm(m.time) + old + ' <span class="bell" onclick="bell(\'' + m.id + '\')">' + (REM[m.id] ? '\ud83d\udd14' : '\ud83d\udd15') + '</span></span><span>' + lname(m.lg) + '</span></div>' +
               '<div class="teams"' + (SEL == m.id ? '' : ' onclick="openM(\'' + m.id + '\')"') + '><div class="tm"><span>' + esc(m.home) + '</span>' + (scc ? scc + L.hs + '</b>' : '') + '</div>' +
               '<div class="tm"><span>' + esc(m.away) + '</span>' + (scc ? scc + L.as + '</b>' : '') + '</div>' + (SEL == m.id ? '' : '<div class="mut" style="direction:rtl;text-align:right;font-weight:normal;font-size:11px">\ud83d\udc46 \u0628\u0632\u0646 \u062a\u0627 \u0635\u0641\u062d\u0647 \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0628\u0627\u0632 \u0628\u0634\u0647</div>') + '</div>' + liveBox(m);
-            if (m.fx) return h + (st ? '' : manBox(m) + mdlPanel(m) + ptPanel(m) + sPanel(m.id) + hpPanel(m)) + '</div>';
+            if (m.fx) return h + (st ? '' : manBox(m) + xPanel(m) + mdlPanel(m) + ptPanel(m) + sPanel(m.id) + hpPanel(m)) + '</div>';
             h += '<div class="odds">' + ob(m, '1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646') + ob(m, 'X', '\u0645\u0633\u0627\u0648\u06cc') + ob(m, '2', '\u06f2 \u0645\u0647\u0645\u0627\u0646') + '</div>';
           if (m.d) h += '<div class="lbl">\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 (\u0628\u0631\u062f \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc)</div><div class="odds">' + ob(m, '1X', '\u06f1 \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc') + ob(m, 'X2', '\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2') + ob(m, '12', '\u06f1 \u06cc\u0627 \u06f2') + '</div>';
             if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5 \u06af\u0644') + ob(m, 'U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5 \u06af\u0644') + '</div>';
@@ -2180,7 +2191,7 @@ jobs:
               }
               h += '<div class="more" onclick="more(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646</div>';
             } else h += '<div class="more" onclick="more(\'' + m.id + '\')">\u2795 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 (\u06af\u0644 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645\u060c \u06f1.\u06f5\u060c \u06f3.\u06f5)</div>';
-            h += mdlPanel(m) + ptPanel(m) + sPanel(m.id) + hpPanel(m);
+            h += xPanel(m) + mdlPanel(m) + ptPanel(m) + sPanel(m.id) + hpPanel(m);
             return h + '</div>';
           }
           /* manual odds (update 14) */
@@ -2190,6 +2201,120 @@ jobs:
           function tkey(c, v) { return c + ('0' + Math.round(v * 10)).slice(-2); }
           var HP = {}, HLN = [-2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5], TLN = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5];
           function hpTog(id) { HP[id] = !HP[id]; rerender(); }
+          /* ---------- weather, lineups and absentees (update 39) ----------
+             weather: Open-Meteo (free, no key), city from API-Football venue or ESPN, else the home team name.
+             lineups: ESPN summary (free) or API-Football (1 request, only from 75 minutes before kickoff). absentees: API-Football injuries (1 request). */
+          var XI = ld('xinfo', {}), XO = {}, XB = {}, GEO = ld('geo', {});
+          (function () { var n = Date.now(), ch = false; for (var k in XI) { if (!XI[k] || !XI[k]._t || new Date(XI[k]._t).getTime() + 3 * 86400000 < n) { delete XI[k]; ch = true; } } if (ch) sv('xinfo', XI); })();
+          function xGet(url, f) { http(url, function (r) { if (r.status != 200) { f(null, 'HTTP ' + r.status); return; } try { f(JSON.parse(r.body), null); } catch (e) { f(null, 'JSON'); } }); }
+          function xCity(m) { if (m.vc) return m.vc; var X = XI[m.id]; if (X && X.vc) return X.vc; return String(m.home || '').replace(/\b(FC|CF|SC|AC|AFC|CD|SD|UD|SV|VfB|VfL|FK|SK|BK|IF|CA|CR|EC|SE|RC|RCD|AS|SS|US|SSC)\b/g, '').replace(/\s+/g, ' ').trim(); }
+          function xWxKind(wc, pr, pp) { if (pr >= 0.5 || pp >= 60 || (wc >= 51 && wc <= 67) || (wc >= 80 && wc <= 99)) return 'rain'; if (wc >= 2) return 'cloudy'; return 'clear'; }
+          function xWeather(m, done) {
+            var city = xCity(m); if (!city) { done('no city'); return; }
+            var k = new Date(m.time).getTime(); if (k - Date.now() > 15 * 86400000) { done('far'); return; }
+            var go = function (g) {
+              var d = new Date(k).toISOString().slice(0, 10), hr = new Date(Math.round(k / 3600000) * 3600000).toISOString().slice(0, 13) + ':00';
+              xGet('https://api.open-meteo.com/v1/forecast?latitude=' + g.la + '&longitude=' + g.lo + '&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m&timezone=GMT&start_date=' + d + '&end_date=' + d, function (j, er) {
+                if (!j || !j.hourly || !j.hourly.time) { done(er || 'no data'); return; }
+                var i = j.hourly.time.indexOf(hr); if (i < 0) i = Math.min(j.hourly.time.length - 1, new Date(k).getUTCHours());
+                var H = j.hourly, X = XI[m.id] = XI[m.id] || {};
+                X.wx = { c: g.n || city, t: H.temperature_2m[i], pr: H.precipitation[i] || 0, pp: H.precipitation_probability ? H.precipitation_probability[i] : null, wc: H.weather_code ? H.weather_code[i] : 0, ws: H.wind_speed_10m ? H.wind_speed_10m[i] : null, at: Date.now() };
+                X.wx.k = xWxKind(X.wx.wc, X.wx.pr, X.wx.pp || 0);
+                var D = sD(m.id); D.weather = X.wx.k; D.temp = String(Math.round(X.wx.t)); D._t = m.time; sv('sman', SMN);
+                done(null);
+              });
+            };
+            if (GEO[city]) { go(GEO[city]); return; }
+            xGet('https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=' + encodeURIComponent(city), function (j, er) {
+              var r = j && j.results && j.results[0];
+              if (!r) { done('city ' + city); return; }
+              GEO[city] = { la: r.latitude, lo: r.longitude, n: r.name + (r.country ? ', ' + r.country : '') }; sv('geo', GEO); go(GEO[city]);
+            });
+          }
+          function xSide(m, name) { return sim1(name, m.home) >= sim1(name, m.away) ? 0 : 1; }
+          function xEspn(m, done) {
+            var k = new Date(m.time).getTime(), s = esl(m.lg), eid = /^e\d+$/.test(m.id) ? m.id.slice(1) : ((LIVE[m.id] && LIVE[m.id].eid) || '');
+            var sum = function (slug, id) {
+              xGet(ESPN_API + slug + '/summary?event=' + id, function (j) {
+                if (!j) { done('espn'); return; }
+                var X = XI[m.id] = XI[m.id] || {}, gi = j.gameInfo && j.gameInfo.venue;
+                if (gi && gi.address && gi.address.city && !X.vc) X.vc = gi.address.city;
+                var R = j.rosters || [], f = ['', ''], st = [[], []], ok = 0;
+                R.forEach(function (t) {
+                  var i = t.homeAway == 'away' ? 1 : 0; f[i] = t.formation || '';
+                  (t.roster || []).forEach(function (p) { if (p.starter) { st[i].push({ n: (p.athlete || {}).displayName || '?', p: ((p.position || {}).abbreviation || '').charAt(0) }); ok++; } });
+                });
+                if (ok >= 18 && (!X.lu || X.lu.src != 'af')) X.lu = { src: 'espn', f: f, s: st, at: Date.now() };
+                done(null);
+              });
+            };
+            if (eid && s) { sum(s, eid); return; }
+            espnFetch(s || 'all', [ymd(k)], function (evs) {
+              if (!evs) { done('espn'); return; }
+              var e = null, bs = 0;
+              evs.forEach(function (ev) { var c = ev.competitions && ev.competitions[0]; if (!c || !c.competitors) return; var H = null, A = null; c.competitors.forEach(function (x) { if (x.homeAway == 'home') H = x; else A = x; }); if (!H || !A) return; var sc = simT(m.home, H.team) + simT(m.away, A.team); if (Math.abs(new Date(ev.date).getTime() - k) < 20 * 60000) sc += 0.3; if (sc > bs) { bs = sc; e = ev; } });
+              if (!e || bs < 1.2) { done('espn: not found'); return; }
+              var slug = s;
+              if (!slug) { var lg = (e.leagues && e.leagues[0]) || (e.season && e.season.slug ? null : null); slug = lg && lg.slug ? lg.slug : null; if (!slug && e.uid) { var mm = /~l:(\d+)/.exec(e.uid); slug = mm && REVE && REVE[mm[1]] ? REVE[mm[1]] : null; } }
+              if (!slug) slug = 'all';
+              sum(slug, e.id);
+            });
+          }
+          function xAF(m, force, done) {
+            if (!afKey() || !afIv()) { done('af'); return; }
+            var fid = /^af\d+$/.test(m.id) ? +m.id.slice(2) : afIdOf(m).id; if (!fid) { done('af: no id'); return; }
+            var X = XI[m.id] = XI[m.id] || {}, k = new Date(m.time).getTime(), left = 0, er = null;
+            var fin = function () { if (--left <= 0) done(er); };
+            var needInj = force || !X.inj || Date.now() - X.inj.at > 3 * 3600000;
+            var needLu = (!X.lu || X.lu.src != 'af') && k - Date.now() < 75 * 60000;
+            if (!needInj && !needLu) { done(null); return; }
+            if (needInj) { left++; afHttp('injuries?fixture=' + fid, function (r) { afRem(r); try { var j = JSON.parse(r.body), e = afErr(j); if (e) er = e; else { var L = [[], []]; (j.response || []).forEach(function (z) { var t = xSide(m, (z.team || {}).name || ''), p = z.player || {}; L[t].push({ n: p.name || '?', r: p.reason || '', q: /question|doubt/i.test(p.type || '') ? 1 : 0 }); }); X.inj = { l: L, at: Date.now() }; } } catch (x) { er = 'JSON'; } fin(); }); }
+            if (needLu) { left++; afHttp('fixtures/lineups?fixture=' + fid, function (r) { afRem(r); try { var j = JSON.parse(r.body), e = afErr(j); if (e) er = e; else { var f = ['', ''], st = [[], []], ok = 0; (j.response || []).forEach(function (t) { var i = xSide(m, (t.team || {}).name || ''); f[i] = t.formation || ''; (t.startXI || []).forEach(function (z) { var p = z.player || {}; st[i].push({ n: p.name || '?', p: p.pos || '' }); ok++; }); }); if (ok >= 18) X.lu = { src: 'af', f: f, s: st, at: Date.now() }; } } catch (x) { er = 'JSON'; } fin(); }); }
+          }
+          function xFetch(id, paid) {
+            var m = MATCHES[id]; if (!m || XB[id]) return;
+            XB[id] = 1; var left = 3, ers = [];
+            var fin = function (e) { if (e) ers.push(e); if (--left > 0) return; delete XB[id]; var X = XI[id] = XI[id] || {}; X._t = m.time; X.at = Date.now(); sv('xinfo', XI); rerender(); if (paid) toast(ers.length ? '\u26a0\ufe0f \u0628\u0639\u0636\u06cc \u0645\u0648\u0627\u0631\u062f \u0646\u06cc\u0648\u0645\u062f: ' + ers.join('\u060c ') : '\u2705 \u0622\u0628\u200c\u0648\u0647\u0648\u0627\u060c \u062a\u0631\u06a9\u06cc\u0628 \u0648 \u063a\u0627\u06cc\u0628\u200c\u0647\u0627 \u0628\u0631\u0648\u0632 \u0634\u062f'); };
+            xEspn(m, function (e) { fin(e); xWeather(m, fin); });
+            if (paid) xAF(m, true, fin); else fin(null);
+          }
+          function xAdj(id, lh, la, wx) {
+            var X = XI[id]; if (!X) return [lh, la, ''];
+            var t = [];
+            if (X.inj && X.inj.l) {
+              var c = X.inj.l.map(function (L) { return L.reduce(function (a, p) { return a + (p.q ? 0.5 : 1); }, 0); });
+              var ah = 1 - Math.min(0.12, 0.025 * c[0]), aa = 1 - Math.min(0.12, 0.025 * c[1]), dh = 1 + Math.min(0.08, 0.015 * c[0]), da = 1 + Math.min(0.08, 0.015 * c[1]);
+              lh *= ah * da; la *= aa * dh;
+              if (c[0] || c[1]) t.push('\u063a\u0627\u06cc\u0628\u200c\u0647\u0627: \u0645\u06cc\u0632\u0628\u0627\u0646 ' + fa(c[0]) + '\u060c \u0645\u0647\u0645\u0627\u0646 ' + fa(c[1]));
+            }
+            if (wx && X.wx) { var wf = { clear: 1, cloudy: 0.995, rain: 0.97 }[X.wx.k] || 1, tp = X.wx.t, tf = tp < 5 ? 0.96 : (tp > 33 ? 0.95 : 1); if (X.wx.ws > 40) tf *= 0.97; lh *= wf * tf; la *= wf * tf; }
+            return [lh, la, t.join(' | ')];
+          }
+          function xLu(m) { var X = XI[m.id]; return X && X.lu && X.lu.s && X.lu.s[0].length >= 9 ? X.lu : null; }
+          function xTog(id) { XO[id] = !XO[id]; if (XO[id] && !XI[id] && !XB[id]) xFetch(id, false); rerender(); }
+          function xPanel(m) {
+            if (started(m)) return '';
+            var X = XI[m.id], o = XO[m.id];
+            var wi = X && X.wx ? { clear: '\u2600\ufe0f', cloudy: '\u2601\ufe0f', rain: '\ud83c\udf27' }[X.wx.k] + ' ' + fa(Math.round(X.wx.t)) + '\u00b0' : '';
+            var h = '<div class="more" onclick="xTog(\'' + m.id + '\')">\ud83c\udf26 \u0622\u0628\u200c\u0648\u0647\u0648\u0627\u060c \u062a\u0631\u06a9\u06cc\u0628 \u0648 \u063a\u0627\u06cc\u0628\u200c\u0647\u0627' + (wi ? ' | ' + wi : '') + (xLu(m) ? ' | \u2705 \u062a\u0631\u06a9\u06cc\u0628' : '') + (XB[m.id] ? ' \u23f3' : '') + '</div>';
+            if (!o) return h;
+            h += '<div class="hpp"><div class="lbl">\ud83c\udf26 \u0622\u0628\u200c\u0648\u0647\u0648\u0627\u060c \u062a\u0631\u06a9\u06cc\u0628 \u0648 \u063a\u0627\u06cc\u0628\u200c\u0647\u0627</div>';
+            if (X && X.wx) { var w = X.wx; h += '<div class="note" style="white-space:normal">' + wi + ' ' + { clear: '\u0635\u0627\u0641', cloudy: '\u0627\u0628\u0631\u06cc', rain: '\u0628\u0627\u0631\u0627\u0646\u06cc' }[w.k] + ' | \ud83c\udf27 ' + fc(w.pr) + ' \u0645\u06cc\u0644\u06cc\u200c\u0645\u062a\u0631' + (w.pp !== null && w.pp !== undefined ? ' (' + fa(w.pp) + '\u066a)' : '') + (w.ws !== null && w.ws !== undefined ? ' | \ud83d\udca8 ' + fa(Math.round(w.ws)) + ' \u06a9\u06cc\u0644\u0648\u0645\u062a\u0631' : '') + '<br><span class="mut">' + esc(w.c) + '\u060c \u0633\u0627\u0639\u062a \u0628\u0627\u0632\u06cc. \u062e\u0648\u062f\u06a9\u0627\u0631 \u062a\u0648 \u00ab\u062a\u062d\u0644\u06cc\u0644 \u0628\u0627 \u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc\u00bb \u0647\u0645 \u0646\u0634\u0633\u062a</span></div>'; }
+            else h += '<div class="mut">' + (XB[m.id] ? '\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a...' : '\u0622\u0628\u200c\u0648\u0647\u0648\u0627 \u0647\u0646\u0648\u0632 \u06af\u0631\u0641\u062a\u0647 \u0646\u0634\u062f\u0647') + '</div>';
+            var lu = xLu(m), nm = [m.home, m.away];
+            if (lu) {
+              h += '<div class="note" style="white-space:normal"><b>\u2705 \u062a\u0631\u06a9\u06cc\u0628 \u0631\u0633\u0645\u06cc</b> (' + (lu.src == 'af' ? 'API-Football' : 'ESPN') + ')<br>' + esc(m.home) + ' <b class="ltr">' + esc(lu.f[0] || '?') + '</b> | ' + esc(m.away) + ' <b class="ltr">' + esc(lu.f[1] || '?') + '</b>';
+              [0, 1].forEach(function (i) { h += '<details class="gdd"><summary class="mut">' + esc(nm[i]) + '</summary><div class="ltr mut" style="line-height:1.8">' + lu.s[i].map(function (p) { return esc(p.p ? p.p + ' ' : '') + esc(p.n); }).join('<br>') + '</div></details>'; });
+              h += '</div>';
+            } else h += '<div class="mut" style="line-height:1.8">\u23f3 \u062a\u0631\u06a9\u06cc\u0628 \u0647\u0646\u0648\u0632 \u0627\u0639\u0644\u0627\u0645 \u0646\u0634\u062f\u0647. \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06f4\u06f5 \u062a\u0627 \u06f6\u06f0 \u062f\u0642\u06cc\u0642\u0647 \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc \u0645\u06cc\u0627\u062f \u0648 \u0628\u0647\u062a\u0631\u06cc\u0646 \u0632\u0645\u0627\u0646 \u0628\u0633\u062a\u0646 \u0634\u0631\u0637 \u0628\u0639\u062f \u0627\u0632 \u0627\u0648\u0646\u0647</div>';
+            if (X && X.inj) {
+              h += '<div class="note" style="white-space:normal"><b>\ud83d\ude91 \u063a\u0627\u06cc\u0628\u200c\u0647\u0627</b> (API-Football)';
+              [0, 1].forEach(function (i) { var L = X.inj.l[i] || []; h += '<br>' + esc(nm[i]) + ': ' + (L.length ? L.map(function (p) { return esc(p.n) + (p.q ? ' (\u2754)' : '') + (p.r ? ' <span class="mut">' + esc(p.r) + '</span>' : ''); }).join('\u060c ') : '\u06a9\u0633\u06cc \u0646\u06cc\u0633\u062a'); });
+              var a = xAdj(m.id, 1, 1, false); h += '<br><span class="mut">\u0627\u062b\u0631 \u0631\u0648\u06cc \u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631: \u0645\u06cc\u0632\u0628\u0627\u0646 ' + sLn(Math.round((a[0] - 1) * 100)) + '\u066a\u060c \u0645\u0647\u0645\u0627\u0646 ' + sLn(Math.round((a[1] - 1) * 100)) + '\u066a</span></div>';
+            }
+            h += '<div class="quick" style="margin-top:6px"><button onclick="xFetch(\'' + m.id + '\',0)">\ud83d\udd04 \u0622\u0628\u200c\u0648\u0647\u0648\u0627 \u0648 \u062a\u0631\u06a9\u06cc\u0628 (\u0631\u0627\u06cc\u06af\u0627\u0646)</button>' + (afKey() ? '<button onclick="xFetch(\'' + m.id + '\',1)">\ud83d\ude91 + \u063a\u0627\u06cc\u0628\u200c\u0647\u0627 \u0648 \u062a\u0631\u06a9\u06cc\u0628 API-Football (\u06f1 \u062a\u0627 \u06f2 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)</button>' : '') + '</div>';
+            return h + '</div>';
+          }
           function hpPanel(m) {
             if (started(m)) return '';
             if (!HP[m.id]) return '<div class="more" onclick="hpTog(\'' + m.id + '\')">\ud83d\udcd0 \u067e\u0646\u0644 \u0647\u0646\u062f\u06cc\u06a9\u067e \u0648 \u0645\u062c\u0645\u0648\u0639 \u06af\u0644 (\u06f0.\u06f5 \u062a\u0627 \u06f5.\u06f5)</div>';
@@ -2427,6 +2552,7 @@ jobs:
                 '<div class="row"><span>' + esc(pl(x)) + '</span><b class="gold">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div>' +
                 (x.mp ? '<div class="mut">' + (x.src == 'pt' ? 'PrimaTips: ' : '\ud83e\udd16 \u0645\u062f\u0644 \u0622\u0645\u0627\u0631\u06cc: ') + fa(x.mp) + '\u066a (\u00ab\u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646\u00bb \u0627\u0632 \u0645\u062f\u0644 \u067e\u0631 \u0634\u062f\u060c \u0645\u06cc\u062a\u0648\u0646\u06cc \u0639\u0648\u0636\u0634 \u06a9\u0646\u06cc)</div>' : '') +
                 (x.man ? '<div class="mut">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u062f\u0633\u062a\u06cc (\u0627\u0632 1xBet)</div>' : '') +
+                (MATCHES[x.id] && xLu(MATCHES[x.id]) ? '<div class="mut">\u2705 \u062a\u0631\u06a9\u06cc\u0628 \u0631\u0633\u0645\u06cc \u0627\u0639\u0644\u0627\u0645 \u0634\u062f\u0647</div>' : (new Date(x.time).getTime() - Date.now() > 75 * 60000 ? '<div class="mut">\u23f3 \u062a\u0631\u06a9\u06cc\u0628 \u0647\u0646\u0648\u0632 \u0627\u0639\u0644\u0627\u0645 \u0646\u0634\u062f\u0647. \u0628\u0647\u062a\u0631\u0647 \u06f4\u06f5 \u062a\u0627 \u06f6\u06f0 \u062f\u0642\u06cc\u0642\u0647 \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc \u0628\u0628\u0646\u062f\u06cc</div>' : '')) +
                 (x.nv ? '<div class="mut">\ud83d\udcca \u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0627\u0632\u0627\u0631 (\u0628\u062f\u0648\u0646 \u062d\u0627\u0634\u06cc\u0647 \u0633\u0648\u062f): ' + pct(x.nv) + '</div>' : '') +
                 (x.ctr ? '<div class="warn">\u26a0\ufe0f \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u0628\u0627\u0632\u0627\u0631\u0647. \u0627\u06cc\u0646 \u0646\u0648\u0639 \u0634\u0631\u0637 \u062a\u0627 \u0627\u0644\u0627\u0646 \u06f0 \u0627\u0632 \u06f4 \u0628\u0648\u062f\u0647</div>' : '') +
                 '<input type="number" step="1" inputmode="decimal" placeholder="\ud83c\udfaf \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646 (\u066a)\u060c \u0645\u062b\u0644\u0627\u064b \u06f6\u06f0" value="' + (x.my || '') + '" oninput="setMy(' + i + ',this.value)">' +
@@ -2474,6 +2600,7 @@ jobs:
             });
             W.coins = r2(W.coins - s);
             slip.forEach(function (x) { if (!REM[x.id]) setRem(x, true, true); });
+            clRem(BETS[0]);
             slip = []; NOTE = ''; sv(pk('slip'), slip); saveAll(); updateCnt();
             toast('\u0634\u0631\u0637\u062a \u062b\u0628\u062a \u0634\u062f \u2705'); go('bets');
           }
@@ -2523,6 +2650,7 @@ jobs:
               if (b.st != 'p') return;
               b.sel.forEach(function (x) { var k = new Date(x.time).getTime(); if (x.res == 'p' && k <= now && now - k < 84 * 3600000) out[x.id] = x; });
             });
+            SH.forEach(function (x) { var k = new Date(x.time).getTime(); if (x.res == 'p' && !out[x.mid] && k + 100 * 60000 <= now && now - k < 84 * 3600000) out[x.mid] = { id: x.mid, lg: x.lg, home: x.home, away: x.away, time: x.time }; });
             return out;
           }
           function liveTick(force, done) {
@@ -2580,6 +2708,7 @@ jobs:
               });
             });
             if (ch) settle(); else bgSync();
+            shSettle();
             if (pageOn('bets')) renderBets(); else if (pageOn('matches') && reg != 'browse') rerender();
           }
           function liveBox(m) {
@@ -2753,7 +2882,7 @@ jobs:
               h += '<tr' + (best && r.k == best.k ? ' class="best"' : '') + '><td>' + (best && r.k == best.k ? '\ud83c\udfc6 ' : '') + cauL(r.k, r.t) + '</td><td style="color:var(--green)">' + fa(r.w) + '</td><td style="color:var(--red)">' + fa(r.l) + '</td>' +
                 '<td><b style="color:' + (r.r >= 50 ? 'var(--green)' : 'var(--red)') + '">' + fa(r.r) + '\u066a</b></td><td class="ltr">' + r.ao.toFixed(2) + '</td><td class="ltr" style="color:' + (r.pnl >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (r.pnl >= 0 ? '+' : '') + r.pnl.toFixed(2) + '</td></tr>';
             });
-            h += '</table><div class="mut" style="margin-top:8px;line-height:1.8">\ud83e\uddca = \u0628\u0627\u0632\u0627\u0631 \u0645\u062d\u062a\u0627\u0637: \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u062f\u0644 \u0646\u0635\u0641 \u0628\u0647 \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631 \u06a9\u0634\u06cc\u062f\u0647 \u0645\u06cc\u0634\u0647 \u0648 \u0628\u0631\u0627\u06cc \ud83d\udc8e \u062d\u062f\u0627\u0642\u0644 EV +0.10 \u0648 \u06f8\u066a \u0628\u0627\u0644\u0627\u062a\u0631 \u0627\u0632 \u0628\u0627\u0632\u0627\u0631 \u0644\u0627\u0632\u0645\u0647 (\u0628\u0631\u062f \u0645\u0647\u0645\u0627\u0646\u060c \u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2\u060c \u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5\u060c \u0648 \u0647\u0631 \u0628\u0627\u0632\u0627\u0631\u06cc \u0628\u0627 \u06f1\u06f0 \u0646\u062a\u06cc\u062c\u0647 \u0648 \u0633\u0648\u062f \u0648\u0632\u0646\u06cc \u0632\u06cc\u0631 \u06f1-). \u0647\u0631 \u0627\u0646\u062a\u062e\u0627\u0628 \u062c\u062f\u0627 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647\u060c \u0686\u0647 \u062a\u06a9\u06cc \u0686\u0647 \u062f\u0627\u062e\u0644 \u0645\u06cc\u06a9\u0633. \ud83c\udfc6 = \u0628\u0647\u062a\u0631\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0628\u0627 \u062d\u062f\u0627\u0642\u0644 \u06f3 \u0646\u062a\u06cc\u062c\u0647. \u0627\u06af\u0647 \u062f\u0631\u0635\u062f \u0628\u0631\u062f \u0627\u0632 ' + '\u00ab\u06f1\u06f0\u06f0 \u062a\u0642\u0633\u06cc\u0645 \u0628\u0631 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0636\u0631\u06cc\u0628\u00bb \u0628\u06cc\u0634\u062a\u0631 \u0628\u0627\u0634\u0647\u060c \u062a\u0648 \u0627\u0648\u0646 \u0628\u0627\u0632\u0627\u0631 \u0627\u0632 \u0628\u0646\u06af\u0627\u0647 \u062c\u0644\u0648\u062a\u0631\u06cc.</div></div>';
+            h += '</table><div class="mut" style="margin-top:8px;line-height:1.8">\ud83e\uddca = \u0628\u0627\u0632\u0627\u0631 \u0645\u062d\u062a\u0627\u0637: \u0645\u062f\u0644 \u0641\u0642\u0637 \u0628\u0627 \u0646\u0635\u0641 \u0648\u0632\u0646 \u0645\u0639\u0645\u0648\u0644 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u062c\u0627\u0628\u0647\u200c\u062c\u0627 \u0645\u06cc\u200c\u06a9\u0646\u0647 \u0648 \u0628\u0631\u0627\u06cc \ud83d\udc8e \u062d\u062f\u0627\u0642\u0644 EV +0.06 \u0648 \u06f8 \u062a\u0627 \u06f1\u06f5\u066a \u0641\u0627\u0635\u0644\u0647 \u0645\u062f\u0644 \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0644\u0627\u0632\u0645\u0647 (\u0628\u0631\u062f \u0645\u0647\u0645\u0627\u0646\u060c \u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2\u060c \u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5\u060c \u0648 \u0647\u0631 \u0628\u0627\u0632\u0627\u0631\u06cc \u0628\u0627 \u06f1\u06f0 \u0646\u062a\u06cc\u062c\u0647 \u0648 \u0633\u0648\u062f \u0648\u0632\u0646\u06cc \u0632\u06cc\u0631 \u06f1-). \u0647\u0631 \u0627\u0646\u062a\u062e\u0627\u0628 \u062c\u062f\u0627 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647\u060c \u0686\u0647 \u062a\u06a9\u06cc \u0686\u0647 \u062f\u0627\u062e\u0644 \u0645\u06cc\u06a9\u0633. \ud83c\udfc6 = \u0628\u0647\u062a\u0631\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0628\u0627 \u062d\u062f\u0627\u0642\u0644 \u06f3 \u0646\u062a\u06cc\u062c\u0647. \u0627\u06af\u0647 \u062f\u0631\u0635\u062f \u0628\u0631\u062f \u0627\u0632 ' + '\u00ab\u06f1\u06f0\u06f0 \u062a\u0642\u0633\u06cc\u0645 \u0628\u0631 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0636\u0631\u06cc\u0628\u00bb \u0628\u06cc\u0634\u062a\u0631 \u0628\u0627\u0634\u0647\u060c \u062a\u0648 \u0627\u0648\u0646 \u0628\u0627\u0632\u0627\u0631 \u0627\u0632 \u0628\u0646\u06af\u0627\u0647 \u062c\u0644\u0648\u062a\u0631\u06cc.</div></div>';
             return h;
           }
           function calib() {
@@ -2895,6 +3024,7 @@ jobs:
               '</div></div>';
             h += marketTable();
             h += rvBox();
+            h += shCard();
             h += calib();
             h += mdlCard();
             h += '<div class="leagues">' + chip('\u0647\u0645\u0647', BF == 'all', "pickBF('all')", 'sm') + chip('\u23f3 \u062f\u0631 \u0627\u0646\u062a\u0638\u0627\u0631', BF == 'p', "pickBF('p')", 'sm') +
@@ -3169,7 +3299,7 @@ jobs:
             for (i = 0; i <= 10; i++) for (j = 0; j <= 10; j++) { var r = resX(p, i, j); if (r == 'w') w += R.M[i][j]; else if (r == 'l') l += R.M[i][j]; }
             return w + l > 0 ? w / (w + l) : null;
           }
-          function mdlMy(id, p) { var r = mdlMy0(id, p); if (r === null) return null; var mm = MATCHES[id], q = mm ? nv(mm, p) : null; return Math.round(cauP(p, r / 100, q) * 100); }
+          function mdlMy(id, p) { var r = mdlMy0(id, p); if (r === null) return null; var mm = MATCHES[id], q = mm ? nv(mm, p) : null; return Math.round(anc(p, r / 100, q) * 100); }
           function mdlMy0(id, p) { var pq = ptP(id, p); if (pq !== null) return Math.round(pq * 100); if (!SRES[id] && SMN[id] && MATCHES[id]) { var sc = sCalc(id); if (!sc.err) SRES[id] = sc; } var R = SRES[id] || MDLC[id]; if (!R) return null; var q = mPr(R, p); return q === null ? null : Math.round(q * 100); }
           function mForm(gs) { return gs.slice(0, 10).map(function (g) { return g.f > g.a ? 'W' : (g.f < g.a ? 'L' : 'D'); }).join(' '); }
           function mRun(m, force) {
@@ -3235,9 +3365,10 @@ jobs:
           function mVal(m, R) {
             var out = [];
             MDK.forEach(function (k) {
-              var o = getOdd(m, k[0]), q = o ? nv(m, k[0]) : null, p = cauP(k[0], mPr(R, k[0]), q);
-              var ev = o ? p * o - 1 : null;
-              out.push({ k: k[0], l: cauL(k[0], k[1]), p: p, o: o, q: q, ev: ev, v: (o && ev >= cauEV(k[0]) && (q === null || p - q >= cauED(k[0]))) ? 1 : 0 });
+              var o = getOdd(m, k[0]), q = o ? nv(m, k[0]) : null, pr = mPr(R, k[0]), p = anc(k[0], pr, q);
+              var ev = (o && p !== null) ? Math.min(p, 0.8) * o - 1 : null, v = p !== null ? valOK(k[0], pr, ev, q, o, against(m, k[0])) : 0;
+              if (v) shAdd(m, k[0], o, pr, p, q, 'mdl');
+              out.push({ k: k[0], l: cauL(k[0], k[1]), pr: pr, p: p, o: o, q: q, ev: ev, v: v });
             });
             return out;
           }
@@ -3487,6 +3618,7 @@ jobs:
             var wf={clear:1,cloudy:.995,rain:.92}[D.weather]||1;lh*=wf;la*=wf;
             var temp=sNum(D.temp);if(temp!==null){var tf=temp<5?.94:(temp>35?.93:(temp>30?.97:(temp<10?.98:1)));lh*=tf;la*=tf;}
             var ry=sNum(D.refY),rr=sNum(D.refR);if(ry!==null||rr!==null){var ref=1+clp(((ry===null?3.8:ry)-3.8)*.004+((rr===null?.12:rr)-.12)*.015,-.025,.025);lh*=ref;la*=ref;}
+            var xa=xAdj(ctx,lh,la,false);lh=xa[0];la=xa[1];if(xa[2])w.push(xa[2]);
 
             /* Last-10 BTTS frequency: count of matches (0..10) in which BOTH teams scored.
                Jeffreys Beta(0.5,0.5) posterior regularizes the ten-match sample. The evidence
@@ -3516,14 +3648,13 @@ jobs:
           function sRow(R, g, k, l) {
             var p = mPr(R, k), o = g(k), q = o ? sNv(g, k) : null;
             if (p === null) p = 0;
-            p = cauP(k, p, q);
+            var pr = p; p = anc(k, p, q);
             var ev = o ? p * o - 1 : null, ed = q === null ? null : p - q;
             var q1 = sNv(g, '1'), q2 = sNv(g, '2'), ag = false;
             if (q1 !== null && q1 >= FAVT && { '2': 1, 'X': 1, 'X2': 1, 'H2:0': 1 }[k]) ag = true;
             if (q2 !== null && q2 >= FAVT && { '1': 1, 'X': 1, '1X': 1, 'H1:0': 1 }[k]) ag = true;
-            var ok = o && o >= 1.45 && ev >= cauEV(k) && !ag && (ed === null || ed >= cauED(k));
-            var v = ok ? 1 : 0;
-            var v2 = !v && !isCau(k) && o && o >= 1.40 && ev >= 0.03 && !ag && (ed === null || ed >= 0.03) ? 1 : 0;
+            var v = valOK(k, pr, ev, q, o, ag);
+            var v2 = !v && !isCau(k) && o && o >= 1.40 && ev >= 0 && !ag && (q === null || (pr - q >= 0.03 && pr - q <= 0.15)) ? 1 : 0;
             return { k: k, l: cauL(k, l), p: p, o: o, q: q, ev: ev, ed: ed, v: v, v2: v2, ag: ag };
           }
           function sAll(R, g) {
@@ -3912,7 +4043,7 @@ jobs:
             parts.forEach(function (p) { W += p.w; A += p.w * Math.log(p.a); D += p.w * Math.log(p.d); });
             return { at: W ? Math.exp(A / W) : 1, df: W ? Math.exp(D / W) : 1, n: S.g[t].length, bt: nB ? sb / nB : null, mp: tt ? tt.mp : 0 };
           }
-          function stModel(S) {
+          function stModel(S, id, sw) {
             if (!S || !S.ok) return null;
             var muH = S.lg.hg, muA = S.lg.ag, tbs = 0, tgf = 0;
             for (var k in S.tb) { tbs += S.tb[k].mp; tgf += S.tb[k].gf; }
@@ -3923,6 +4054,7 @@ jobs:
             var hh = S.h2h.slice(0, 6), n1 = 0, g1 = 0, g2 = 0;
             hh.forEach(function (g) { var y = +g.d.slice(0, 4); if (y < new Date().getFullYear() - 4) return; var home = sim1(g.h, S.names[0]) >= sim1(g.a, S.names[0]); g1 += home ? g.hs : g.as; g2 += home ? g.as : g.hs; n1++; });
             if (n1) { lh *= Math.pow((g1 + 2 * lh) / (n1 + 2) / lh, 0.25); la *= Math.pow((g2 + 2 * la) / (n1 + 2) / la, 0.25); }
+            if (id) { var xa = sw ? xAdj(id, la, lh, true) : xAdj(id, lh, la, true); if (sw) { lh = xa[1]; la = xa[0]; } else { lh = xa[0]; la = xa[1]; } }
             lh = clp(lh, 0.2, 4); la = clp(la, 0.2, 4);
             var bts = [], R;
             if (A.bt !== null) bts.push(A.bt); if (B.bt !== null) bts.push(B.bt);
@@ -3955,6 +4087,7 @@ jobs:
             if (bad) warns.push(d.raw ? '\u062f\u0631\u0635\u062f\u0647\u0627\u06cc 1X \u0648 X2 \u062e\u0648\u062f PrimaTips (' + pc(d.p['1X']) + ' \u0648 ' + pc(d.p.X2) + ') \u0628\u0627 \u06f1X\u06f2 \u0627\u0634 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646 \u0648 \u0647\u0645\u06cc\u0646\u200c\u0647\u0627 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0634\u062f' : '\u062f\u0631\u0635\u062f\u0647\u0627\u06cc 1X \u0648 X2 \u062e\u0648\u062f PrimaTips (' + pc(d.p['1X']) + ' \u0648 ' + pc(d.p.X2) + ') \u0628\u0627 \u06f1X\u06f2 \u0627\u0634 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646 (1X \u0648 X2 \u0647\u0631 \u062f\u0648 \u0634\u0627\u0645\u0644 \u0645\u0633\u0627\u0648\u06cc\u0646\u060c \u067e\u0633 \u062c\u0645\u0639\u0634\u0648\u0646 \u0646\u0628\u0627\u06cc\u062f \u06f1\u06f0\u06f0\u066a \u0628\u0634\u0647). \u0628\u0631\u0627\u06cc \u0647\u0645\u06cc\u0646 \u0627\u0632 \u062c\u0645\u0639 \u06f1X\u06f2 \u062f\u0648\u0628\u0627\u0631\u0647 \u062d\u0633\u0627\u0628 \u0634\u062f');
             var PTr = {}, MDr = null;
             for (k in P) PTr[k] = P[k];
+            if (d.st && d.id) { var xt = XI[d.id] ? XI[d.id].at || 0 : 0; if (!d._mc || d._mc.x != xt) { var M2 = stModel(d.st, d.id, d.sw); if (M2 && d.sw) M2.p = ptSwap(M2.p); d._mc = { x: xt, m: M2 }; } if (d._mc.m) d.m = d._mc.m; }
             if (d.m && d.m.p) {
               MDr = d.m.p;
               PTK.forEach(function (z) { var a = PTr[z[0]], b = MDr[z[0]], q = z[0]; if (a !== undefined && b !== undefined) P[q] = PT_W * a + (1 - PT_W) * b; else if (b !== undefined) P[q] = b; });
@@ -4013,17 +4146,85 @@ jobs:
             CAUC = { t: Date.now(), s: s }; return s;
           }
           function isCau(k) { return !!cauSet()[k]; }
-          function cauP(k, p, q) { if (p === null || p === undefined || !isCau(k)) return p; return (q !== null && q !== undefined) ? 0.5 * p + 0.5 * q : p * 0.92; }
+          function cauP(k, p, q) { return anc(k, p, q); }
           function cauEV(k) { return isCau(k) ? 0.10 : 0.05; }
           function cauED(k) { return isCau(k) ? 0.08 : 0.05; }
           function cauL(k, l) { return (isCau(k) ? '\ud83e\uddca ' : '') + l; }
+          /* market anchoring (update 39): the market is the base, the model moves it only by its weight (logit blend). the weight starts at 30% and adapts to how the shadow bets score against the market.
+             cautious markets get half the weight. per-market calibration from 30+ shadow results. */
+          function lgt(x) { x = clp(x, 0.01, 0.99); return Math.log(x / (1 - x)); }
+          function anc(k, p, q) {
+            if (p === null || p === undefined || isNaN(p)) return p;
+            var w = shCal().w * (isCau(k) ? 0.5 : 1), r = p;
+            if (q !== null && q !== undefined && q > 0.01 && q < 0.99) r = 1 / (1 + Math.exp(-((1 - w) * lgt(q) + w * lgt(p))));
+            else if (isCau(k)) r = p * 0.92;
+            var c = shCal().c[k]; if (c) r = clp(r * c, 0.01, 0.97);
+            return r;
+          }
+          /* \ud83d\udc8e only when: odds 1.45+, final EV +0.03 (+0.06 cautious), and the raw model is 5-15% above the market (8-15% cautious). more than 15% usually means the market knows something */
+          function valOK(k, pr, ev, q, o, ag) {
+            if (!o || o < 1.45 || ag || ev === null || ev === undefined || ev < (isCau(k) ? 0.06 : 0.03)) return 0;
+            if (q !== null && q !== undefined && pr !== null && pr !== undefined) { var g = pr - q; if (g < (isCau(k) ? 0.08 : 0.05) || g > 0.15) return 0; }
+            return 1;
+          }
+          /* ---------- shadow bets (update 39): every \ud83d\udc8e the app shows is logged with a virtual 1 coin, so the model gets judged on hundreds of results ---------- */
+          var SH = ld('shadow', []), SHC = null;
+          function shAdd(m, k, o, pr, pf, q, src) {
+            if (!m || !m.id || started(m) || !o) return;
+            var id = m.id + '|' + k, now = Date.now(), e = null, i;
+            for (i = 0; i < SH.length; i++) if (SH[i].id == id) { e = SH[i]; break; }
+            if (e) { if (e.res != 'p') return; if (e.o == r2(o) && Math.abs(e.pr - pr) < 0.005) return; e.o = r2(o); e.pr = Math.round(pr * 1000) / 1000; e.pf = Math.round(pf * 1000) / 1000; e.q = q === null ? null : Math.round(q * 1000) / 1000; e.t = now; }
+            else {
+              SH.push({ id: id, mid: m.id, lg: m.lg, home: m.home, away: m.away, time: m.time, k: k, o: r2(o), pr: Math.round(pr * 1000) / 1000, pf: Math.round(pf * 1000) / 1000, q: q === null ? null : Math.round(q * 1000) / 1000, src: src, t: now, res: 'p' });
+              if (SH.length > 800) { var keep = SH.filter(function (x) { return x.res == 'p'; }), done = SH.filter(function (x) { return x.res != 'p'; }); SH = done.slice(done.length - (800 - keep.length)).concat(keep); }
+            }
+            SHC = null; sv('shadow', SH);
+          }
+          function shSettle() {
+            var now = Date.now(), ch = false;
+            SH.forEach(function (x) {
+              if (x.res != 'p') return;
+              var L = LIVE[x.mid], k = new Date(x.time).getTime();
+              if (L && L.pp) { x.res = 'v'; x.score = 'PP'; ch = true; return; }
+              if (L && L.st == 'post') { x.res = resX(x.k, L.hs, L.as); x.score = L.hs + '-' + L.as; ch = true; return; }
+              if (now - k > 84 * 3600000) { x.res = 'v'; ch = true; }
+            });
+            if (ch) { SHC = null; sv('shadow', SH); }
+          }
+          function shCal() {
+            if (SHC && Date.now() - SHC.at < 60000) return SHC;
+            var D = SH.filter(function (x) { return x.res == 'w' || x.res == 'l'; }), n = 0, llm = 0, llq = 0, bm = 0, bq = 0, g = {}, c = {}, w = 0.30;
+            D.forEach(function (x) {
+              var y = x.res == 'w' ? 1 : 0, o = g[x.k] = g[x.k] || { n: 0, w: 0, sp: 0 };
+              o.n++; o.w += y; o.sp += x.pf;
+              if (x.q === null || x.q === undefined) return;
+              n++; llm += -Math.log(clp(y ? x.pr : 1 - x.pr, 0.01, 0.99)); llq += -Math.log(clp(y ? x.q : 1 - x.q, 0.01, 0.99));
+              bm += (x.pr - y) * (x.pr - y); bq += (x.q - y) * (x.q - y);
+            });
+            if (n >= 30) w = clp(0.30 * Math.pow(llq / Math.max(llm, 0.01), 4), 0.15, 0.60);
+            for (var k in g) if (g[k].n >= 30) c[k] = clp((g[k].w + 2) / (g[k].sp + 2), 0.8, 1.2);
+            SHC = { at: Date.now(), w: w, c: c, n: n, all: D.length, llm: n ? llm / n : null, llq: n ? llq / n : null, bm: n ? bm / n : null, bq: n ? bq / n : null, g: g };
+            return SHC;
+          }
+          function shCard() {
+            var C = shCal(), P = SH.filter(function (x) { return x.res == 'p'; }).length, D = SH.filter(function (x) { return x.res == 'w' || x.res == 'l'; }), wn = 0, pnl = 0;
+            D.forEach(function (x) { if (x.res == 'w') { wn++; pnl += x.o - 1; } else pnl -= 1; });
+            var h = '<div class="box"><b>\ud83e\udd16 \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u0633\u0627\u06cc\u0647 (\u0647\u0631 \ud83d\udc8e \u0628\u0627 \u06f1 \u0633\u06a9\u0647 \u0641\u0631\u0636\u06cc)</b><div class="mut" style="line-height:1.9;margin-top:6px">' + fa(SH.length) + ' \u062b\u0628\u062a\u200c\u0634\u062f\u0647 | ' + fa(D.length) + ' \u0646\u062a\u06cc\u062c\u0647 | ' + fa(P) + ' \u0645\u0646\u062a\u0638\u0631';
+            if (D.length) h += '<br>\u062f\u0631\u0635\u062f \u0628\u0631\u062f: <b>' + fa(Math.round(wn * 100 / D.length)) + '\u066a</b> | \u0633\u0648\u062f \u0641\u0631\u0636\u06cc: <b class="ltr" style="color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '</b> (\u0628\u0627\u0632\u062f\u0647 ' + fa(Math.round(pnl * 100 / D.length)) + '\u066a)';
+            if (C.n) h += '<br>\u062e\u0637\u0627\u06cc \u0645\u062f\u0644 / \u0628\u0627\u0632\u0627\u0631 (Brier): <span class="ltr">' + C.bm.toFixed(3) + ' / ' + C.bq.toFixed(3) + '</span>';
+            h += '<br>\u0633\u0647\u0645 \u0645\u062f\u0644 \u062f\u0631 \u0628\u0631\u0627\u0628\u0631 \u0628\u0627\u0632\u0627\u0631 \u0627\u0644\u0627\u0646: <b class="gold">' + fa(Math.round(C.w * 100)) + '\u066a</b>' + (C.n >= 30 ? ' (\u0627\u0632 ' + fa(C.n) + ' \u0646\u062a\u06cc\u062c\u0647 \u062e\u0648\u062f\u06a9\u0627\u0631 \u062a\u0646\u0638\u06cc\u0645 \u0634\u062f)' : ' (\u067e\u06cc\u0634\u200c\u0641\u0631\u0636\u060c \u0628\u0639\u062f \u0627\u0632 \u06f3\u06f0 \u0646\u062a\u06cc\u062c\u0647 \u062e\u0648\u062f\u06a9\u0627\u0631 \u062a\u0646\u0638\u06cc\u0645 \u0645\u06cc\u0634\u0647)');
+            var cs = Object.keys(C.c); if (cs.length) h += '<br>\u06a9\u0627\u0644\u06cc\u0628\u0631\u0627\u0633\u06cc\u0648\u0646 \u062e\u0648\u062f\u06a9\u0627\u0631: ' + cs.map(function (k) { return mkLbl(k) + ' \u00d7' + C.c[k].toFixed(2); }).join('\u060c ');
+            h += '</div></div>';
+            return h;
+          }
           function ptRow(m, k, l, p, dv) {
-            var o = getOdd(m, k), q = o ? nv(m, k) : null, cap = k == 'U35' ? 0.7 : 0.8;
-            p = cauP(k, p, q); var pe = Math.min(p, cap);
+            var o = getOdd(m, k), q = o ? nv(m, k) : null, cap = k == 'U35' ? 0.7 : 0.8, pr = p;
+            p = anc(k, p, q); var pe = Math.min(p, cap);
             var ev = o ? pe * o - 1 : null, ed = q === null ? null : p - q, ag = against(m, k) ? true : false;
-            var v = (o && o >= 1.45 && ev >= cauEV(k) && !ag && (ed === null || ed >= cauED(k))) ? 1 : 0;
+            var v = valOK(k, pr, ev, q, o, ag);
+            if (v) shAdd(m, k, o, pr, p, q, 'pt');
             var kk = (v && o) ? kelly(p, o, W.coins, false) : null;
-            return { k: k, l: cauL(k, l) + (dv ? ' *' : ''), p: p, pe: pe, o: o, q: q, ev: ev, ed: ed, ag: ag, v: v, st: kk ? kk.s : 0, kk: kk };
+            return { k: k, l: cauL(k, l) + (dv ? ' *' : ''), pr: pr, p: p, pe: pe, o: o, q: q, ev: ev, ed: ed, ag: ag, v: v, st: kk ? kk.s : 0, kk: kk };
           }
           function ptVd(x) { return x.ag ? '\u26a0\ufe0f \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f' : (x.v ? '\ud83d\udc8e \u0627\u0631\u0632\u0634 \u062f\u0627\u0631\u0647' : (x.ev >= 0.05 ? '\ud83d\udfe1 EV \u062e\u0648\u0628\u0647 \u0648\u0644\u06cc \u0641\u06cc\u0644\u062a\u0631 \u0631\u062f \u06a9\u0631\u062f' : (x.ev >= 0 ? '\ud83d\udfe1 \u0645\u0631\u0632\u06cc' : '\u274c \u0627\u0631\u0632\u0634 \u0646\u062f\u0627\u0631\u0647'))); }
           function ptTog(id) { PTO[id] = !PTO[id]; rerender(); }
@@ -4046,9 +4247,9 @@ jobs:
               if (Math.max(s1, s2) < 1.0 && !confirm('\u26a0\ufe0f \u0627\u0633\u0645 \u062a\u06cc\u0645\u200c\u0647\u0627 \u0628\u0627 \u0647\u0645 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646.\nPrimaTips: ' + nx[0] + ' - ' + nx[1] + '\n\u062a\u0648 \u0627\u067e: ' + m.home + ' - ' + m.away + '\n\n\u0628\u0627\u0632 \u0647\u0645 \u062b\u0628\u062a \u0628\u0634\u0647\u061f')) return;
               if (s2 >= s1 + 0.5) { P.p = ptSwap(P.p); sw = true; }
             }
-            var ST = parseST(t), MD = stModel(ST);
+            var ST = parseST(t), MD = stModel(ST, id, sw);
             if (MD && sw) MD.p = ptSwap(MD.p);
-            PTD[id] = { _t: m.time, t: Date.now(), p: P.p, form: P.form, names: nx, sw: sw, raw: false, m: MD };
+            PTD[id] = { _t: m.time, t: Date.now(), p: P.p, form: P.form, names: nx, sw: sw, raw: false, m: MD, st: ST.ok ? ST : null, id: id };
             sv('ptd', PTD); PTO[id] = true;
             slip.forEach(function (x) { if (x.id != id) return; var q = ptP(id, x.pick); if (q !== null) { x.my = Math.round(q * 100); x.mp = x.my; x.src = 'pt'; } });
             sv(pk('slip'), slip);
@@ -4068,12 +4269,12 @@ jobs:
             if (!d) return h + '</div>';
             var E = ptEff(d), rows = [];
             PTK.forEach(function (z) { if (E.p[z[0]] !== undefined) { var rr = ptRow(m, z[0], z[1], E.p[z[0]], E.dv[z[0]]); rr.pt = E.pt ? E.pt[z[0]] : undefined; rr.md = E.md ? E.md[z[0]] : undefined; rows.push(rr); } });
-            if (d.m) { var mi = d.m, nm2 = d.names || []; h += '<div class="note" style="white-space:normal"><b>\ud83e\uddee \u0645\u062f\u0644 \u062e\u0648\u062f\u0645 (\u06f7\u06f5\u066a) + PrimaTips (\u06f2\u06f5\u066a)</b><br>\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631: ' + esc(nm2[d.sw ? 1 : 0] || m.home) + ' <b class="gold">' + fc(d.sw ? mi.la : mi.lh) + '</b> - <b class="gold">' + fc(d.sw ? mi.lh : mi.la) + '</b> ' + esc(nm2[d.sw ? 0 : 1] || m.away) + '<br><span class="mut">\u0648\u0631\u0648\u062f\u06cc: ' + fa(mi.n0) + ' + ' + fa(mi.n1) + ' \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631 (\u0648\u0632\u0646 \u06a9\u0627\u0647\u0634\u06cc\u060c \u0642\u062f\u0631\u062a \u062d\u0631\u06cc\u0641 \u0627\u0632 \u062c\u062f\u0648\u0644\u060c \u062e\u0648\u0646\u0647/\u0628\u06cc\u0631\u0648\u0646)' + (mi.tb ? '\u060c \u062c\u062f\u0648\u0644 \u0644\u06cc\u06af' : '') + (mi.ven ? '\u060c \u0622\u0645\u0627\u0631 \u062e\u0648\u0646\u0647 \u0648 \u0628\u06cc\u0631\u0648\u0646' : '') + (mi.h2h ? '\u060c ' + fa(mi.h2h) + ' \u0631\u0648\u062f\u0631\u0631\u0648' : '') + (mi.lg ? '\u060c \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644 \u0644\u06cc\u06af' : '') + '. \u067e\u0648\u0627\u0633\u0648\u0646 \u0628\u0627 \u0627\u0635\u0644\u0627\u062d Dixon-Coles</span></div>'; }
+            if (d.m) { var mi = d.m, nm2 = d.names || []; h += '<div class="note" style="white-space:normal"><b>\ud83e\uddee \u0645\u062f\u0644 \u062e\u0648\u062f\u0645 (\u06f7\u06f5\u066a) + PrimaTips (\u06f2\u06f5\u066a)</b><br>\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631: ' + esc(nm2[d.sw ? 1 : 0] || m.home) + ' <b class="gold">' + fc(d.sw ? mi.la : mi.lh) + '</b> - <b class="gold">' + fc(d.sw ? mi.lh : mi.la) + '</b> ' + esc(nm2[d.sw ? 0 : 1] || m.away) + '<br><span class="mut">\u0648\u0631\u0648\u062f\u06cc: ' + fa(mi.n0) + ' + ' + fa(mi.n1) + ' \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631 (\u0648\u0632\u0646 \u06a9\u0627\u0647\u0634\u06cc\u060c \u0642\u062f\u0631\u062a \u062d\u0631\u06cc\u0641 \u0627\u0632 \u062c\u062f\u0648\u0644\u060c \u062e\u0648\u0646\u0647/\u0628\u06cc\u0631\u0648\u0646)' + (mi.tb ? '\u060c \u062c\u062f\u0648\u0644 \u0644\u06cc\u06af' : '') + (mi.ven ? '\u060c \u0622\u0645\u0627\u0631 \u062e\u0648\u0646\u0647 \u0648 \u0628\u06cc\u0631\u0648\u0646' : '') + (mi.h2h ? '\u060c ' + fa(mi.h2h) + ' \u0631\u0648\u062f\u0631\u0631\u0648' : '') + (mi.lg ? '\u060c \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644 \u0644\u06cc\u06af' : '') + '. \u067e\u0648\u0627\u0633\u0648\u0646 \u0628\u0627 \u0627\u0635\u0644\u0627\u062d Dixon-Coles<br>\u00ab\u0646\u0647\u0627\u06cc\u06cc\u00bb = \u062a\u0631\u06a9\u06cc\u0628 \u06f7\u06f5/\u06f2\u06f5 \u06a9\u0647 \u0628\u0639\u062f \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0644\u0646\u06af\u0631 \u0634\u062f\u0647 (\u0633\u0647\u0645 \u0645\u062f\u0644 ' + fa(Math.round(shCal().w * 100)) + '\u066a). \ud83d\udc8e \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0645\u062f\u0644 \u06f5 \u062a\u0627 \u06f1\u06f5\u066a \u0628\u0627\u0644\u0627\u062a\u0631 \u0627\u0632 \u0628\u0627\u0632\u0627\u0631 \u0628\u0627\u0634\u0647</span></div>'; }
             E.warns.forEach(function (t) { h += '<div class="warn">\u26a0\ufe0f ' + esc(t) + '</div>'; });
             if (E.bad) h += '<div class="quick" style="margin-top:4px"><button onclick="ptRaw(\'' + m.id + '\')">' + (d.raw ? '\u21a9\ufe0f \u0628\u0631\u06af\u0631\u062f \u0628\u0647 \u062d\u0633\u0627\u0628 \u0627\u0632 \u06f1X\u06f2' : '\u2699\ufe0f \u0647\u0645\u0648\u0646 \u06f1X \u0648 X2 \u062e\u0648\u062f PrimaTips \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0628\u0634\u0647') + '</button></div>';
             if (d.sw) h += '<div class="mut">\u062c\u0627\u06cc \u0645\u06cc\u0632\u0628\u0627\u0646 \u0648 \u0645\u0647\u0645\u0627\u0646 \u0646\u0633\u0628\u062a \u0628\u0647 PrimaTips \u0639\u0648\u0636 \u0634\u062f (\u06f1 \u0648 \u06f2\u060c 1X \u0648 X2)</div>';
             h += '<div class="mut" style="margin-top:6px">\u0628\u0627\u0646\u06a9\u0631\u0648\u0644: ' + fc(W.coins) + ' \u0633\u06a9\u0647 | \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc: EV\u00d7\u06f1\u06f0\u06f0 \u0633\u06a9\u0647\u060c \u0646\u0635\u0641 \u0628\u0631\u0627\u06cc \u0636\u0631\u06cc\u0628 \u0628\u0627\u0644\u0627\u06cc \u06f2.\u06f7 \u0648 \u06cc\u06a9\u200c\u0686\u0647\u0627\u0631\u0645 \u0628\u0627\u0644\u0627\u06cc \u06f3.\u06f7\u060c \u0628\u0627 \u0633\u0648\u062f \u0633\u0631\u0645\u0627\u06cc\u0647 \u0628\u0627\u0644\u0627\u06cc \u06f1\u06f0\u06f0\u06f0 \u0628\u06cc\u0634\u062a\u0631 \u0645\u06cc\u0634\u0647</div>';
-            h += '<table class="tbl"><tr><th>\u0628\u0627\u0632\u0627\u0631</th>' + (d.m ? '<th>PT</th><th>\u0645\u062f\u0644</th><th>\u062a\u0631\u06a9\u06cc\u0628</th>' : '<th>PrimaTips</th><th>\u0648\u0627\u0642\u0639\u06cc</th>') + '<th>\u0636\u0631\u06cc\u0628</th><th>EV</th><th>\u0645\u0628\u0644\u063a</th></tr>';
+            h += '<table class="tbl"><tr><th>\u0628\u0627\u0632\u0627\u0631</th>' + (d.m ? '<th>PT</th><th>\u0645\u062f\u0644</th><th>\u0646\u0647\u0627\u06cc\u06cc</th>' : '<th>PrimaTips</th><th>\u0648\u0627\u0642\u0639\u06cc</th>') + '<th>\u0636\u0631\u06cc\u0628</th><th>EV</th><th>\u0645\u0628\u0644\u063a</th></tr>';
             rows.forEach(function (x) {
               var ec = x.ev === null ? '-' : '<b class="ltr" style="color:' + (x.ev >= 0.05 ? 'var(--green)' : (x.ev >= 0 ? 'var(--gold)' : 'var(--red)')) + '">' + (x.ev >= 0 ? '+' : '') + x.ev.toFixed(2) + '</b>';
               h += '<tr' + (x.v ? ' class="best"' : '') + ' onclick="mAdd(\'' + m.id + '\',\'' + x.k + '\')"><td>' + (x.v ? '\ud83d\udc8e ' : '') + (x.ag ? '\u26a0\ufe0f ' : '') + '<span class="ltr">' + x.l + '</span></td>' + (d.m ? '<td>' + (x.pt !== undefined ? pc(x.pt) : '-') + '</td><td>' + (x.md !== undefined && x.md !== null ? pc(x.md) : '-') + '</td><td><b>' + pc(x.p) + '</b></td>' : '<td><b>' + pc(x.p) + '</b></td><td class="gold">' + fo2(x.p > 0 ? 1 / x.p : 0) + '</td>') + '<td>' + (x.o ? x.o.toFixed(2) : '-') + '</td><td>' + ec + '</td><td>' + (x.st ? '<b class="gold">' + fa(x.st) + '</b>' : '-') + '</td></tr>';
