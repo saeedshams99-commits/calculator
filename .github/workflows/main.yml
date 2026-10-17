@@ -1286,50 +1286,78 @@ jobs:
             if (!XI[id] && !started(MATCHES[id])) xFetch(id, false);
           }
           function closeM() { SEL = null; renderDet(); scrRestore(SCR.m || 0); }
-          /* ---------- AI master football analysis prompt (update 40) ---------- */
+          /* ---------- AI master football analysis prompt (update 43: odds-first, real odds only) ---------- */
+          function aiGetRealOdd(m, p) {
+            var mn = MAN[m.id];
+            if (mn && mn[p] && Number(mn[p]) > 1) return {v:Number(mn[p]), source:'saved_in_app', at:mn._oddsAt || null};
+            if (p === '1' && m.h && Number(m.h) > 1) return {v:Number(m.h), source:'match_feed', at:m.oddsAt || null};
+            if (p === 'X' && m.d && Number(m.d) > 1) return {v:Number(m.d), source:'match_feed', at:m.oddsAt || null};
+            if (p === '2' && m.a && Number(m.a) > 1) return {v:Number(m.a), source:'match_feed', at:m.oddsAt || null};
+            if (p === 'O25' && m.ov && Number(m.ov) > 1) return {v:Number(m.ov), source:'match_feed', at:m.oddsAt || null};
+            if (p === 'U25' && m.un && Number(m.un) > 1) return {v:Number(m.un), source:'match_feed', at:m.oddsAt || null};
+            var x = exOf(m.id);
+            if (x && x.o && x.o[p] && Number(x.o[p]) > 1) return {v:Number(x.o[p]), source:'external_odds_feed', at:x.at || null};
+            return null;
+          }
           function aiPromptCopy(id) {
             var m = MATCHES[id]; if (!m) return;
             var date = 'NA'; try { date = new Date(m.time).toISOString().slice(0, 10); } catch (e) {}
-            var mk = [['1','1X2 HOME'],['X','1X2 DRAW'],['2','1X2 AWAY'],['1X','DOUBLE CHANCE 1X'],['X2','DOUBLE CHANCE X2'],['12','DOUBLE CHANCE 12'],['O15','OVER 1.5'],['U15','UNDER 1.5'],['O25','OVER 2.5'],['U25','UNDER 2.5'],['O35','OVER 3.5'],['U35','UNDER 3.5'],['BY','BTTS YES'],['BN','BTTS NO']];
-            var odds = [];
-            mk.forEach(function (x) { var o = getOdd(m, x[0]); if (o && o > 1) odds.push(x[1] + '=' + Number(o).toFixed(2)); });
+            var mk = [
+              ['1','1X2','HOME','NA'],['X','1X2','DRAW','NA'],['2','1X2','AWAY','NA'],
+              ['1X','DOUBLE_CHANCE','1X','NA'],['X2','DOUBLE_CHANCE','X2','NA'],['12','DOUBLE_CHANCE','12','NA'],
+              ['O15','TOTAL_GOALS','OVER','1.5'],['U15','TOTAL_GOALS','UNDER','1.5'],
+              ['O25','TOTAL_GOALS','OVER','2.5'],['U25','TOTAL_GOALS','UNDER','2.5'],
+              ['O35','TOTAL_GOALS','OVER','3.5'],['U35','TOTAL_GOALS','UNDER','3.5'],
+              ['BY','BTTS','YES','NA'],['BN','BTTS','NO','NA']
+            ];
+            var odds = [], count = 0, savedAt = null;
+            mk.forEach(function (x) {
+              var o = aiGetRealOdd(m, x[0]);
+              if (!o) return;
+              count++;
+              if (o.at && (!savedAt || o.at > savedAt)) savedAt = o.at;
+              odds.push('ODDS|market=' + x[1] + '|selection=' + x[2] + '|line=' + x[3] + '|odds=' + Number(o.v).toFixed(2) + '|source=' + o.source + '|captured_at=' + (o.at ? new Date(o.at).toISOString() : 'NA'));
+            });
+            if (!count) {
+              alert('⛔ هنوز هیچ ضریب واقعی برای این مسابقه در بت فوتبال ثبت نشده است. اول از صفحه مسابقه، ضرایب را از بت‌وانا کپی و با دکمه ورود ضرایب ذخیره کن؛ سپس دوباره «کپی دستور تحلیل جامع هوش مصنوعی» را بزن.');
+              return;
+            }
+            if (!confirm('برای این مسابقه ' + count + ' ضریب واقعیِ ذخیره‌شده پیدا شد. فقط همین ضرایب به هوش مصنوعی ارسال می‌شوند؛ ضریب‌های مشتق‌شده یا حدسی ارسال نمی‌شوند. ادامه می‌دهی؟')) return;
             var q = [
-              'MASTER FOOTBALL ANALYSIS & VALUE BET PROMPT',
-              'نقش: تحلیلگر فوتبال و مدل‌ساز آماری. تحلیل مستقل انجام بده؛ هیچ نتیجه یا شرطی را به اجبار پیشنهاد نکن.',
+              'MASTER FOOTBALL ANALYSIS & VALUE BET PROMPT — ODDS FIRST',
+              'نقش: تحلیلگر فوتبال و مدل‌ساز آماری. احتمال مستقل را از داده‌ها بساز؛ ضرایب بازار را جایگزین احتمال مدل نکن.',
               'MATCH|league=' + (m.lg || 'NA') + '|date=' + date + '|home=' + m.home + '|away=' + m.away,
-              'ضریب‌های واقعی ثبت‌شده در اپ (اگر وجود دارند؛ زمان دریافت ممکن است با زمان فعلی فرق کند): ' + (odds.length ? odds.join(' ; ') : 'NA - ضریب واقعی ثبت نشده است.'),
-              '',
+              'ODDS_INPUT_COUNT=' + count,
+              'ODDS_CAPTURED_AT=' + (savedAt ? new Date(savedAt).toISOString() : 'زمان ثبت برخی ضرایب در نسخه قبلی اپ موجود نیست؛ زمان دقیق را فرض نکن.'),
+              'REAL_ODDS_BEGIN', odds.join('\n'), 'REAL_ODDS_END', '',
+              'قانون حیاتی ضرایب: فقط سطرهای ODDS بین REAL_ODDS_BEGIN و REAL_ODDS_END ضرایب ورودی معتبر هستند. هیچ ضریب دیگری را از حافظه، سایت پیش‌بینی، یا با محاسبه از بازار دیگر جایگزین نکن. اگر برای بازاری ضریب واقعی نداریم، آن بازار را در بخش BET وارد نکن. برای هر ضریب ارائه‌شده، market/selection/line/odds را دقیقاً حفظ کن.',
               '۱) اطلاعات به‌روز را از منابع معتبر بررسی کن: لیگ/کشور، زمان و منطقه زمانی بازی، ضرایب و زمان ثبت، منابع و کامل‌بودن داده. اگر جست‌وجوی زنده نداری، صریح بگو. هیچ داده‌ای را جعل نکن.',
               '۲) آمار هر دو تیم را جداگانه تحلیل کن: ۵، ۱۰، ۲۵ و در صورت وجود تا ۵۰ بازی؛ خانه/خارج؛ گل زده و خورده؛ xG/xGA فقط با داده معتبر؛ شوت، شوت در چارچوب، موقعیت بزرگ، نرخ تبدیل، کلین‌شیت، BTTS، Over/Under، قدرت حریف و میانگین لیگ. اندازه نمونه واقعی و روش وزن‌دهی بازی‌های جدیدتر را توضیح بده.',
               '۳) قبل از تعیین درصدها، عوامل زمینه‌ای را بررسی و اثرشان را واقعاً در مدل اعمال کن: مربیان و تغییر مربی، تاکتیک و تطابق سبک‌ها، ترکیب احتمالی/رسمی، مصدومان و محرومان و غایبان مشکوک، به‌ویژه دروازه‌بان و بازیکنان کلیدی، عمق نیمکت و چرخش؛ آب‌وهوا در محل و زمان مسابقه و وضعیت زمین؛ خستگی، استراحت، سفر و فشردگی؛ انگیزه و وضعیت جدول؛ داور و آمار کارت/پنالتی در صورت نمونه کافی؛ اخبار و حواشی فقط با منبع معتبر؛ رودررو با وزن محدود؛ حرکت ضرایب و اختلاف قیمت بازار.',
-              'برای هر عامل مهم، منبع/زمان بررسی، قطعی یا احتمالی بودن، میزان اطمینان و اثر مورد انتظار بر گل‌های مورد انتظار یا احتمال‌ها را مشخص کن. شایعه را واقعیت تلقی نکن. اگر داده‌ای پیدا نشد، NA/غیرقابل‌تأیید بنویس و برای آن اثر ساختگی در مدل وارد نکن.',
-              '۴) احتمال‌ها را مستقل از ضرایب بازار بساز. در صورت کفایت داده، از Poisson یا Dixon-Coles یا روش آماری مناسب استفاده کن؛ مزیت میزبانی، قدرت حمله/دفاع، کیفیت حریف و نرخ گل لیگ را لحاظ کن. سپس سازگاری احتمالات را کنترل کن: مجموع HOME/DRAW/AWAY برابر 100% و بازارهای گل و BTTS با مدل گل مورد انتظار سازگار باشند. بازار نباید جایگزین احتمال مستقل شود.',
-              '۵) محاسبه Value Bet فقط برای بازارهایی که ضریب واقعی و قابل بررسی دارند: ضریب اعشاری باید حداقل 2.10 باشد؛ احتمال سربه‌سر=1/odds؛ fair odds=1/model probability؛ EV%=(model probability*odds-1)*100؛ احتمال بازار بدون حاشیه را فقط اگر ضرایب کافی داری حساب کن. شرط اولیه واجدشرایط‌شدن EV حداقل +5% است؛ عدم‌قطعیت و EV محافظه‌کارانه را در صورت امکان لحاظ کن. اگر ارزش فقط با فرض خوش‌بینانه حاصل می‌شود، رد کن. بازارهای هم‌بسته را مستقل فرض نکن. هیچ ضریب ناموجودی را حدس نزن.',
-              '۶) برای هر بازار قابل ارزیابی کیفیت داده، اطمینان، دلایل موافق، عوامل مخالف، ریسک ابطال و حساسیت به ترکیب/غایبان را گزارش کن. اگر گزینه‌ای واجد شرایط نیست، صریحاً NO_QUALIFIED_BETS بده.',
-              '',
-              '۷) خروجی نهایی را به فارسی توضیح بده؛ اما حتماً یک بلوک ماشین‌خوان مستقل با کلیدهای انگلیسی و اعداد اعشاری نقطه‌دار تولید کن:',
+              'برای هر عامل مهم، منبع/زمان بررسی، قطعی یا احتمالی بودن، میزان اطمینان و اثر مورد انتظار بر گل‌های مورد انتظار یا احتمال‌ها را مشخص کن. اگر داده‌ای پیدا نشد، NA/غیرقابل‌تأیید بنویس و اثر ساختگی وارد نکن.',
+              '۴) احتمال‌ها را مستقل از ضرایب بازار بساز. در صورت کفایت داده، از Poisson یا Dixon-Coles یا روش مناسب استفاده کن؛ مزیت میزبانی، قدرت حمله/دفاع، کیفیت حریف و نرخ گل لیگ را لحاظ کن. مجموع HOME/DRAW/AWAY باید تقریباً 100% و بازارهای گل و BTTS باید با مدل گل مورد انتظار سازگار باشند.',
+              '۵) فقط بازارهای دارای ضریب واقعی در REAL_ODDS_BEGIN/END را برای Value Bet ارزیابی کن. برای هر کدام: احتمال سربه‌سر=1/odds؛ fair odds=1/model probability؛ EV%=(model probability*odds-1)*100. احتمال بازار بدون حاشیه را فقط با ضرایب کافی محاسبه کن. حداقل ضریب واجدشرایط 2.10 و حداقل EV برابر +5% است. عدم‌قطعیت، EV محافظه‌کارانه، هم‌بستگی بازارها و حساسیت به ترکیب را در نظر بگیر. احتمال بالا به‌تنهایی Value Bet نیست.',
+              '۶) برای هر بازار دارای ضریب واقعی و احتمال قابل دفاع یک سطر BET بساز، حتی اگر status=SKIP باشد؛ مقدار odds باید دقیقاً با ورودی یکسان باشد. اگر هیچ گزینه‌ای واجد شرایط نشد، سطرهای BET با status=SKIP را حفظ کن و NO_QUALIFIED_BETS را هم اضافه کن. هرگز BET با status=QUALIFIED را هم‌زمان با NO_QUALIFIED_BETS تولید نکن. اگر هیچ ضریب واقعی در ورودی نیست، به‌جای هر BET صریحاً بگو ضرایب ورودی موجود نیستند.',
+              '۷) خروجی نهایی فارسی باشد، همراه بلوک ماشین‌خوان زیر با کلیدهای انگلیسی و اعداد اعشاری نقطه‌دار:',
               'BEGIN_VALUE_BETS',
               'MATCH|league=' + (m.lg || 'NA') + '|date=' + date + '|home=' + m.home + '|away=' + m.away,
               'DATA_STATUS|quality=GOOD/MEDIUM/POOR|verified_sources=...|missing_data=...',
-              'برای هر بازار دارای ضریب واقعی یک سطر BET تولید کن: BET|market=1X2/TOTAL_GOALS/BTTS/HANDICAP/TEAM_TOTAL/FIRST_HALF|selection=...|line=NA یا مقدار واقعی|odds=...|model_probability_pct=...|market_probability_no_vig_pct=... یا NA|fair_odds=...|ev_pct=...|conservative_ev_pct=... یا NA|confidence=HIGH/MEDIUM/LOW|status=QUALIFIED/SKIP',
-              'برای تمام بازارهایی که ضریب واقعی و احتمال قابل دفاع دارند، سطر BET نگه دار؛ status را برای هر سطر جداگانه QUALIFIED یا SKIP تعیین کن. اگر حتی یک گزینه QUALIFIED نیست، علاوه بر سطرهای BET با status=SKIP، دقیقاً این سطر را هم اضافه کن: NO_QUALIFIED_BETS|reason=No selection satisfied the odds, EV and evidence thresholds. هرگز سطر QUALIFIED را هم‌زمان با NO_QUALIFIED_BETS تولید نکن.',
-              'END_VALUE_BETS',
-              '',
-              '۸) برای سازگاری با واردکننده درصدهای بت فوتبال، بعد از بلوک بالا دقیقاً این بخش را هم تولید کن. درصدها باید احتمال‌های نهایی مدل خودت باشند، نه کپی درصدهای یک سایت. از درصدهای عددی با علامت % استفاده کن؛ مجموع 1X2 تقریباً 100 باشد. اگر بازار قابل برآورد نیست، از بهترین برآورد مستدل با ذکر محدودیت استفاده کن و داده ساختگی ادعا نکن.',
-              'APP_IMPORT_START',
-              'Standard 1X2', 'Probability', 'HOME_PERCENT% DRAW_PERCENT% AWAY_PERCENT%',
+              'برای هر بازار موجود در ورودی که احتمال قابل دفاع دارد: BET|market=1X2/TOTAL_GOALS/BTTS/HANDICAP/TEAM_TOTAL/FIRST_HALF/DOUBLE_CHANCE|selection=...|line=NA یا مقدار واقعی|odds=ضریب دقیق ورودی|model_probability_pct=...|market_probability_no_vig_pct=... یا NA|fair_odds=...|ev_pct=...|conservative_ev_pct=... یا NA|confidence=HIGH/MEDIUM/LOW|status=QUALIFIED/SKIP',
+              'اگر هیچ گزینه‌ای واجد شرایط نیست: NO_QUALIFIED_BETS|reason=No selection satisfied the odds, EV and evidence thresholds.',
+              'END_VALUE_BETS', '',
+              '۸) برای واردکردن درصدها در نسخه فعلی بت فوتبال، این بخش را هم دقیقاً تکمیل کن. این درصدها باید خروجی مدل مستقل باشند، نه کپی ضرایب یا احتمال‌های یک سایت:',
+              'APP_IMPORT_START', 'Standard 1X2', 'Probability', 'HOME_PERCENT% DRAW_PERCENT% AWAY_PERCENT%',
               'Double Chance', 'Probability', '1X_PERCENT% X2_PERCENT%',
               'Over/Under 1.5', 'Probability', 'OVER15_PERCENT% UNDER15_PERCENT%',
               'Over/Under 2.5', 'Probability', 'OVER25_PERCENT% UNDER25_PERCENT%',
               'Over/Under 3.5', 'Probability', 'OVER35_PERCENT% UNDER35_PERCENT%',
-              'Both Teams To Score', 'Probability', 'YES_PERCENT% NO_PERCENT%',
-              'APP_IMPORT_END',
-              'در بخش APP_IMPORT_START/END فقط درصدهای نهایی را جایگزین عبارت‌های نمونه کن و متن دیگری داخل این بخش نگذار. در صورت پاسخ نامطمئن، محدودیت را بیرون از این بخش توضیح بده. هیچ سود یا نتیجه‌ای تضمین‌شده نیست.'
+              'Both Teams To Score', 'Probability', 'YES_PERCENT% NO_PERCENT%', 'APP_IMPORT_END',
+              'در بخش APP_IMPORT_START/END فقط درصدهای نهایی عددی را جایگزین عبارت‌های نمونه کن؛ هیچ متن توضیحی داخل آن نگذار. بیرون از بلوک، منابع، ریسک‌ها و خلاصه فارسی را بنویس. سود تضمین‌شده نیست.'
             ].join('\n');
-            try { if (window.Android && Android.setClip) { Android.setClip(q); toast('📋 دستور تحلیل جامع و محاسبه درصدها کپی شد؛ آن را برای هوش مصنوعی بفرست.'); return; } } catch (e) {}
+            try { if (window.Android && Android.setClip) { Android.setClip(q); toast('📋 دستور همراه ' + count + ' ضریب واقعی کپی شد؛ آن را به هوش مصنوعی بده.'); return; } } catch (e) {}
             prompt('متن زیر را کپی کن:', q);
           }
-          
+
           /* ---------- AI Value Bet importer (update 41): parse BEGIN_VALUE_BETS separately from PrimaTips ---------- */
           var AIRES = ld('aires', {});
                     function aiField(line, key) {
@@ -2521,7 +2549,7 @@ jobs:
             v = String(v).trim();
             if (!v) delete mn[p];
             else { var n = num(v); if (!(n >= 1.01 && n < 1000)) { toast('\u0636\u0631\u06cc\u0628 \u0628\u0627\u06cc\u062f \u0639\u062f\u062f\u06cc \u0645\u062b\u0644 \u06f1.\u06f8\u06f5 \u0628\u0627\u0634\u0647'); return; } mn[p] = r2(n); }
-            mn._t = m.time; MAN[id] = mn; sv('man', MAN);
+            mn._t = m.time; mn._oddsAt = Date.now(); MAN[id] = mn; sv('man', MAN);
             var ch = false;
             slip.forEach(function (x) { if (x.id != id) return; var o = getOdd(m, x.pick); if (o && o != x.odd) { x.odd = o; var q = nv(m, x.pick); x.nv = q === null ? null : Math.round(q * 1000) / 1000; ch = true; } });
             if (ch) { sv(pk('slip'), slip); toast('\u0636\u0631\u06cc\u0628 \u062a\u0648 \u0628\u0644\u06cc\u0637 \u0647\u0645 \u0628\u0631\u0648\u0632 \u0634\u062f'); }
@@ -2575,7 +2603,7 @@ jobs:
               mn[k] = P.o[k]; c++;
               if (k.charAt(0) == 'H' || (/^[OU]\d\d$/.test(k) && { O15: 1, U15: 1, O25: 1, U25: 1, O35: 1, U35: 1 }[k] !== 1)) extra = true;
             }
-            mn._t = m.time; MAN[id] = mn; sv('man', MAN);
+            mn._t = m.time; mn._oddsAt = Date.now(); MAN[id] = mn; sv('man', MAN);
             slip.forEach(function (x) { if (x.id != id) return; var o = getOdd(m, x.pick); if (o && o != x.odd) { x.odd = o; var q = nv(m, x.pick); x.nv = q === null ? null : Math.round(q * 1000) / 1000; } });
             sv(pk('slip'), slip);
             if (extra) HP[id] = true;
