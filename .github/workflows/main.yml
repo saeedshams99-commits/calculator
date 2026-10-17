@@ -1330,13 +1330,73 @@ jobs:
             prompt('متن زیر را کپی کن:', q);
           }
 
+          /* ---------- AI Value Bet importer (update 41): parse BEGIN_VALUE_BETS separately from PrimaTips ---------- */
+          var AIRES = ld('aires', {});
+          function aiField(line, key) {
+            var parts = String(line || '').split('|');
+            for (var i=0;i<parts.length;i++) { var at=parts[i].indexOf('='); if (at>0 && parts[i].slice(0,at).trim().toLowerCase()===String(key).toLowerCase()) return parts[i].slice(at+1).trim(); }
+            return null;
+          }
+          function aiNum(v) { if (v===null || v===undefined || /^NA$/i.test(String(v).trim()) || String(v).trim()==='') return null; var n=parseFloat(String(v).replace('%','').replace(',','.')); return isFinite(n)?n:null; }
+          function aiParseValueBets(txt) {
+            var lines=String(txt||'').split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean), inside=false, data={match:{},quality:'NA',sources:'NA',missing:'NA',bets:[],none:null};
+            lines.forEach(function(line){
+              if (line==='BEGIN_VALUE_BETS') { inside=true; return; }
+              if (line==='END_VALUE_BETS') { inside=false; return; }
+              if (!inside) return;
+              if (/^MATCH\|/i.test(line)) { data.match={league:aiField(line,'league')||'NA',date:aiField(line,'date')||'NA',home:aiField(line,'home')||'NA',away:aiField(line,'away')||'NA'}; return; }
+              if (/^DATA_STATUS\|/i.test(line)) { data.quality=(aiField(line,'quality')||'NA').toUpperCase(); data.sources=aiField(line,'verified_sources')||'NA'; data.missing=aiField(line,'missing_data')||'NA'; return; }
+              if (/^NO_QUALIFIED_BETS\|/i.test(line)) { data.none=aiField(line,'reason')||'هیچ گزینه واجد شرایطی گزارش نشده است'; return; }
+              if (!/^BET\|/i.test(line)) return;
+              var b={market:aiField(line,'market')||'NA',selection:aiField(line,'selection')||'NA',line:aiField(line,'line')||'NA',odds:aiNum(aiField(line,'odds')),prob:aiNum(aiField(line,'model_probability_pct')),marketProb:aiNum(aiField(line,'market_probability_no_vig_pct')),fair:aiNum(aiField(line,'fair_odds')),evReported:aiNum(aiField(line,'ev_pct')),confidence:(aiField(line,'confidence')||'LOW').toUpperCase(),status:(aiField(line,'status')||'SKIP').toUpperCase(),raw:line};
+              b.ev=(b.odds!==null && b.prob!==null && b.prob>=0 && b.prob<=100)?((b.prob/100)*b.odds-1)*100:null;
+              b.fairCalc=(b.prob!==null && b.prob>0)?100/b.prob:null;
+              b.eligible=!!(b.odds!==null && b.odds>=2.10 && b.ev!==null && b.ev>=5 && b.confidence!=='LOW' && data.quality!=='POOR' && b.status==='QUALIFIED');
+              data.bets.push(b);
+            });
+            return {data:data, valid:lines.indexOf('BEGIN_VALUE_BETS')>=0 && lines.indexOf('END_VALUE_BETS')>=0};
+          }
+          function aiImportValueBets(id) {
+            var m=MATCHES[id]; if(!m) return;
+            var t=''; try { if(window.Android && Android.clip) t=Android.clip(); } catch(e) {}
+            if (!t || t.indexOf('BEGIN_VALUE_BETS')<0) t=prompt('قالب کامل خروجی هوش مصنوعی را کپی کن و اینجا Paste کن. باید شامل BEGIN_VALUE_BETS و END_VALUE_BETS باشد.','');
+            if (!t) return;
+            var parsed=aiParseValueBets(t);
+            if (!parsed.valid) { toast('قالب پیدا نشد؛ باید BEGIN_VALUE_BETS و END_VALUE_BETS داخل متن باشد.'); return; }
+            var d=parsed.data;
+            if (d.match.home!=='NA' && sim1(d.match.home,m.home)+sim1(d.match.away,m.away)<1.0 && sim1(d.match.home,m.away)+sim1(d.match.away,m.home)<1.0) {
+              if (!confirm('هشدار: نام تیم‌های قالب با مسابقه انتخاب‌شده تطابق روشنی ندارد. با این حال ذخیره شود؟')) return;
+            }
+            d.pastedAt=Date.now(); AIRES[id]=d; sv('aires',AIRES); rerender(); toast('خروجی هوش مصنوعی وارد شد و محاسبات دوباره بررسی شد.');
+          }
+          function aiImportClear(id) { delete AIRES[id]; sv('aires',AIRES); rerender(); }
+          function aiValuePanel(m) {
+            var d=AIRES[m.id];
+            var h='<div class="hpp" style="margin-top:10px"><div class="lbl">🧾 واردکردن خروجی Value Bet هوش مصنوعی</div><div class="mut" style="line-height:1.8">این بخش مخصوص قالب BEGIN_VALUE_BETS است و جدا از ورودی PrimaTips کار می‌کند. پاسخ کامل هوش مصنوعی را کپی کن و دکمه واردکردن را بزن.</div><div class="quick" style="margin-top:6px"><button class="btn blue" onclick="aiImportValueBets(\''+m.id+'\')">📥 واردکردن قالب خروجی هوش مصنوعی</button>'+(d?'<button onclick="aiImportClear(\''+m.id+'\')">🗑 پاک‌کردن نتیجه</button>':'')+'</div>';
+            if (!d) return h+'</div>';
+            h+='<div class="note" style="white-space:normal;line-height:1.8"><b>'+esc(d.match.home||m.home)+' - '+esc(d.match.away||m.away)+'</b><br>لیگ: '+esc(d.match.league||'NA')+' | تاریخ: '+esc(d.match.date||'NA')+'<br>کیفیت داده: <b>'+esc(d.quality||'NA')+'</b><br><span class="mut">منابع: '+esc(d.sources||'NA')+'<br>داده‌های مفقود: '+esc(d.missing||'NA')+'</span></div>';
+            if (d.none) h+='<div class="warn">هیچ گزینه واجد شرایطی گزارش نشده: '+esc(d.none)+'</div>';
+            if (d.bets && d.bets.length) {
+              h+='<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th>بازار</th><th>انتخاب</th><th>ضریب</th><th>احتمال مدل</th><th>ضریب منصفانه</th><th>EV محاسبه‌شده</th><th>نتیجه بررسی</th></tr></thead><tbody>';
+              d.bets.forEach(function(b){
+                var fmt=function(v,dec){return v===null||v===undefined?'NA':Number(v).toFixed(dec===undefined?2:dec);};
+                var ok=b.eligible, verdict=ok?'واجد شرایط طبق فیلتر':'رد/نیازمند بررسی';
+                if (b.odds===null || b.prob===null) verdict='اطلاعات ناکافی';
+                h+='<tr><td>'+esc(b.market)+'</td><td>'+esc(b.selection)+(b.line!=='NA'?' '+esc(b.line):'')+'</td><td>'+fmt(b.odds)+'</td><td>'+fmt(b.prob)+'%</td><td>'+fmt(b.fairCalc)+'</td><td>'+fmt(b.ev)+'%</td><td>'+verdict+'</td></tr>';
+              });
+              h+='</tbody></table></div>';
+            }
+            h+='<div class="mut" style="line-height:1.8">EV و ضریب منصفانه از روی ضریب و احتمال موجود دوباره محاسبه شده‌اند. فیلتر واجدشرایط‌بودن فقط وقتی برقرار است که ضریب حداقل 2.10، EV حداقل +5٪، اطمینان غیرپایین، کیفیت داده غیرضعیف و وضعیت خروجی QUALIFIED باشد. این بررسی، صحت داده‌های منبع یا احتمال مدل را تضمین نمی‌کند.</div>';
+            return h+'</div>';
+          }
+
           function renderDet() {
             var d = $('mdet'); if (!d) return;
             var m = SEL ? MATCHES[SEL] : null; if (SEL && !m) SEL = null;
             $('leagues').style.display = m ? 'none' : ''; $('list').style.display = m ? 'none' : '';
             if (!m) { d.innerHTML = ''; return; }
             d.innerHTML = '<div class="more" style="margin:8px 12px" onclick="closeM()">\u2192 \u0628\u0631\u06af\u0634\u062a \u0628\u0647 \u0644\u06cc\u0633\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627</div>' + card(m) +
-              '<div class="quick" style="margin:8px 12px"><button class="btn blue" onclick="aiPromptCopy(\'' + m.id + '\')">🤖 کپی دستور تحلیل جامع هوش مصنوعی</button></div>' +
+              '<div class="quick" style="margin:8px 12px"><button class="btn blue" onclick="aiPromptCopy(\'' + m.id + '\')">🤖 کپی دستور تحلیل جامع هوش مصنوعی</button></div>' + aiValuePanel(m) +
               '<div class="mut" style="padding:4px 14px;line-height:1.8">\u0627\u06cc\u0646 \u0635\u0641\u062d\u0647 \u0647\u0645\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0642\u0641\u0644 \u0645\u06cc\u200c\u0645\u0648\u0646\u0647. \u0645\u06cc\u200c\u062a\u0648\u0646\u06cc \u0628\u0631\u06cc \u062a\u0628 \ud83e\uddee \u062f\u0631\u0635\u062f \u06cc\u0627 \u0628\u0644\u06cc\u0637 \u0648 \u0628\u0631\u06af\u0631\u062f\u06cc\u060c \u0628\u0627\u0632 \u0647\u0645\u06cc\u0646\u200c\u062c\u0627\u06cc\u06cc.</div>';
           }
           function appBack() {
