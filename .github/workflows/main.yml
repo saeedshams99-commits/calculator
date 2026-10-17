@@ -1311,6 +1311,30 @@ jobs:
               ['BY','BTTS','YES','NA'],['BN','BTTS','NO','NA']
             ];
             var odds = [], count = 0, savedAt = null;
+            var loadedPT = PTD[id] || null, loadedST = loadedPT && loadedPT.st ? loadedPT.st : null;
+            var cleanAIField = function (v) { return String(v === null || v === undefined ? 'NA' : v).replace(/[|\r\n]/g, ' ').trim() || 'NA'; };
+            var historyCountHome = loadedST && loadedST.g && loadedST.g[0] ? Math.min(50, loadedST.g[0].length) : 0;
+            var historyCountAway = loadedST && loadedST.g && loadedST.g[1] ? Math.min(50, loadedST.g[1].length) : 0;
+            var historyText = 'TEAM_HISTORIES_STATUS|status=NOT_PARSED|message=No parsed PrimaTips team history was saved for this match.';
+            if (loadedST && loadedST.g) {
+              var hist = ['TEAM_HISTORIES_BEGIN'];
+              [0, 1].forEach(function (side) {
+                var teamName = loadedST.names && loadedST.names[side] ? loadedST.names[side] : (side === 0 ? m.home : m.away);
+                hist.push('TEAM_HISTORY|team=' + cleanAIField(teamName) + '|side=' + (side === 0 ? 'FIRST_PARSED_TEAM' : 'SECOND_PARSED_TEAM') + '|games_available=' + (loadedST.g[side] ? loadedST.g[side].length : 0) + '|games_included=' + (loadedST.g[side] ? Math.min(50, loadedST.g[side].length) : 0));
+                (loadedST.g[side] || []).slice(0, 50).forEach(function (g, i) {
+                  hist.push('HISTORY_GAME|team=' + cleanAIField(teamName) + '|index=' + (i + 1) + '|date=' + cleanAIField(g.d) + '|historical_home=' + cleanAIField(g.h) + '|score=' + cleanAIField(g.hs) + '-' + cleanAIField(g.as) + '|historical_away=' + cleanAIField(g.a));
+                });
+              });
+              if (loadedST.h2h && loadedST.h2h.length) {
+                hist.push('H2H_HISTORY_BEGIN');
+                loadedST.h2h.slice(0, 10).forEach(function (g, i) {
+                  hist.push('H2H_GAME|index=' + (i + 1) + '|date=' + cleanAIField(g.d) + '|home=' + cleanAIField(g.h) + '|score=' + cleanAIField(g.hs) + '-' + cleanAIField(g.as) + '|away=' + cleanAIField(g.a));
+                });
+                hist.push('H2H_HISTORY_END');
+              }
+              hist.push('TEAM_HISTORIES_END');
+              historyText = hist.join('\n');
+            }
             mk.forEach(function (x) {
               var o = aiGetRealOdd(m, x[0]);
               if (!o) return;
@@ -1319,10 +1343,16 @@ jobs:
               odds.push('ODDS|market=' + x[1] + '|selection=' + x[2] + '|line=' + x[3] + '|odds=' + Number(o.v).toFixed(2) + '|source=' + o.source + '|captured_at=' + (o.at ? new Date(o.at).toISOString() : 'NA'));
             });
             if (!count) {
-              alert('⛔ هنوز هیچ ضریب واقعی برای این مسابقه در بت فوتبال ثبت نشده است. اول از صفحه مسابقه، ضرایب را از بت‌وانا کپی و با دکمه ورود ضرایب ذخیره کن؛ سپس دوباره «کپی دستور تحلیل جامع هوش مصنوعی» را بزن.');
+              alert('⛔ هنوز هیچ ضریب واقعی برای این مسابقه در بت فوتبال ثبت نشده است. اول ضرایب واقعی را از بت‌وانا وارد و ذخیره کن؛ سپس دوباره دکمهٔ کپی دستور را بزن.');
               return;
             }
-            if (!confirm('برای این مسابقه ' + count + ' ضریب واقعیِ ذخیره‌شده پیدا شد. فقط همین ضرایب به هوش مصنوعی ارسال می‌شوند؛ ضریب‌های مشتق‌شده یا حدسی ارسال نمی‌شوند. ادامه می‌دهی؟')) return;
+            if (!historyCountHome || !historyCountAway) {
+              alert('⛔ تاریخچهٔ PrimaTips برای هر دو تیم بارگذاری نشده است. اول روی «تحلیل PrimaTips (تا ۵۰ بازی)» همین مسابقه بزن و متن کامل صفحهٔ PrimaTips را Paste کن. بعد دوباره دکمهٔ کپی دستور را بزن تا ضرایب و تاریخچه با هم به هوش مصنوعی داده شوند.');
+              return;
+            }
+            if (historyCountHome < 50 || historyCountAway < 50) {
+              if (!confirm('تاریخچهٔ موجود کاملِ ۵۰ بازی نیست: تیم اول ' + historyCountHome + ' بازی، تیم دوم ' + historyCountAway + ' بازی. فقط همین داده‌های واقعی در دستور قرار می‌گیرد و بازی گمشده ساخته نمی‌شود. ادامه بدهیم؟')) return;
+            } else if (!confirm('ضرایب واقعی: ' + count + ' | تاریخچهٔ تیم اول: ' + historyCountHome + ' بازی | تاریخچهٔ تیم دوم: ' + historyCountAway + ' بازی. این داده‌ها با هم به هوش مصنوعی کپی می‌شوند. ادامه می‌دهی؟')) return;
             var q = [
               'MASTER FOOTBALL ANALYSIS & VALUE BET PROMPT — ODDS FIRST',
               'نقش: تحلیلگر فوتبال و مدل‌ساز آماری. احتمال مستقل را از داده‌ها بساز؛ ضرایب بازار را جایگزین احتمال مدل نکن.',
@@ -1330,7 +1360,9 @@ jobs:
               'ODDS_INPUT_COUNT=' + count,
               'ODDS_CAPTURED_AT=' + (savedAt ? new Date(savedAt).toISOString() : 'زمان ثبت برخی ضرایب در نسخه قبلی اپ موجود نیست؛ زمان دقیق را فرض نکن.'),
               'REAL_ODDS_BEGIN', odds.join('\n'), 'REAL_ODDS_END', '',
+              'PARSED_PRIMATIPS_HISTORY_BEGIN', historyText, 'PARSED_PRIMATIPS_HISTORY_END', '',
               'قانون حیاتی ضرایب: فقط سطرهای ODDS بین REAL_ODDS_BEGIN و REAL_ODDS_END ضرایب ورودی معتبر هستند. هیچ ضریب دیگری را از حافظه، سایت پیش‌بینی، یا با محاسبه از بازار دیگر جایگزین نکن. اگر برای بازاری ضریب واقعی نداریم، آن بازار را در بخش BET وارد نکن. برای هر ضریب ارائه‌شده، market/selection/line/odds را دقیقاً حفظ کن.',
+              'قانون تاریخچه: اگر PARSED_PRIMATIPS_HISTORY در این متن دارای TEAM_HISTORY و HISTORY_GAME باشد، تمام بازی‌های موجود (حداکثر ۵۰ برای هر تیم) را واقعاً تحلیل کن و تعداد استفاده‌شده را گزارش بده. تیم اول/دومِ پارس‌شده را بدون شواهد به میزبان/میهمان نسبت نده؛ نام تیم‌ها را با MATCH تطبیق بده. اگر وضعیت NOT_PARSED است یا تعداد کمتر از ۵۰ است، صریحاً بگو و هیچ بازی مفقودی را جعل نکن.',
               '۱) اطلاعات به‌روز را از منابع معتبر بررسی کن: لیگ/کشور، زمان و منطقه زمانی بازی، ضرایب و زمان ثبت، منابع و کامل‌بودن داده. اگر جست‌وجوی زنده نداری، صریح بگو. هیچ داده‌ای را جعل نکن.',
               '۲) آمار هر دو تیم را جداگانه تحلیل کن: ۵، ۱۰، ۲۵ و در صورت وجود تا ۵۰ بازی؛ خانه/خارج؛ گل زده و خورده؛ xG/xGA فقط با داده معتبر؛ شوت، شوت در چارچوب، موقعیت بزرگ، نرخ تبدیل، کلین‌شیت، BTTS، Over/Under، قدرت حریف و میانگین لیگ. اندازه نمونه واقعی و روش وزن‌دهی بازی‌های جدیدتر را توضیح بده.',
               '۳) قبل از تعیین درصدها، عوامل زمینه‌ای را بررسی و اثرشان را واقعاً در مدل اعمال کن: مربیان و تغییر مربی، تاکتیک و تطابق سبک‌ها، ترکیب احتمالی/رسمی، مصدومان و محرومان و غایبان مشکوک، به‌ویژه دروازه‌بان و بازیکنان کلیدی، عمق نیمکت و چرخش؛ آب‌وهوا در محل و زمان مسابقه و وضعیت زمین؛ خستگی، استراحت، سفر و فشردگی؛ انگیزه و وضعیت جدول؛ داور و آمار کارت/پنالتی در صورت نمونه کافی؛ اخبار و حواشی فقط با منبع معتبر؛ رودررو با وزن محدود؛ حرکت ضرایب و اختلاف قیمت بازار.',
@@ -2364,7 +2396,7 @@ jobs:
             var h = '<div class="match"><div class="mt"><span>' + tag + hm(m.time) + old + ' <span class="bell" onclick="bell(\'' + m.id + '\')">' + (REM[m.id] ? '\ud83d\udd14' : '\ud83d\udd15') + '</span></span><span>' + lname(m.lg) + '</span></div>' +
               '<div class="teams"' + (SEL == m.id ? '' : ' onclick="openM(\'' + m.id + '\')"') + '><div class="tm"><span>' + esc(m.home) + '</span>' + (scc ? scc + L.hs + '</b>' : '') + '</div>' +
               '<div class="tm"><span>' + esc(m.away) + '</span>' + (scc ? scc + L.as + '</b>' : '') + '</div>' + (SEL == m.id ? '' : '<div class="mut" style="direction:rtl;text-align:right;font-weight:normal;font-size:11px">\ud83d\udc46 \u0628\u0632\u0646 \u062a\u0627 \u0635\u0641\u062d\u0647 \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0628\u0627\u0632 \u0628\u0634\u0647</div>') + '</div>' + liveBox(m);
-            if (m.fx) return h + (st ? '' : manBox(m) + xPanel(m) + mdlPanel(m) + ptPanel(m) + sPanel(m.id) + hpPanel(m)) + '</div>';
+            if (m.fx) return h + (st ? '' : manBox(m) + xPanel(m) + mdlPanel(m) + ptPanel(m) + sPanel(m.id) + hpPanel(m) + (SEL == m.id ? '' : '<div class="quick" style="margin:8px 0"><button class="btn blue" onclick="aiPromptCopy(\'' + m.id + '\')">🤖 کپی دستور تحلیل جامع هوش مصنوعی</button></div>')) + '</div>';
             h += '<div class="odds">' + ob(m, '1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646') + ob(m, 'X', '\u0645\u0633\u0627\u0648\u06cc') + ob(m, '2', '\u06f2 \u0645\u0647\u0645\u0627\u0646') + '</div>';
           if (m.d) h += '<div class="lbl">\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 (\u0628\u0631\u062f \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc)</div><div class="odds">' + ob(m, '1X', '\u06f1 \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc') + ob(m, 'X2', '\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2') + ob(m, '12', '\u06f1 \u06cc\u0627 \u06f2') + '</div>';
             if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5 \u06af\u0644') + ob(m, 'U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5 \u06af\u0644') + '</div>';
@@ -2382,6 +2414,7 @@ jobs:
               h += '<div class="more" onclick="more(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646</div>';
             } else h += '<div class="more" onclick="more(\'' + m.id + '\')">\u2795 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 (\u06af\u0644 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645\u060c \u06f1.\u06f5\u060c \u06f3.\u06f5)</div>';
             h += xPanel(m) + mdlPanel(m) + ptPanel(m) + sPanel(m.id) + hpPanel(m);
+            if (SEL != m.id) h += '<div class="quick" style="margin:8px 0"><button class="btn blue" onclick="aiPromptCopy(\'' + m.id + '\')">🤖 کپی دستور تحلیل جامع هوش مصنوعی</button></div>';
             return h + '</div>';
           }
           /* manual odds (update 14) */
@@ -4468,8 +4501,8 @@ jobs:
           function ptPanel(m) {
             if (started(m)) return '';
             var d = PTD[m.id];
-            if (!PTO[m.id]) return '<div class="more" onclick="ptTog(\'' + m.id + '\')">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 PrimaTips (\u0686\u0633\u0628\u0627\u0646\u062f\u0646)' + (d ? ' \u2705' : '') + '</div>';
-            var h = '<div class="hpp"><div class="lbl">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 PrimaTips</div><div class="mut" style="line-height:1.9">\u0635\u0641\u062d\u0647 \u0647\u0645\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0631\u0648 \u062a\u0648 PrimaTips \u06a9\u0627\u0645\u0644 \u0627\u0646\u062a\u062e\u0627\u0628 (Select all) \u0648 \u06a9\u067e\u06cc \u06a9\u0646\u060c \u0628\u0639\u062f \u00ab\u0686\u0633\u0628\u0627\u0646\u062f\u0646\u00bb \u0631\u0648 \u0628\u0632\u0646. \u0641\u0642\u0637 \u062f\u0631\u0635\u062f\u0647\u0627\u06cc \u062a\u062d\u0644\u06cc\u0644\u06cc \u062e\u0648\u0646\u062f\u0647 \u0645\u06cc\u0634\u0646 \u0648 \u0636\u0631\u0627\u06cc\u0628 \u062e\u0648\u062f PrimaTips \u0646\u0627\u062f\u06cc\u062f\u0647 \u06af\u0631\u0641\u062a\u0647 \u0645\u06cc\u0634\u0646.</div>';
+            if (!PTO[m.id]) return '<div class="more" onclick="ptTog(\'' + m.id + '\')">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 PrimaTips (\u062a\u0627 \u06f5\u06f0 \u0628\u0627\u0632\u06cc)' + (d ? ' \u2705' : '') + '</div>';
+            var h = '<div class="hpp"><div class="lbl">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 PrimaTips</div><div class="mut" style="line-height:1.9">\u0635\u0641\u062d\u0647 \u0647\u0645\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0631\u0648 \u062a\u0648 PrimaTips \u06a9\u0627\u0645\u0644 \u0627\u0646\u062a\u062e\u0627\u0628 (Select all) \u0648 \u06a9\u067e\u06cc \u06a9\u0646\u060c \u0628\u0639\u062f \u00ab\u0686\u0633\u0628\u0627\u0646\u062f\u0646\u00bb \u0631\u0648 \u0628\u0632\u0646. \u062f\u0631\u0635\u062f\u0647\u0627\u06cc \u062a\u062d\u0644\u06cc\u0644\u06cc \u0648 \u062a\u0627 \u06f5\u06f0 \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631 \u0647\u0631 \u062a\u06cc\u0645 \u062e\u0648\u0627\u0646\u062f\u0647 \u0645\u06cc\u0634\u0646 \u0648 \u0636\u0631\u0627\u06cc\u0628 \u062e\u0648\u062f PrimaTips \u0646\u0627\u062f\u06cc\u062f\u0647 \u06af\u0631\u0641\u062a\u0647 \u0645\u06cc\u0634\u0646.</div>';
             h += '<div class="quick" style="margin-top:6px"><button onclick="ptPaste(\'' + m.id + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646</button>' + (d ? '<button onclick="ptClr(\'' + m.id + '\')">\ud83e\uddf9 \u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646</button>' : '') + '<button onclick="ptTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646</button></div>';
             if (!d) return h + '</div>';
             var E = ptEff(d), rows = [];
