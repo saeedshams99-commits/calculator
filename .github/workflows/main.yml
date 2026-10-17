@@ -1201,7 +1201,7 @@ jobs:
           var BUILD = parseInt('__BUILD__', 10) || 0, REPO = '__REPO__';
           var OPENC = {}, OPENK = {}, BF = 'all', ALLK = [], OT = {};
           var reg = 'day', cur = POP[0], DF = 'all', CUR = null, CURM = false, NL = 0, MATCHES = {}, OPEN = {}, EX = {}, SPORTS = [], cbs = {}, cbn = 0;
-
+          
           function $(id) { return document.getElementById(id); }
           var LDC = LDC || {};
           function ld(k, d) {
@@ -1246,7 +1246,7 @@ jobs:
           function dayPanel(t, now) { var a = new Date(t), b = new Date(now), ak = dk(a), bk = dk(b); if (ak == bk) return true; var n = new Date(b.getTime() + 86400000); return ak == dk(n) && a.getHours() < 6; }
           function toast(t) { var e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(e._t); e._t = setTimeout(function () { e.style.display = 'none'; }, 2500); }
           function chip(t, on, act, cls) { return '<span class="chip' + (on ? ' on' : '') + (cls ? ' ' + cls : '') + '" onclick="' + act + '">' + t + '</span>'; }
-
+          
           /* profiles (update 14) */
           var PR = ld('profs', null); if (!PR || !PR.l || !PR.l.length) { PR = { cur: 'p0', l: [{ id: 'p0', n: '\ud83e\udd16 \u0628\u0627 \u06a9\u0645\u06a9 Brain' }] }; sv('profs', PR); }
           function pk2(id, k) { return id == 'p0' ? k : k + '_' + id; }
@@ -1260,7 +1260,7 @@ jobs:
           function saveAll() { sv(pk('wallet'), W); sv(pk('bets'), BETS); renderBal(); }
           function renderBal() { $('bal').innerHTML = '<span class="pf" onclick="go(\'set\')">' + esc(pn()) + '</span>\ud83e\ude99 ' + fc(W.coins); }
           function updateCnt() { $('cnt').innerHTML = slip.length ? '<span class="badge">' + fmt(slip.length) + '</span>' : ''; }
-
+          
           function go(p) {
             SCR[skey(CURP)] = scrY();
             ['matches', 'slip', 'bets', 'calc', 'set'].forEach(function (x) {
@@ -1312,7 +1312,7 @@ jobs:
               'MATCH|league=' + (m.lg || 'NA') + '|date=' + date + '|home=' + m.home + '|away=' + m.away,
               'DATA_STATUS|quality=GOOD/MEDIUM/POOR|verified_sources=...|missing_data=...',
               'برای هر بازار دارای ضریب واقعی یک سطر BET تولید کن: BET|market=1X2/TOTAL_GOALS/BTTS/HANDICAP/TEAM_TOTAL/FIRST_HALF|selection=...|line=NA یا مقدار واقعی|odds=...|model_probability_pct=...|market_probability_no_vig_pct=... یا NA|fair_odds=...|ev_pct=...|conservative_ev_pct=... یا NA|confidence=HIGH/MEDIUM/LOW|status=QUALIFIED/SKIP',
-              'اگر هیچ گزینه‌ای تمام شروط را ندارد، BET نساز و این سطر را بده: NO_QUALIFIED_BETS|reason=No selection satisfied the odds, EV and evidence thresholds.',
+              'برای تمام بازارهایی که ضریب واقعی و احتمال قابل دفاع دارند، سطر BET نگه دار؛ status را برای هر سطر جداگانه QUALIFIED یا SKIP تعیین کن. اگر حتی یک گزینه QUALIFIED نیست، علاوه بر سطرهای BET با status=SKIP، دقیقاً این سطر را هم اضافه کن: NO_QUALIFIED_BETS|reason=No selection satisfied the odds, EV and evidence thresholds. هرگز سطر QUALIFIED را هم‌زمان با NO_QUALIFIED_BETS تولید نکن.',
               'END_VALUE_BETS',
               '',
               '۸) برای سازگاری با واردکننده درصدهای بت فوتبال، بعد از بلوک بالا دقیقاً این بخش را هم تولید کن. درصدها باید احتمال‌های نهایی مدل خودت باشند، نه کپی درصدهای یک سایت. از درصدهای عددی با علامت % استفاده کن؛ مجموع 1X2 تقریباً 100 باشد. اگر بازار قابل برآورد نیست، از بهترین برآورد مستدل با ذکر محدودیت استفاده کن و داده ساختگی ادعا نکن.',
@@ -1329,67 +1329,124 @@ jobs:
             try { if (window.Android && Android.setClip) { Android.setClip(q); toast('📋 دستور تحلیل جامع و محاسبه درصدها کپی شد؛ آن را برای هوش مصنوعی بفرست.'); return; } } catch (e) {}
             prompt('متن زیر را کپی کن:', q);
           }
-
+          
           /* ---------- AI Value Bet importer (update 41): parse BEGIN_VALUE_BETS separately from PrimaTips ---------- */
           var AIRES = ld('aires', {});
-          function aiField(line, key) {
-            var parts = String(line || '').split('|');
-            for (var i=0;i<parts.length;i++) { var at=parts[i].indexOf('='); if (at>0 && parts[i].slice(0,at).trim().toLowerCase()===String(key).toLowerCase()) return parts[i].slice(at+1).trim(); }
-            return null;
-          }
-          function aiNum(v) { if (v===null || v===undefined || /^NA$/i.test(String(v).trim()) || String(v).trim()==='') return null; var n=parseFloat(String(v).replace('%','').replace(',','.')); return isFinite(n)?n:null; }
-          function aiParseValueBets(txt) {
-            var lines=String(txt||'').split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean), inside=false, data={match:{},quality:'NA',sources:'NA',missing:'NA',bets:[],none:null};
-            lines.forEach(function(line){
-              if (line==='BEGIN_VALUE_BETS') { inside=true; return; }
-              if (line==='END_VALUE_BETS') { inside=false; return; }
-              if (!inside) return;
-              if (/^MATCH\|/i.test(line)) { data.match={league:aiField(line,'league')||'NA',date:aiField(line,'date')||'NA',home:aiField(line,'home')||'NA',away:aiField(line,'away')||'NA'}; return; }
-              if (/^DATA_STATUS\|/i.test(line)) { data.quality=(aiField(line,'quality')||'NA').toUpperCase(); data.sources=aiField(line,'verified_sources')||'NA'; data.missing=aiField(line,'missing_data')||'NA'; return; }
-              if (/^NO_QUALIFIED_BETS\|/i.test(line)) { data.none=aiField(line,'reason')||'هیچ گزینه واجد شرایطی گزارش نشده است'; return; }
-              if (!/^BET\|/i.test(line)) return;
-              var b={market:aiField(line,'market')||'NA',selection:aiField(line,'selection')||'NA',line:aiField(line,'line')||'NA',odds:aiNum(aiField(line,'odds')),prob:aiNum(aiField(line,'model_probability_pct')),marketProb:aiNum(aiField(line,'market_probability_no_vig_pct')),fair:aiNum(aiField(line,'fair_odds')),evReported:aiNum(aiField(line,'ev_pct')),confidence:(aiField(line,'confidence')||'LOW').toUpperCase(),status:(aiField(line,'status')||'SKIP').toUpperCase(),raw:line};
-              b.ev=(b.odds!==null && b.prob!==null && b.prob>=0 && b.prob<=100)?((b.prob/100)*b.odds-1)*100:null;
-              b.fairCalc=(b.prob!==null && b.prob>0)?100/b.prob:null;
-              b.eligible=!!(b.odds!==null && b.odds>=2.10 && b.ev!==null && b.ev>=5 && b.confidence!=='LOW' && data.quality!=='POOR' && b.status==='QUALIFIED');
-              data.bets.push(b);
-            });
-            return {data:data, valid:lines.indexOf('BEGIN_VALUE_BETS')>=0 && lines.indexOf('END_VALUE_BETS')>=0};
-          }
-          function aiImportValueBets(id) {
-            var m=MATCHES[id]; if(!m) return;
-            var t=''; try { if(window.Android && Android.clip) t=Android.clip(); } catch(e) {}
-            if (!t || t.indexOf('BEGIN_VALUE_BETS')<0) t=prompt('قالب کامل خروجی هوش مصنوعی را کپی کن و اینجا Paste کن. باید شامل BEGIN_VALUE_BETS و END_VALUE_BETS باشد.','');
-            if (!t) return;
-            var parsed=aiParseValueBets(t);
-            if (!parsed.valid) { toast('قالب پیدا نشد؛ باید BEGIN_VALUE_BETS و END_VALUE_BETS داخل متن باشد.'); return; }
-            var d=parsed.data;
-            if (d.match.home!=='NA' && sim1(d.match.home,m.home)+sim1(d.match.away,m.away)<1.0 && sim1(d.match.home,m.away)+sim1(d.match.away,m.home)<1.0) {
-              if (!confirm('هشدار: نام تیم‌های قالب با مسابقه انتخاب‌شده تطابق روشنی ندارد. با این حال ذخیره شود؟')) return;
-            }
-            d.pastedAt=Date.now(); AIRES[id]=d; sv('aires',AIRES); rerender(); toast('خروجی هوش مصنوعی وارد شد و محاسبات دوباره بررسی شد.');
-          }
-          function aiImportClear(id) { delete AIRES[id]; sv('aires',AIRES); rerender(); }
-          function aiValuePanel(m) {
-            var d=AIRES[m.id];
-            var h='<div class="hpp" style="margin-top:10px"><div class="lbl">🧾 واردکردن خروجی Value Bet هوش مصنوعی</div><div class="mut" style="line-height:1.8">این بخش مخصوص قالب BEGIN_VALUE_BETS است و جدا از ورودی PrimaTips کار می‌کند. پاسخ کامل هوش مصنوعی را کپی کن و دکمه واردکردن را بزن.</div><div class="quick" style="margin-top:6px"><button class="btn blue" onclick="aiImportValueBets(\''+m.id+'\')">📥 واردکردن قالب خروجی هوش مصنوعی</button>'+(d?'<button onclick="aiImportClear(\''+m.id+'\')">🗑 پاک‌کردن نتیجه</button>':'')+'</div>';
-            if (!d) return h+'</div>';
-            h+='<div class="note" style="white-space:normal;line-height:1.8"><b>'+esc(d.match.home||m.home)+' - '+esc(d.match.away||m.away)+'</b><br>لیگ: '+esc(d.match.league||'NA')+' | تاریخ: '+esc(d.match.date||'NA')+'<br>کیفیت داده: <b>'+esc(d.quality||'NA')+'</b><br><span class="mut">منابع: '+esc(d.sources||'NA')+'<br>داده‌های مفقود: '+esc(d.missing||'NA')+'</span></div>';
-            if (d.none) h+='<div class="warn">هیچ گزینه واجد شرایطی گزارش نشده: '+esc(d.none)+'</div>';
-            if (d.bets && d.bets.length) {
-              h+='<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th>بازار</th><th>انتخاب</th><th>ضریب</th><th>احتمال مدل</th><th>ضریب منصفانه</th><th>EV محاسبه‌شده</th><th>نتیجه بررسی</th></tr></thead><tbody>';
-              d.bets.forEach(function(b){
-                var fmt=function(v,dec){return v===null||v===undefined?'NA':Number(v).toFixed(dec===undefined?2:dec);};
-                var ok=b.eligible, verdict=ok?'واجد شرایط طبق فیلتر':'رد/نیازمند بررسی';
-                if (b.odds===null || b.prob===null) verdict='اطلاعات ناکافی';
-                h+='<tr><td>'+esc(b.market)+'</td><td>'+esc(b.selection)+(b.line!=='NA'?' '+esc(b.line):'')+'</td><td>'+fmt(b.odds)+'</td><td>'+fmt(b.prob)+'%</td><td>'+fmt(b.fairCalc)+'</td><td>'+fmt(b.ev)+'%</td><td>'+verdict+'</td></tr>';
-              });
-              h+='</tbody></table></div>';
-            }
-            h+='<div class="mut" style="line-height:1.8">EV و ضریب منصفانه از روی ضریب و احتمال موجود دوباره محاسبه شده‌اند. فیلتر واجدشرایط‌بودن فقط وقتی برقرار است که ضریب حداقل 2.10، EV حداقل +5٪، اطمینان غیرپایین، کیفیت داده غیرضعیف و وضعیت خروجی QUALIFIED باشد. این بررسی، صحت داده‌های منبع یا احتمال مدل را تضمین نمی‌کند.</div>';
-            return h+'</div>';
-          }
-
+                    function aiField(line, key) {
+                      var parts = String(line || '').split('|');
+                      for (var i=0;i<parts.length;i++) {
+                        var at=parts[i].indexOf('=');
+                        if (at>0 && parts[i].slice(0,at).trim().toLowerCase()===String(key).toLowerCase()) return parts[i].slice(at+1).trim();
+                      }
+                      return null;
+                    }
+                    function aiNum(v) {
+                      if (v===null || v===undefined || /^NA$/i.test(String(v).trim()) || String(v).trim()==='') return null;
+                      var s=String(v).trim().replace(/[%\s]/g,'').replace(/[۰-۹]/g,function(d){return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d);}).replace(/[٠-٩]/g,function(d){return '٠١٢٣٤٥٦٧٨٩'.indexOf(d);}).replace(/[٫]/g,'.').replace(/[٬]/g,'').replace(/,/g,'.');
+                      if (!/^-?(?:\d+\.?\d*|\.\d+)$/.test(s)) return null;
+                      var n=Number(s); return isFinite(n)?n:null;
+                    }
+                    function aiParseValueBets(txt) {
+                      var lines=String(txt||'').replace(/^\uFEFF/,'').split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean);
+                      var data={match:{},quality:'NA',sources:'NA',missing:'NA',bets:[],none:null,warnings:[],errors:[],coherent:true,validBetCount:0};
+                      var startCount=0,endCount=0,inside=false,seenMatch=false,seenStatus=false;
+                      lines.forEach(function(line){
+                        if (line==='BEGIN_VALUE_BETS') { startCount++; if (inside) data.errors.push('نشانگر شروع تکراری است.'); inside=true; return; }
+                        if (line==='END_VALUE_BETS') { endCount++; if (!inside) data.errors.push('نشانگر پایان قبل از شروع آمده است.'); inside=false; return; }
+                        if (!inside) return;
+                        if (/^MATCH\|/i.test(line)) {
+                          if (seenMatch) data.errors.push('سطر MATCH تکراری است.');
+                          seenMatch=true; data.match={league:aiField(line,'league')||'NA',date:aiField(line,'date')||'NA',home:aiField(line,'home')||'NA',away:aiField(line,'away')||'NA'}; return;
+                        }
+                        if (/^DATA_STATUS\|/i.test(line)) {
+                          if (seenStatus) data.errors.push('سطر DATA_STATUS تکراری است.');
+                          seenStatus=true; data.quality=(aiField(line,'quality')||'NA').toUpperCase(); data.sources=aiField(line,'verified_sources')||'NA'; data.missing=aiField(line,'missing_data')||'NA';
+                          if (['GOOD','MEDIUM','POOR'].indexOf(data.quality)<0) data.errors.push('کیفیت داده باید GOOD، MEDIUM یا POOR باشد.');
+                          return;
+                        }
+                        if (/^NO_QUALIFIED_BETS\|/i.test(line)) { data.none=aiField(line,'reason')||'هیچ گزینه واجد شرایطی گزارش نشده است'; return; }
+                        if (!/^BET\|/i.test(line)) return;
+                        var b={market:aiField(line,'market')||'NA',selection:aiField(line,'selection')||'NA',line:aiField(line,'line')||'NA',odds:aiNum(aiField(line,'odds')),prob:aiNum(aiField(line,'model_probability_pct')),marketProb:aiNum(aiField(line,'market_probability_no_vig_pct')),fairReported:aiNum(aiField(line,'fair_odds')),evReported:aiNum(aiField(line,'ev_pct')),conservativeEv:aiNum(aiField(line,'conservative_ev_pct')),confidence:(aiField(line,'confidence')||'LOW').toUpperCase(),status:(aiField(line,'status')||'SKIP').toUpperCase(),raw:line};
+                        if (b.odds===null || b.odds<=1 || b.odds>1000) data.errors.push('ضریب نامعتبر در سطر '+(data.bets.length+1)+'.');
+                        if (b.prob===null || b.prob<0 || b.prob>100) data.errors.push('احتمال مدل باید بین 0 و 100 باشد؛ سطر '+(data.bets.length+1)+'.');
+                        if (b.marketProb!==null && (b.marketProb<0 || b.marketProb>100)) data.errors.push('احتمال بازار نامعتبر در سطر '+(data.bets.length+1)+'.');
+                        if (['HIGH','MEDIUM','LOW'].indexOf(b.confidence)<0) { data.warnings.push('درجه اطمینان ناشناخته در '+b.market+'/'+b.selection+'؛ LOW فرض شد.'); b.confidence='LOW'; }
+                        if (['QUALIFIED','SKIP'].indexOf(b.status)<0) { data.warnings.push('وضعیت ناشناخته در '+b.market+'/'+b.selection+'؛ SKIP فرض شد.'); b.status='SKIP'; }
+                        b.ev=(b.odds!==null && b.prob!==null && b.prob>=0 && b.prob<=100)?((b.prob/100)*b.odds-1)*100:null;
+                        b.fairCalc=(b.prob!==null && b.prob>0)?100/b.prob:null;
+                        if (b.evReported!==null && b.ev!==null && Math.abs(b.evReported-b.ev)>1.01) data.warnings.push('EV گزارش‌شده با محاسبه مجدد فرق دارد: '+b.market+'/'+b.selection+'.');
+                        if (b.fairReported!==null && b.fairCalc!==null && Math.abs(b.fairReported-b.fairCalc)>0.06) data.warnings.push('ضریب منصفانه گزارش‌شده با محاسبه مجدد فرق دارد: '+b.market+'/'+b.selection+'.');
+                        b.reasons=[];
+                        if (b.odds===null || b.odds<2.10) b.reasons.push('ضریب کمتر از 2.10 یا نامعتبر');
+                        if (b.ev===null || b.ev<5) b.reasons.push('EV محاسبه‌شده کمتر از +5٪');
+                        if (b.confidence==='LOW') b.reasons.push('اطمینان پایین');
+                        if (data.quality==='POOR') b.reasons.push('کیفیت داده ضعیف');
+                        if (b.status!=='QUALIFIED') b.reasons.push('مدل خروجی آن را واجد شرایط اعلام نکرده');
+                        if (b.conservativeEv!==null && b.conservativeEv<0) b.reasons.push('EV محافظه‌کارانه منفی است');
+                        data.bets.push(b);
+                      });
+                      if (inside) data.errors.push('END_VALUE_BETS پیدا نشد.');
+                      if (startCount!==1 || endCount!==1) data.errors.push('باید دقیقاً یک BEGIN_VALUE_BETS و یک END_VALUE_BETS وجود داشته باشد.');
+                      if (!seenMatch) data.errors.push('سطر MATCH وجود ندارد.');
+                      if (!seenStatus) data.errors.push('سطر DATA_STATUS وجود ندارد.');
+                      if (!data.bets.length && !data.none) data.errors.push('نه سطر BET وجود دارد و نه NO_QUALIFIED_BETS.');
+                      if (data.none && data.bets.some(function(b){return b.status==='QUALIFIED';})) { data.coherent=false; data.warnings.push('تعارض: NO_QUALIFIED_BETS وجود دارد اما حداقل یک سطر QUALIFIED است.'); }
+                      function checkSum(label, rows, target) {
+                        if (rows.length!==target) return;
+                        var sum=rows.reduce(function(a,b){return a+(b.prob===null?0:b.prob);},0);
+                        if (rows.some(function(b){return b.prob===null;}) || sum<98 || sum>102) { data.coherent=false; data.warnings.push('جمع احتمال‌های '+label+' برابر '+sum.toFixed(2)+'٪ است؛ باید تقریباً 100٪ باشد.'); }
+                      }
+                      var one=data.bets.filter(function(b){return b.market==='1X2' && ['HOME','DRAW','AWAY'].indexOf(b.selection)>=0;});
+                      if (one.length===3) checkSum('1X2',one,3);
+                      [['TOTAL_GOALS','OVER','UNDER'],['BTTS','YES','NO']].forEach(function(spec){
+                        var rows=data.bets.filter(function(b){return b.market===spec[0] && [spec[1],spec[2]].indexOf(b.selection)>=0;});
+                        if (rows.length===2) checkSum(spec[0],rows,2);
+                      });
+                      data.bets.forEach(function(b){
+                        if (!data.coherent) b.reasons.push('ناسازگاری در کنترل احتمال‌های بازار');
+                        b.eligible=!!(data.errors.length===0 && data.coherent && b.odds!==null && b.odds>=2.10 && b.ev!==null && b.ev>=5 && b.confidence!=='LOW' && ['GOOD','MEDIUM'].indexOf(data.quality)>=0 && b.status==='QUALIFIED' && (b.conservativeEv===null || b.conservativeEv>=0));
+                        if (!b.reasons.length && !b.eligible) b.reasons.push('شرایط تأیید کامل نشده است');
+                      });
+                      data.valid=startCount===1 && endCount===1 && seenMatch && seenStatus && data.errors.length===0 && (data.bets.length>0 || !!data.none);
+                      return {data:data,valid:data.valid};
+                    }
+                    function aiImportValueBets(id) {
+                      var m=MATCHES[id]; if(!m) return;
+                      var t=''; try { if(window.Android && Android.clip) t=Android.clip(); } catch(e) {}
+                      if (!t || t.indexOf('BEGIN_VALUE_BETS')<0) t=prompt('قالب کامل خروجی هوش مصنوعی را کپی کن و اینجا Paste کن. باید شامل BEGIN_VALUE_BETS و END_VALUE_BETS باشد.','');
+                      if (!t) return;
+                      var parsed=aiParseValueBets(t);
+                      if (!parsed.valid) { toast('قالب ناقص یا نامعتبر است: '+(parsed.data.errors[0]||'ساختار استاندارد پیدا نشد')); return; }
+                      var d=parsed.data;
+                      if (d.match.home!=='NA' && sim1(d.match.home,m.home)+sim1(d.match.away,m.away)<1.0 && sim1(d.match.home,m.away)+sim1(d.match.away,m.home)<1.0) {
+                        if (!confirm('هشدار: نام تیم‌های قالب با مسابقه انتخاب‌شده تطابق روشنی ندارد. با این حال ذخیره شود؟')) return;
+                      }
+                      d.pastedAt=Date.now(); AIRES[id]=d; sv('aires',AIRES); rerender(); toast('خروجی وارد شد؛ EV و ضریب منصفانه دوباره محاسبه و شرایط بررسی شد.');
+                    }
+                    function aiImportClear(id) { delete AIRES[id]; sv('aires',AIRES); rerender(); }
+                    function aiValuePanel(m) {
+                      var d=AIRES[m.id];
+                      var h='<div class="hpp" style="margin-top:10px"><div class="lbl">🧾 واردکردن خروجی Value Bet هوش مصنوعی</div><div class="mut" style="line-height:1.8">قالب BEGIN_VALUE_BETS را اینجا وارد کن؛ این بخش جدا از PrimaTips است. EV و ضریب منصفانه از روی ضریب و احتمال مدل دوباره محاسبه می‌شوند.</div><div class="quick" style="margin-top:6px"><button class="btn blue" onclick="aiImportValueBets(\''+m.id+'\')">📥 واردکردن قالب خروجی هوش مصنوعی</button>'+(d?'<button onclick="aiImportClear(\''+m.id+'\')">🗑 پاک‌کردن نتیجه</button>':'')+'</div>';
+                      if (!d) return h+'</div>';
+                      h+='<div class="note" style="white-space:normal;line-height:1.8"><b>'+esc(d.match.home||m.home)+' - '+esc(d.match.away||m.away)+'</b><br>لیگ: '+esc(d.match.league||'NA')+' | تاریخ: '+esc(d.match.date||'NA')+'<br>کیفیت داده: <b>'+esc(d.quality||'NA')+'</b><br><span class="mut">منابع: '+esc(d.sources||'NA')+'<br>داده‌های مفقود: '+esc(d.missing||'NA')+'</span></div>';
+                      if (d.none) h+='<div class="warn">گزارش هوش مصنوعی: هیچ گزینه واجد شرایطی یافت نشد — '+esc(d.none)+'</div>';
+                      if (d.errors && d.errors.length) h+='<div class="warn"><b>خطاهای قالب:</b><br>'+d.errors.map(function(x){return esc(x);}).join('<br>')+'</div>';
+                      if (d.warnings && d.warnings.length) h+='<div class="warn"><b>هشدارهای کنترل کیفیت:</b><br>'+d.warnings.map(function(x){return esc(x);}).join('<br>')+'</div>';
+                      if (d.bets && d.bets.length) {
+                        h+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="width:100%;min-width:720px;font-size:12px;border-collapse:collapse"><thead><tr><th>بازار</th><th>انتخاب</th><th>ضریب</th><th>احتمال مدل</th><th>ضریب منصفانهٔ محاسبه‌شده</th><th>EV مجدد</th><th>EV گزارش‌شده</th><th>نتیجه</th></tr></thead><tbody>';
+                        d.bets.forEach(function(b){
+                          var fmt=function(v,dec){return v===null||v===undefined?'NA':Number(v).toFixed(dec===undefined?2:dec);};
+                          var verdict=b.eligible?'واجد شرایط طبق فیلتر':'رد / نیازمند بررسی';
+                          if (b.odds===null || b.prob===null) verdict='اطلاعات ناکافی';
+                          var reason=b.reasons&&b.reasons.length?b.reasons.join('؛ '):'همهٔ فیلترهای اولیه برقرارند';
+                          h+='<tr><td>'+esc(b.market)+'</td><td>'+esc(b.selection)+(b.line!=='NA'?' '+esc(b.line):'')+'</td><td dir="ltr" style="text-align:center">'+fmt(b.odds)+'</td><td dir="ltr" style="text-align:center">'+fmt(b.prob)+'%</td><td dir="ltr" style="text-align:center">'+fmt(b.fairCalc)+'</td><td dir="ltr" style="text-align:center">'+fmt(b.ev)+'%</td><td dir="ltr" style="text-align:center">'+fmt(b.evReported)+'%</td><td>'+verdict+'<div class="mut">'+esc(reason)+'</div></td></tr>';
+                        });
+                        h+='</tbody></table></div>';
+                      }
+                      h+='<div class="mut" style="line-height:1.9;margin-top:8px">فیلتر اولیه: ضریب حداقل 2.10، EV مجدد حداقل +5٪، اطمینان متوسط یا بالا، کیفیت دادهٔ خوب یا متوسط، وضعیت QUALIFIED و در صورت ارائه‌شدن EV محافظه‌کارانهٔ غیرمنفی. احتمال‌ها و ضرایب واقعی مستقلاً تأیید نمی‌شوند. این فیلتر تضمین سود نیست.</div>';
+                      return h+'</div>';
+                    }
+          
           function renderDet() {
             var d = $('mdet'); if (!d) return;
             var m = SEL ? MATCHES[SEL] : null; if (SEL && !m) SEL = null;
@@ -1404,7 +1461,7 @@ jobs:
             if (SEL) { closeM(); return true; }
             return false;
           }
-
+          
           /* ---------- leagues ---------- */
           function loadSports(done) {
             var c = ld('sports2', null);
@@ -1633,7 +1690,7 @@ jobs:
             });
             return h;
           }
-
+          
           /* ---------- odds ---------- */
           function mkt(b, k) { if (!b || !b.markets) return null; for (var i = 0; i < b.markets.length; i++) if (b.markets[i].key == k) return b.markets[i]; return null; }
           function books(e) {
@@ -1823,7 +1880,7 @@ jobs:
             if (!out.length) { $('list').innerHTML = '<div class="empty">' + (DAYE ? '\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u06cc\u0633\u062a.' : DAYU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u0645\u0648\u0646\u062f\u0647.<br>\u00ab\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632\u00bb \u0631\u0648 \u0628\u0632\u0646\u060c \u06cc\u0627 \u0628\u0631\u0627\u06cc \u0641\u0631\u062f\u0627 \u0628\u0631\u0648 \u0633\u0631\u0627\u063a \u00ab\u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627\u00bb.' : '\u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f') + '<br><br>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)') + '</div>'; return; }
             RMALL = DAYE; renderMatches(out, true); RMALL = false;
           }
-
+          
           /* smart auto refresh of today (update 26) */
           /* even pacing of API-Football (update 31): what is left of the 100/day is spread over the hours left until the UTC reset; skipped when no game is live */
           var AF_RES = 5, AF_FLOOR = 5 * 60000;
@@ -2115,7 +2172,7 @@ jobs:
             if (DF == 'tom') return dk(t) == dk(n + 86400000);
             return t - n < 7 * 86400000;
           }
-
+          
           /* ---------- extra markets ---------- */
           function exOf(id) {
             if (EX[id]) return EX[id];
@@ -2213,7 +2270,7 @@ jobs:
             if (OPEN[id] && !exOf(id) && MATCHES[id] && !started(MATCHES[id])) fetchEx(MATCHES[id]);
             rerender();
           }
-
+          
           /* ---------- match list ---------- */
           function od(m, k) { if (m[k]) return m[k]; var mn = MAN[m.id]; return mn ? (mn[{ h: '1', d: 'X', a: '2' }[k]] || null) : null; }
           function getOdd(m, p) {
@@ -2526,7 +2583,7 @@ jobs:
             toast('\u2705 ' + fa(c) + ' \u0636\u0631\u06cc\u0628 \u062b\u0628\u062a \u0634\u062f');
             rerender();
           }
-
+          
           /* today tab tree (update 33): time windows, then country, then league, then the games */
           var DBK = [[30, '\u23f1 \u0646\u06cc\u0645 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [60, '\ud83d\udd50 \u0646\u06cc\u0645 \u0633\u0627\u0639\u062a \u062a\u0627 \u06f1 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [180, '\ud83d\udd52 \u06f1 \u062a\u0627 \u06f3 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [360, '\ud83d\udd55 \u06f3 \u062a\u0627 \u06f6 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [720, '\ud83d\udd5b \u06f6 \u062a\u0627 \u06f1\u06f2 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [1440, '\ud83c\udf19 \u06f1\u06f2 \u062a\u0627 \u06f2\u06f4 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [1e9, '\ud83d\udcc6 \u0628\u0639\u062f \u0627\u0632 \u06f2\u06f4 \u0633\u0627\u0639\u062a']];
           var DTO = {}, DTK = [];
@@ -2615,7 +2672,7 @@ jobs:
             list.innerHTML = h;
             if (ms.some(function (m) { return started(m) && !LIVE[m.id]; })) setTimeout(function () { liveTick(false); }, 200);
           }
-
+          
           /* ---------- bet slip ---------- */
           function ptOf(p) { return p.length > 1 ? parseInt(p.slice(1), 10) / 10 : 2.5; }
           function pl(x) {
@@ -2709,7 +2766,7 @@ jobs:
             slip = []; NOTE = ''; sv(pk('slip'), slip); saveAll(); updateCnt();
             toast('\u0634\u0631\u0637\u062a \u062b\u0628\u062a \u0634\u062f \u2705'); go('bets');
           }
-
+          
           /* ---------- live scores (ESPN, free) ---------- */
           var STOP = ['fc', 'cf', 'afc', 'sc', 'ac', 'cd', 'ud', 'club', 'de', 'the', 'and', 'fk', 'sk', 'if', 'bk', 'cp', 'sd', 'rc', 'rcd', 'calcio', 'ec', 'se', 'cr', 'ca', 'cs'];
           function nrm(s) {
@@ -2864,7 +2921,7 @@ jobs:
             if (p == 'BY') return hs > 0 && as > 0; if (p == 'BN') return !(hs > 0 && as > 0);
             if (p.charAt(0) == 'O') return g > ptOf(p); return g < ptOf(p);
           }
-
+          
           /* ---------- results ---------- */
           function needCheck(b, now) {
             return b.st == 'p' && b.sel.some(function (x) { return x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now; });
@@ -3162,7 +3219,7 @@ jobs:
             });
             el.innerHTML = h;
           }
-
+          
           /* ---------- percent calculator (update 19) ---------- */
           var C = ld('calc', null) || {};
           (function () { var d = { tl: 2.5, ts: 'O', tv: '', ht: 1, hl: 0, hv: '', md: 'p', vk: 'T:O:2.5', vo: '', bs: 'Y', bt: 1, bv: '' }; for (var k in d) if (C[k] === undefined) C[k] = d[k]; })();
@@ -3639,7 +3696,7 @@ jobs:
             return (1 / x) / (1 / x + 1 / y);
           }
           function r3(x) { return Math.round(x * 1000) / 1000; }
-
+          
           /* ---------- tactical formation engine ----------
              The formation is treated as a starting structure, not a fixed picture.
              The engine models: width, midfield numbers, wing-back exposure, attacking lines,
@@ -3705,7 +3762,7 @@ jobs:
             var ha=formEffect(home,away), ah=formEffect(away,home);
             return {home:ha.att*ah.def,away:ah.att*ha.def,notes:(ha.notes||[]).concat(ah.notes||[])};
           }
-
+          
           function sCalc(ctx) {
             var D=sD(ctx), nm=sNames(ctx), err=[], w=[];
             var prep=function(T,n0){var w0=sNum(T.w)||0,d=sNum(T.d)||0,l=sNum(T.l)||0,n=w0+d+l,gf=sNum(T.gf),ga=sNum(T.ga);
@@ -3724,7 +3781,7 @@ jobs:
             var temp=sNum(D.temp);if(temp!==null){var tf=temp<5?.94:(temp>35?.93:(temp>30?.97:(temp<10?.98:1)));lh*=tf;la*=tf;}
             var ry=sNum(D.refY),rr=sNum(D.refR);if(ry!==null||rr!==null){var ref=1+clp(((ry===null?3.8:ry)-3.8)*.004+((rr===null?.12:rr)-.12)*.015,-.025,.025);lh*=ref;la*=ref;}
             var xa=xAdj(ctx,lh,la,false);lh=xa[0];la=xa[1];if(xa[2])w.push(xa[2]);
-
+          
             /* Last-10 BTTS frequency: count of matches (0..10) in which BOTH teams scored.
                Jeffreys Beta(0.5,0.5) posterior regularizes the ten-match sample. The evidence
                is used primarily for the BTTS market and cannot overpower the goal model. */
@@ -3737,7 +3794,7 @@ jobs:
               bhist=invlogit((logit(bhP)+logit(baP))/2);
               w.push('BTTS \u062f\u0647 \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631: '+bH+' \u0627\u0632 \u06f1\u06f0 \u0628\u0631\u0627\u06cc '+nm[0]+' \u0648 '+bA+' \u0627\u0632 \u06f1\u06f0 \u0628\u0631\u0627\u06cc '+nm[1]+'\u061b \u0627\u062b\u0631 \u0645\u0646\u0638\u0645\u200c\u0634\u062f\u0647 \u0631\u0648\u06cc \u0628\u0627\u0632\u0627\u0631 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0646\u062f \u0627\u0639\u0645\u0627\u0644 \u0634\u062f');
             }
-
+          
             /* Formation-vs-formation tactical interaction. */
             var fm=formMatch(D.formH,D.formA);lh*=fm.home;la*=fm.away;Array.prototype.push.apply(w,fm.notes);
             lh*=clp(sh[0]*sa[1],.9,1.1);la*=clp(sa[0]*sh[1],.9,1.1);lh=clp(lh*MP.gs,.15,4.5);la=clp(la*MP.gs,.15,4.5);
@@ -3949,7 +4006,7 @@ jobs:
             var id = PR.cur; ['wallet', 'bets', 'slip'].forEach(function (k) { sv(pk2(id, k), null); });
             PR.l = PR.l.filter(function (p) { return p.id != id; }); PR.cur = 'p0'; sv('profs', PR); loadProf(); renderSet(); toast('\u067e\u0627\u06a9 \u0634\u062f');
           }
-
+          
           function saveKey() {
             sv('key', $('k').value.trim()); sv('sports2', null); toast('\u06a9\u0644\u06cc\u062f \u0630\u062e\u06cc\u0631\u0647 \u0634\u062f'); renderSet();
             loadSports(function () { renderLeagues(); if (reg != 'all') loadOdds(false); });
@@ -3960,7 +4017,7 @@ jobs:
             W.coins = add ? r2(W.coins + v) : v; saveAll(); renderSet();
             toast(add ? fc(v) + ' \u0633\u06a9\u0647 \u0627\u0636\u0627\u0641\u0647 \u0634\u062f' : '\u0645\u0648\u062c\u0648\u062f\u06cc \u0634\u062f ' + fc(v));
           }
-
+          
           /* ---------- reminders ---------- */
           var REM = ld('rem', {});
           function setRem(m, on, silent) {
@@ -4009,7 +4066,7 @@ jobs:
             if (manual && u && u.n > BUILD) { go('matches'); }
           }
           function getUpd() { var u = ld('upd', null); if (!u) return; try { Android.openUrl(u.url); toast('\u0628\u0639\u062f \u0627\u0632 \u062f\u0627\u0646\u0644\u0648\u062f\u060c \u0641\u0627\u06cc\u0644 \u0631\u0648 \u0628\u0627\u0632 \u06a9\u0646 \u0648 \u00ab\u0628\u0647\u200c\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc\u00bb \u0631\u0648 \u0628\u0632\u0646'); } catch (e) { toast('\u0645\u0631\u0648\u0631\u06af\u0631 \u0628\u0627\u0632 \u0646\u0634\u062f'); } }
-
+          
           function bonus() {
             var n = Date.now();
             if (n - (W.last || 0) < 86400000) { toast(fmt(Math.ceil((86400000 - (n - W.last)) / 3600000)) + ' \u0633\u0627\u0639\u062a \u062f\u06cc\u06af\u0647 \u062f\u0648\u0628\u0627\u0631\u0647 \u0628\u06cc\u0627'); return; }
@@ -4019,14 +4076,14 @@ jobs:
             if (!confirm('\u0645\u0637\u0645\u0626\u0646\u06cc\u061f \u0647\u0645\u0647 \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + pn() + '\u00bb \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0646')) return;
             W = { coins: START, last: 0 }; BETS = []; slip = []; sv(pk('slip'), slip); saveAll(); updateCnt(); renderSet(); toast('\u0631\u06cc\u0633\u062a \u0634\u062f');
           }
-
+          
           /* ---------- PrimaTips paste (update 31) ---------- */
           /* user selects the whole PrimaTips match page, copies it, and the percentages of 1X2, double chance, O/U 1.5/2.5/3.5 and BTTS are read from the text.
              PrimaTips own coefficients are ignored on purpose, only the percentages are used as statistical analysis. */
           var PTD = ld('ptd', {}), PTO = {};
           (function () { var n = Date.now(), ch = false; for (var k in PTD) { if (!PTD[k] || !PTD[k]._t || new Date(PTD[k]._t).getTime() + 3 * 86400000 < n) { delete PTD[k]; ch = true; } } if (ch) sv('ptd', PTD); })();
           var PTK = [['1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646'], ['X', '\u0645\u0633\u0627\u0648\u06cc'], ['2', '\u06f2 \u0645\u0647\u0645\u0627\u0646'], ['1X', '1X'], ['X2', 'X2'], ['12', '12'], ['O15', 'Over 1.5'], ['U15', 'Under 1.5'], ['O25', 'Over 2.5'], ['U25', 'Under 2.5'], ['O35', 'Over 3.5'], ['U35', 'Under 3.5'], ['BY', 'BTTS \u0628\u0644\u0647'], ['BN', 'BTTS \u062e\u06cc\u0631']];
-
+          
           function ptTok(a) { return a.join(' ').split(' ').filter(function (x) { return x; }); }
           function parsePT(text) {
             var ls = String(text).split(/\r?\n/).map(function (x) { return String(x).replace(/[\u200c\u200e\u200f\u00a0\t]/g, ' ').replace(/\s+/g, ' ').trim(); }).filter(function (x) { return x; });
@@ -4203,7 +4260,7 @@ jobs:
           }
           function ptP(id, p) { var d = PTD[id]; if (!d || !d.p) return null; var P = ptEff(d).p; return P[p] !== undefined ? P[p] : null; }
           function ptHas(id, p) { return ptP(id, p) !== null; }
-
+          
           /* suggested stake (update 31): EV x 100 coins (EV +0.25 = 25), half when odds > 2.7, quarter when > 3.7, and it grows with profit above the 1000 start (1100 coins = +10%). Below 1000 it stays normal */
           function stakeF(o) { return o > 3.7 ? 0.25 : (o > 2.7 ? 0.5 : 1); }
           function stakeG(bank) { return bank > START ? bank / START : 1; }
@@ -4238,7 +4295,7 @@ jobs:
             return '<div class="note" style="white-space:normal">\ud83d\udcb0 \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc: <b class="gold">' + fa(k.s) + '</b> \u0633\u06a9\u0647 (' + kWhy(k) + ')' + (k.p < 0.5 ? '<br>\u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0631\u062f \u06a9\u0644 \u0632\u06cc\u0631 \u06f5\u06f0\u066a\u0647\u060c \u062a\u06a9\u06cc \u0648 \u0628\u0627 \u0645\u0628\u0644\u063a \u06a9\u0645' : '') + '<br><span class="mut">\u0627\u062d\u062a\u0645\u0627\u0644 \u06a9\u0644 ' + pc(k.p) + ' | \u0636\u0631\u06cc\u0628 \u06a9\u0644 ' + totalOdd().toFixed(2) + ' | EV +' + k.ev.toFixed(2) + (slip.length > 1 ? ' | \u0645\u06cc\u06a9\u0633: \u0641\u0631\u0636 \u0634\u062f\u0647 \u067e\u0627\u06cc\u0647\u200c\u0647\u0627 \u0645\u0633\u062a\u0642\u0644\u0646' : '') + '</span><div class="quick" style="margin-top:6px"><button onclick="qs(' + k.s + ')">\u0628\u0630\u0627\u0631 \u062a\u0648 \u0645\u0628\u0644\u063a \u0634\u0631\u0637</button></div></div>';
           }
           function sugUpd() { var e = $('sugw'); if (e) e.innerHTML = sugHtml(); }
-
+          
           /* cautious markets (update 38): away win, draw-or-away and Under 2.5 lost money in Saeed's history, plus any market with 10+ results and weighted profit below -1.
              their probability is pulled halfway to the market, and a \ud83d\udc8e needs EV +0.10 and 8% above the market */
           var CAU_FIX = { '2': 1, 'X2': 1, 'U25': 1 }, CAUC = { t: 0, s: {} };
