@@ -1,0 +1,4932 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p app/src/main/java/com/saeed/bet app/src/main/assets
+cp fb.keystore app/fb.keystore
+cd app
+cat > settings.gradle <<'EOF_X'
+pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+rootProject.name = "FootballBet"
+EOF_X
+cat > build.gradle <<'EOF_X'
+plugins { id 'com.android.application' version '8.5.2' }
+android {
+    namespace 'com.saeed.bet'
+    compileSdk 34
+    signingConfigs {
+        fixed {
+            storeFile file('fb.keystore')
+            storePassword 'android'
+            keyAlias 'fbkey'
+            keyPassword 'android'
+        }
+    }
+    defaultConfig {
+        applicationId 'com.saeed.bet'
+        minSdk 21
+        targetSdk 34
+        versionCode __BUILD__
+        versionName '__BUILD__'
+    }
+    buildTypes {
+        debug { signingConfig signingConfigs.fixed }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+EOF_X
+cat > src/main/AndroidManifest.xml <<'EOF_X'
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <application android:label="&#x641;&#x648;&#x62a;&#x628;&#x627;&#x644; &#x628;&#x62a;"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver android:name=".AlarmReceiver" android:exported="false" />
+        <receiver android:name=".BgWatch" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
+EOF_X
+cat > src/main/java/com/saeed/bet/MainActivity.java <<'EOF_X'
+package com.saeed.bet;
+
+import android.app.Activity;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import org.json.JSONObject;
+
+public class MainActivity extends Activity {
+    WebView web;
+    SharedPreferences prefs;
+
+    @Override
+    protected void onCreate(Bundle b) {
+        super.onCreate(b);
+        prefs = getSharedPreferences("bet", MODE_PRIVATE);
+        web = new WebView(this);
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        web.setWebViewClient(new WebViewClient());
+        web.setWebChromeClient(new WebChromeClient());
+        web.setBackgroundColor(0xFF0B1A2E);
+        web.addJavascriptInterface(new Bridge(), "Android");
+        web.loadUrl("file:///android_asset/index.html");
+        setContentView(web);
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (web == null) { finish(); return; }
+        web.evaluateJavascript("(window.appBack && appBack()) ? 1 : 0", new android.webkit.ValueCallback<String>() {
+            @Override
+            public void onReceiveValue(String v) { if (v == null || !v.contains("1")) finish(); }
+        });
+    }
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (web != null) { web.onPause(); web.pauseTimers(); }
+        try { BgWatch.schedule(getApplicationContext()); } catch (Exception e) { }
+    }
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (web != null) { web.resumeTimers(); web.onResume(); }
+    }
+    PendingIntent alarmIntent(String id, String title, String text) {
+        Intent i = new Intent(this, AlarmReceiver.class);
+        i.putExtra("title", title);
+        i.putExtra("text", text);
+        i.putExtra("nid", id.hashCode());
+        int fl = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) fl |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getBroadcast(this, id.hashCode(), i, fl);
+    }
+
+    static String read(InputStream in) throws Exception {
+        if (in == null) return "";
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        in.close();
+        return new String(out.toByteArray(), "UTF-8");
+    }
+
+    class Bridge {
+        @JavascriptInterface
+        public String load(String k) {
+            return prefs.getString(k, "");
+        }
+
+        @JavascriptInterface
+        public void save(String k, String v) {
+            prefs.edit().putString(k, v).apply();
+        }
+
+        @JavascriptInterface
+        public void alarm(String id, String when, String title, String text) {
+            try {
+                long t = Long.parseLong(when);
+                if (t < System.currentTimeMillis()) return;
+                AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+                PendingIntent pi = alarmIntent(id, title, text);
+                if (Build.VERSION.SDK_INT >= 23) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, t, pi);
+                else am.set(AlarmManager.RTC_WAKEUP, t, pi);
+            } catch (Exception e) {
+            }
+        }
+
+        @JavascriptInterface
+        public void cancelAlarm(String id) {
+            try {
+                AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+                am.cancel(alarmIntent(id, "", ""));
+            } catch (Exception e) {
+            }
+        }
+
+        @JavascriptInterface
+        public void setClip(final String t) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                        if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("bet", t));
+                    } catch (Exception e) {
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public String clip() {
+            try {
+                android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm == null || !cm.hasPrimaryClip()) return "";
+                android.content.ClipData d = cm.getPrimaryClip();
+                if (d == null || d.getItemCount() == 0) return "";
+                CharSequence t = d.getItemAt(0).coerceToText(MainActivity.this);
+                return t == null ? "" : t.toString();
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public void get2(final String url, final String hk, final String hv, final String cb) {
+            new Thread(new Runnable() {
+                public void run() {
+                    JSONObject r = new JSONObject();
+                    try {
+                        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                        c.setConnectTimeout(15000);
+                        c.setReadTimeout(30000);
+                        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36");
+                        c.setRequestProperty("Accept", "application/json");
+                        if (hk != null && hk.length() > 0) c.setRequestProperty(hk, hv);
+                        int code = c.getResponseCode();
+                        InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+                        r.put("status", code);
+                        r.put("body", read(in));
+                        r.put("remaining", String.valueOf(c.getHeaderField("x-ratelimit-requests-remaining")));
+                    } catch (Exception e) {
+                        try {
+                            r.put("status", 0);
+                            r.put("body", String.valueOf(e.getMessage()));
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    final String js = "window.__cb(" + JSONObject.quote(cb) + "," + JSONObject.quote(r.toString()) + ")";
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            web.evaluateJavascript(js, null);
+                        }
+                    });
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void notif(String id, String title, String text) {
+            AlarmReceiver.show(getApplicationContext(), id.hashCode(), title, text, "bets", "Bets");
+        }
+
+        @JavascriptInterface
+        public void bgKick() {
+            try { BgWatch.schedule(getApplicationContext()); } catch (Exception e) { }
+        }
+
+        @JavascriptInterface
+        public void battery() {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        Intent i = new Intent(Build.VERSION.SDK_INT >= 23 ? "android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS" : "android.settings.SETTINGS");
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(i);
+                    } catch (Exception e) {
+                        try {
+                            Intent j = new Intent("android.settings.APPLICATION_DETAILS_SETTINGS", android.net.Uri.parse("package:" + getPackageName()));
+                            j.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            startActivity(j);
+                        } catch (Exception e2) { }
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void openUrl(String url) {
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Exception e) {
+            }
+        }
+
+        @JavascriptInterface
+        public void get(final String url, final String cb) {
+            new Thread(new Runnable() {
+                public void run() {
+                    JSONObject r = new JSONObject();
+                    try {
+                        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                        c.setConnectTimeout(15000);
+                        c.setReadTimeout(25000);
+                        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36");
+                        c.setRequestProperty("Accept", "application/json");
+                        int code = c.getResponseCode();
+                        InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+                        r.put("status", code);
+                        r.put("body", read(in));
+                        r.put("remaining", String.valueOf(c.getHeaderField("x-requests-remaining")));
+                    } catch (Exception e) {
+                        try {
+                            r.put("status", 0);
+                            r.put("body", String.valueOf(e.getMessage()));
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    final String js = "window.__cb(" + JSONObject.quote(cb) + "," + JSONObject.quote(r.toString()) + ")";
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            web.evaluateJavascript(js, null);
+                        }
+                    });
+                }
+            }).start();
+        }
+    }
+}
+EOF_X
+cat > src/main/java/com/saeed/bet/AlarmReceiver.java <<'EOF_X'
+package com.saeed.bet;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+
+public class AlarmReceiver extends BroadcastReceiver {
+    @Override
+    public void onReceive(Context ctx, Intent in) {
+        show(ctx, in.getIntExtra("nid", 1), in.getStringExtra("title"), in.getStringExtra("text"), "matches", "\u06cc\u0627\u062f\u0622\u0648\u0631 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627");
+    }
+
+    static void show(Context ctx, int nid, String title, String text, String ch, String chName) {
+        try {
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            Notification.Builder b;
+            if (Build.VERSION.SDK_INT >= 26) {
+                NotificationChannel c = new NotificationChannel(ch, chName, NotificationManager.IMPORTANCE_HIGH);
+                nm.createNotificationChannel(c);
+                b = new Notification.Builder(ctx, ch);
+            } else {
+                b = new Notification.Builder(ctx);
+                b.setPriority(Notification.PRIORITY_HIGH);
+                b.setDefaults(Notification.DEFAULT_ALL);
+            }
+            Intent open = new Intent(ctx, MainActivity.class);
+            open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            int fl = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= 23) fl |= PendingIntent.FLAG_IMMUTABLE;
+            PendingIntent pi = PendingIntent.getActivity(ctx, nid, open, fl);
+            b.setSmallIcon(android.R.drawable.ic_dialog_info);
+            b.setContentTitle(title);
+            b.setContentText(text);
+            b.setStyle(new Notification.BigTextStyle().bigText(text));
+            b.setAutoCancel(true);
+            b.setContentIntent(pi);
+            nm.notify(nid, b.build());
+        } catch (Exception e) {
+        }
+    }
+}
+EOF_X
+cat > src/main/java/com/saeed/bet/BgWatch.java <<'EOF_X'
+package com.saeed.bet;
+
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Build;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.text.Normalizer;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TimeZone;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+public class BgWatch extends BroadcastReceiver {
+    static final long MIN = 60000L, PRE = 2 * MIN, WIN = 4 * 60 * MIN, ESPN_IV = 5 * MIN;
+    static final String[] STOP = {"fc", "cf", "afc", "sc", "ac", "cd", "ud", "club", "de", "the", "and", "fk", "sk", "if", "bk", "cp", "sd", "rc", "rcd", "calcio", "ec", "se", "cr", "ca", "cs"};
+
+    @Override
+    public void onReceive(Context ctx, Intent in) {
+        final Context c = ctx.getApplicationContext();
+        final PendingResult pr = goAsync();
+        new Thread(new Runnable() {
+            public void run() {
+                try { poll(c); } catch (Throwable e) { }
+                try { schedule(c); } catch (Throwable e) { }
+                try { if (pr != null) pr.finish(); } catch (Throwable e) { }
+            }
+        }).start();
+    }
+
+    static SharedPreferences sp(Context c) { return c.getSharedPreferences("bet", Context.MODE_PRIVATE); }
+
+    static JSONObject obj(SharedPreferences p, String k) {
+        try {
+            String s = p.getString(k, "");
+            if (s == null || s.length() == 0 || s.equals("null")) return null;
+            return new JSONObject(s);
+        } catch (Exception e) { return null; }
+    }
+
+    static long num(SharedPreferences p, String k) {
+        try {
+            String s = p.getString(k, "");
+            if (s == null || s.length() == 0 || s.equals("null")) return 0;
+            return (long) Double.parseDouble(s);
+        } catch (Exception e) { return 0; }
+    }
+
+    static void put(SharedPreferences p, String k, String v) { p.edit().putString(k, v).commit(); }
+
+    static long resetNext(long now) {
+        Calendar c = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        c.setTimeInMillis(now);
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis() + 86400000L;
+    }
+
+    /* same pacing as JS afIv(): spread what is left of the 100/day over the time left until the UTC reset */
+    static long afIv(SharedPreferences p, JSONObject w, long now) {
+        long next = resetNext(now), today = next - 86400000L;
+        int q = 100;
+        JSONObject r = obj(p, "afrem");
+        if (r != null && r.optLong("t", 0) >= today) q = r.optInt("n", 100);
+        int left = q - w.optInt("res", 5);
+        if (left <= 0) return 0;
+        return Math.max(w.optLong("fl", 5 * MIN), (next - now) / left);
+    }
+
+    static boolean fin(JSONObject s) { return s != null && ("post".equals(s.optString("st")) || s.optInt("pp", 0) == 1); }
+
+    static PendingIntent pend(Context c) {
+        Intent i = new Intent(c, BgWatch.class);
+        i.setAction("com.saeed.bet.WATCH");
+        int fl = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) fl |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getBroadcast(c, 7731, i, fl);
+    }
+
+    static void schedule(Context c) {
+        SharedPreferences p = sp(c);
+        AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+        PendingIntent pi = pend(c);
+        JSONObject w = obj(p, "bgw");
+        long now = System.currentTimeMillis(), next = 0;
+        if (w != null && w.optInt("off", 0) == 0) {
+            JSONObject S = obj(p, "bgs");
+            if (S == null) S = new JSONObject();
+            JSONArray L = w.optJSONArray("legs");
+            boolean live = false, es = false;
+            long first = Long.MAX_VALUE;
+            for (int i = 0; L != null && i < L.length(); i++) {
+                JSONObject g = L.optJSONObject(i);
+                if (g == null || fin(S.optJSONObject(g.optString("i")))) continue;
+                long t = g.optLong("t", 0);
+                if (now > t + WIN) continue;
+                if (now >= t - PRE) {
+                    live = true;
+                    if (g.optString("es", "").length() > 0) es = true;
+                } else if (t < first) first = t;
+            }
+            if (live) {
+                if (es) next = now + ESPN_IV;
+                else {
+                    long iv = afIv(p, w, now);
+                    if (iv <= 0 || w.optString("ak", "").length() == 0) next = resetNext(now) + MIN;
+                    else next = Math.max(now + ESPN_IV, num(p, "aflast") + iv);
+                }
+                if (first != Long.MAX_VALUE && first + MIN < next) next = Math.max(now + MIN, first + MIN);
+            } else if (first != Long.MAX_VALUE) next = first + MIN;
+        }
+        if (next > 0) {
+            if (Build.VERSION.SDK_INT >= 23) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi);
+            else am.set(AlarmManager.RTC_WAKEUP, next, pi);
+        } else am.cancel(pi);
+    }
+
+    static String get(String url, String hk, String hv, String[] rem) {
+        try {
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(12000);
+            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36");
+            c.setRequestProperty("Accept", "application/json");
+            if (hk != null && hk.length() > 0) c.setRequestProperty(hk, hv);
+            int code = c.getResponseCode();
+            if (rem != null) rem[0] = c.getHeaderField("x-ratelimit-requests-remaining");
+            if (code != 200) return null;
+            return MainActivity.read(c.getInputStream());
+        } catch (Exception e) { return null; }
+    }
+
+    static void poll(Context c) throws Exception {
+        SharedPreferences p = sp(c);
+        JSONObject w = obj(p, "bgw");
+        if (w == null || w.optInt("off", 0) == 1) return;
+        JSONObject S = obj(p, "bgs");
+        if (S == null) S = new JSONObject();
+        JSONArray L = w.optJSONArray("legs");
+        if (L == null) return;
+        long now = System.currentTimeMillis(), t0 = now;
+        List<JSONObject> act = new ArrayList<JSONObject>();
+        for (int i = 0; i < L.length(); i++) {
+            JSONObject g = L.optJSONObject(i);
+            if (g == null || fin(S.optJSONObject(g.optString("i")))) continue;
+            long t = g.optLong("t", 0);
+            if (now >= t - PRE && now <= t + WIN) act.add(g);
+        }
+        Map<String, JSONObject> up = new HashMap<String, JSONObject>();
+        /* 1) ESPN: free, one request per league and day */
+        Map<String, List<JSONObject>> grp = new HashMap<String, List<JSONObject>>();
+        List<String> order = new ArrayList<String>();
+        for (JSONObject g : act) {
+            String es = g.optString("es", "");
+            if (es.length() == 0) continue;
+            String[] ds = {g.optString("d", ""), g.optString("d2", "")};
+            for (String d : ds) {
+                if (d.length() == 0) continue;
+                String k = es + "|" + d;
+                List<JSONObject> l = grp.get(k);
+                if (l == null) { l = new ArrayList<JSONObject>(); grp.put(k, l); order.add(k); }
+                if (!l.contains(g)) l.add(g);
+            }
+        }
+        String eb = w.optString("es", "https://site.api.espn.com/apis/site/v2/sports/soccer/");
+        for (String k : order) {
+            if (System.currentTimeMillis() - t0 > 35000) break;
+            List<JSONObject> l = grp.get(k);
+            boolean need = false;
+            for (JSONObject g : l) if (!up.containsKey(g.optString("i"))) need = true;
+            if (!need) continue;
+            int bar = k.indexOf('|');
+            String body = get(eb + k.substring(0, bar) + "/scoreboard?dates=" + k.substring(bar + 1), null, null, null);
+            if (body == null) continue;
+            JSONArray evs;
+            try { evs = new JSONObject(body).optJSONArray("events"); } catch (Exception e) { evs = null; }
+            if (evs == null) continue;
+            for (JSONObject g : l) {
+                if (up.containsKey(g.optString("i"))) continue;
+                JSONObject r = espnMatch(g, evs);
+                if (r != null) up.put(g.optString("i"), r);
+            }
+        }
+        /* 2) API-Football: costs 1 of the 100 daily requests, paced */
+        String ak = w.optString("ak", "");
+        List<JSONObject> af = new ArrayList<JSONObject>();
+        for (JSONObject g : act) if (g.optLong("af", 0) > 0 && !up.containsKey(g.optString("i"))) af.add(g);
+        if (!af.isEmpty() && ak.length() > 0) {
+            long iv = afIv(p, w, now);
+            if (iv > 0 && now - num(p, "aflast") >= iv - 30000) {
+                for (int s = 0; s < af.size(); s += 20) {
+                    if (System.currentTimeMillis() - t0 > 45000) break;
+                    StringBuilder ids = new StringBuilder();
+                    List<JSONObject> ch = af.subList(s, Math.min(af.size(), s + 20));
+                    for (JSONObject g : ch) {
+                        String id = String.valueOf(g.optLong("af"));
+                        if (ids.indexOf(id) >= 0) continue;
+                        if (ids.length() > 0) ids.append('-');
+                        ids.append(id);
+                    }
+                    String[] rem = new String[1];
+                    String body = get(w.optString("af", "https://v3.football.api-sports.io/") + "fixtures?ids=" + ids, "x-apisports-key", ak, rem);
+                    put(p, "aflast", String.valueOf(System.currentTimeMillis()));
+                    if (rem[0] != null) {
+                        try {
+                            JSONObject q = new JSONObject();
+                            q.put("n", Integer.parseInt(rem[0].trim()));
+                            q.put("t", System.currentTimeMillis());
+                            put(p, "afrem", q.toString());
+                        } catch (Exception e) { }
+                    }
+                    if (body == null) continue;
+                    JSONArray rs;
+                    try { rs = new JSONObject(body).optJSONArray("response"); } catch (Exception e) { rs = null; }
+                    if (rs == null) continue;
+                    Map<Long, JSONObject> byId = new HashMap<Long, JSONObject>();
+                    for (int i = 0; i < rs.length(); i++) {
+                        JSONObject f = rs.optJSONObject(i);
+                        if (f == null || f.optJSONObject("fixture") == null) continue;
+                        byId.put(f.optJSONObject("fixture").optLong("id"), f);
+                    }
+                    for (JSONObject g : ch) {
+                        JSONObject f = byId.get(g.optLong("af"));
+                        if (f == null) continue;
+                        JSONObject r = afParse(f, g.optInt("afs", 0) == 1);
+                        if (r != null) up.put(g.optString("i"), r);
+                    }
+                }
+            }
+        }
+        /* 3) goals -> notification */
+        JSONObject tx = w.optJSONObject("tx");
+        if (tx == null) tx = new JSONObject();
+        for (Map.Entry<String, JSONObject> e : up.entrySet()) {
+            String id = e.getKey();
+            JSONObject r = e.getValue(), old = S.optJSONObject(id);
+            int ot = old == null ? 0 : old.optInt("hs") + old.optInt("as"), nt = r.optInt("hs") + r.optInt("as");
+            if (fin(old)) continue;
+            boolean diff = old == null || r.optInt("hs") != old.optInt("hs") || r.optInt("as") != old.optInt("as");
+            if (!"pre".equals(r.optString("st")) && !fin(r) && diff && (nt > ot || old != null)) goalNote(c, w, tx, id, r, old != null && nt <= ot);
+            r.put("t", now);
+            S.put(id, r);
+        }
+        Iterator<String> it = S.keys();
+        List<String> drop = new ArrayList<String>();
+        while (it.hasNext()) {
+            String k = it.next();
+            JSONObject o = S.optJSONObject(k);
+            if (o == null || now - o.optLong("t", 0) > 5 * 86400000L) drop.add(k);
+        }
+        for (String k : drop) S.remove(k);
+        put(p, "bgs", S.toString());
+        results(c, p, w, S, tx);
+    }
+
+    static String tk(JSONObject tx, String k, String d) { String s = tx.optString(k, ""); return s.length() == 0 ? d : s; }
+
+    static String nf(double v) {
+        double r = Math.round(v * 100) / 100.0;
+        if (r == Math.floor(r)) return String.valueOf((long) r);
+        return String.format(Locale.US, "%.2f", r).replaceAll("0$", "");
+    }
+
+    static String kind(JSONObject tx, int n) { return n > 1 ? tk(tx, "mix", "Mix {n}").replace("{n}", String.valueOf(n)) : tk(tx, "one", "Single"); }
+
+    static void goalNote(Context c, JSONObject w, JSONObject tx, String id, JSONObject r, boolean var) {
+        String h = "", a = "";
+        JSONArray L = w.optJSONArray("legs");
+        for (int i = 0; L != null && i < L.length(); i++) {
+            JSONObject g = L.optJSONObject(i);
+            if (g != null && id.equals(g.optString("i"))) { h = g.optString("h"); a = g.optString("a"); }
+        }
+        int hs = r.optInt("hs"), as = r.optInt("as");
+        String el = r.optString("el", "");
+        String title = (var ? tk(tx, "gv", "VAR ") : tk(tx, "g", "GOAL ")) + h + " " + hs + " - " + as + " " + a + (el.length() > 0 ? " (" + el + ")" : "");
+        StringBuilder sb = new StringBuilder();
+        JSONArray B = w.optJSONArray("bets");
+        for (int i = 0; B != null && i < B.length(); i++) {
+            JSONObject b = B.optJSONObject(i);
+            if (b == null) continue;
+            JSONArray l = b.optJSONArray("l");
+            for (int j = 0; l != null && j < l.length(); j++) {
+                JSONObject x = l.optJSONObject(j);
+                if (x == null || !id.equals(x.optString("i")) || !"p".equals(x.optString("r", "p"))) continue;
+                String now = resX(x.optString("pk"), hs, as);
+                String nt = now == null ? "" : (" | " + tk(tx, "n" + now, now));
+                if (sb.length() > 0) sb.append('\n');
+                String pf = b.optString("pf", "");
+                sb.append(pf.length() > 0 ? "[" + pf + "] " : "").append(tk(tx, "tk", "")).append(x.optString("pl")).append(" @").append(String.format(Locale.US, "%.2f", x.optDouble("o", 1)))
+                  .append(" | ").append(kind(tx, l.length())).append(" | ").append(nf(b.optDouble("s", 0))).append(' ').append(tk(tx, "coin", "")).append(nt);
+            }
+        }
+        if (sb.length() == 0) return;
+        AlarmReceiver.show(c, (var ? "v" + id + "_" + hs + "_" + as : "g" + id + "_" + (hs + as)).hashCode(), title, sb.toString(), "bets", tk(tx, "ch", "Bets"));
+    }
+
+    static void results(Context c, SharedPreferences p, JSONObject w, JSONObject S, JSONObject tx) throws Exception {
+        JSONObject N = obj(p, "bgn");
+        if (N == null) N = new JSONObject();
+        boolean ch = false;
+        long now = System.currentTimeMillis();
+        JSONArray B = w.optJSONArray("bets");
+        for (int i = 0; B != null && i < B.length(); i++) {
+            JSONObject b = B.optJSONObject(i);
+            if (b == null) continue;
+            String id = b.optString("id");
+            if (id.length() == 0 || N.has(id)) continue;
+            JSONArray l = b.optJSONArray("l");
+            if (l == null || l.length() == 0) continue;
+            int n = l.length();
+            String[] rs = new String[n], sc = new String[n];
+            boolean lost = false, all = true, allv = true, unk = false;
+            double mul = 1;
+            for (int j = 0; j < n; j++) {
+                JSONObject x = l.optJSONObject(j);
+                String r = x.optString("r", "p"), s = x.optString("sc", "-");
+                if ("p".equals(r)) {
+                    JSONObject st = S.optJSONObject(x.optString("i"));
+                    if (fin(st)) {
+                        if (st.optInt("pp", 0) == 1) { r = "v"; s = tk(tx, "pp", "PP"); }
+                        else {
+                            int hs = st.optInt("hs"), as = st.optInt("as");
+                            r = resX(x.optString("pk"), hs, as);
+                            s = hs + "-" + as;
+                            if (r == null) { unk = true; r = "p"; }
+                        }
+                    }
+                }
+                rs[j] = r; sc[j] = s;
+                if ("l".equals(r)) { lost = true; allv = false; }
+                else if ("p".equals(r)) all = false;
+                else if ("w".equals(r)) { mul *= x.optDouble("o", 1); allv = false; }
+            }
+            if (unk && !lost) continue;
+            String k;
+            if (lost) k = "l";
+            else if (all) k = allv ? "v" : "w";
+            else continue;
+            double stake = b.optDouble("s", 0), win = "l".equals(k) ? 0 : Math.round(stake * mul * 100) / 100.0;
+            String title = "w".equals(k) ? tk(tx, "rw", "WON {x}").replace("{x}", nf(win)) : ("l".equals(k) ? tk(tx, "rl", "LOST {x}").replace("{x}", nf(stake)) : tk(tx, "rv", "VOID {x}").replace("{x}", nf(win)));
+            StringBuilder sb = new StringBuilder();
+            String pf = b.optString("pf", "");
+            sb.append(pf.length() > 0 ? "[" + pf + "] " : "").append(kind(tx, n)).append(" | ").append(tk(tx, "st", "")).append(' ').append(nf(stake)).append(" | ").append(tk(tx, "od", "")).append(' ').append(nf(b.optDouble("o", 1)));
+            for (int j = 0; j < n; j++) {
+                JSONObject x = l.optJSONObject(j);
+                sb.append('\n').append(tk(tx, "m" + rs[j], rs[j])).append(' ').append(x.optString("h")).append(' ').append(sc[j]).append(' ').append(x.optString("a"))
+                  .append(" | ").append(x.optString("pl")).append(" @").append(String.format(Locale.US, "%.2f", x.optDouble("o", 1)));
+            }
+            AlarmReceiver.show(c, ("b" + id).hashCode(), title, sb.toString(), "bets", tk(tx, "ch", "Bets"));
+            N.put(id, now);
+            ch = true;
+        }
+        if (ch) put(p, "bgn", N.toString());
+    }
+
+    /* same rules as JS resX(): w = win, l = lose, v = refund; null = unknown pick */
+    static String resX(String p, int hs, int as) {
+        if (p == null || p.length() == 0) return null;
+        try {
+            if (p.startsWith("H1:") || p.startsWith("H2:")) {
+                double v = Double.parseDouble(p.substring(3));
+                double d = (p.charAt(1) == '1' ? hs - as : as - hs) + v;
+                return d > 0 ? "w" : (d < 0 ? "l" : "v");
+            }
+            int g = hs + as;
+            if (p.equals("1")) return hs > as ? "w" : "l";
+            if (p.equals("2")) return as > hs ? "w" : "l";
+            if (p.equals("X")) return hs == as ? "w" : "l";
+            if (p.equals("1X")) return hs >= as ? "w" : "l";
+            if (p.equals("X2")) return as >= hs ? "w" : "l";
+            if (p.equals("12")) return hs != as ? "w" : "l";
+            if (p.equals("BY")) return (hs > 0 && as > 0) ? "w" : "l";
+            if (p.equals("BN")) return !(hs > 0 && as > 0) ? "w" : "l";
+            char c0 = p.charAt(0);
+            if (c0 == 'O' || c0 == 'U') {
+                if (p.length() != 1 && p.length() != 3) return null;
+                double pt = p.length() > 1 ? Integer.parseInt(p.substring(1)) / 10.0 : 2.5;
+                if (p.length() == 3 && g == pt) return "v";
+                if (c0 == 'O') return g > pt ? "w" : "l";
+                return g < pt ? "w" : "l";
+            }
+        } catch (Exception e) { }
+        return null;
+    }
+
+    static long iso(String s) {
+        try {
+            SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.US);
+            f.setTimeZone(TimeZone.getTimeZone("UTC"));
+            return f.parse(s.substring(0, 16)).getTime();
+        } catch (Exception e) { return 0; }
+    }
+
+    static List<String> words(String s) {
+        List<String> out = new ArrayList<String>();
+        if (s == null) return out;
+        s = s.toLowerCase(Locale.US);
+        try { s = Normalizer.normalize(s, Normalizer.Form.NFD).replaceAll("\\p{M}", ""); } catch (Exception e) { }
+        s = s.replace('&', ' ').replaceAll("[^a-z0-9 ]", " ");
+        for (String x : s.split("\\s+")) {
+            if (x.length() == 0) continue;
+            boolean st = false;
+            for (String y : STOP) if (y.equals(x)) st = true;
+            if (!st) out.add(x);
+        }
+        return out;
+    }
+
+    static double sim1(String a, String b) {
+        List<String> A = words(a), B = words(b);
+        if (A.isEmpty() || B.isEmpty()) return 0;
+        if (A.equals(B)) return 1;
+        int n = 0;
+        for (String x : A) {
+            for (String y : B) {
+                if (x.equals(y) || (x.length() >= 3 && y.length() >= 3 && (y.startsWith(x) || x.startsWith(y)))) { n++; break; }
+            }
+        }
+        return n / (double) Math.max(A.size(), B.size());
+    }
+
+    static double simT(String name, JSONObject t) {
+        if (t == null) return 0;
+        return Math.max(Math.max(sim1(name, t.optString("displayName")), sim1(name, t.optString("shortDisplayName"))), Math.max(sim1(name, t.optString("name")), sim1(name, t.optString("location"))));
+    }
+
+    static int sInt(String s) { try { return Integer.parseInt(s.trim()); } catch (Exception e) { return 0; } }
+
+    static JSONObject espnMatch(JSONObject g, JSONArray evs) throws Exception {
+        String eid = g.optString("eid", "");
+        long t = g.optLong("t", 0);
+        JSONObject best = null, bH = null, bA = null;
+        boolean bsw = false;
+        double bs = 0;
+        for (int i = 0; i < evs.length(); i++) {
+            JSONObject e = evs.optJSONObject(i);
+            if (e == null) continue;
+            JSONArray cs = e.optJSONArray("competitions");
+            JSONObject cp = cs == null ? null : cs.optJSONObject(0);
+            JSONArray co = cp == null ? null : cp.optJSONArray("competitors");
+            if (co == null) continue;
+            JSONObject H = null, A = null;
+            for (int j = 0; j < co.length(); j++) {
+                JSONObject x = co.optJSONObject(j);
+                if (x == null) continue;
+                if ("home".equals(x.optString("homeAway"))) H = x; else A = x;
+            }
+            if (H == null || A == null) continue;
+            if (eid.length() > 0) {
+                if (!eid.equals(e.optString("id"))) continue;
+                best = e; bH = H; bA = A; bsw = g.optInt("sw", 0) == 1; bs = 9;
+                break;
+            }
+            long dt = Math.abs(iso(e.optString("date")) - t);
+            if (dt > 6 * 3600000L) continue;
+            double s1 = simT(g.optString("h"), H.optJSONObject("team")) + simT(g.optString("a"), A.optJSONObject("team"));
+            double s2 = simT(g.optString("h"), A.optJSONObject("team")) + simT(g.optString("a"), H.optJSONObject("team"));
+            double sc = Math.max(s1, s2);
+            if (dt < 20 * MIN) sc += 0.3;
+            if (sc > bs) { bs = sc; best = e; bH = H; bA = A; bsw = s2 > s1; }
+        }
+        if (best == null || bs < 1.2) return null;
+        JSONObject st = best.optJSONObject("status");
+        if (st == null) st = new JSONObject();
+        JSONObject ty = st.optJSONObject("type");
+        if (ty == null) ty = new JSONObject();
+        String state = ty.optString("state", "pre");
+        boolean pp = (ty.optString("name", "") + " " + ty.optString("description", "")).toUpperCase(Locale.US).matches("(?s).*(POSTPON|CANCEL|ABANDON).*");
+        JSONObject r = new JSONObject();
+        r.put("hs", sInt((bsw ? bA : bH).optString("score", "0")));
+        r.put("as", sInt((bsw ? bH : bA).optString("score", "0")));
+        String s = (ty.optBoolean("completed", false) || "post".equals(state)) ? "post" : ("in".equals(state) ? "in" : "pre");
+        if (pp) { s = "post"; r.put("pp", 1); r.put("hs", 0); r.put("as", 0); }
+        r.put("st", s);
+        r.put("el", ty.optString("shortDetail", ""));
+        return r;
+    }
+
+    static JSONObject afParse(JSONObject f, boolean sw) throws Exception {
+        JSONObject fx = f.optJSONObject("fixture");
+        JSONObject stt = fx == null ? null : fx.optJSONObject("status");
+        String sh = stt == null ? "NS" : stt.optString("short", "NS");
+        JSONObject r = new JSONObject();
+        if ("PST".equals(sh) || "CANC".equals(sh) || "ABD".equals(sh) || "AWD".equals(sh) || "WO".equals(sh)) {
+            r.put("hs", 0); r.put("as", 0); r.put("st", "post"); r.put("pp", 1); r.put("el", sh);
+            return r;
+        }
+        String st;
+        if ("FT".equals(sh) || "AET".equals(sh) || "PEN".equals(sh)) st = "post";
+        else if ("1H".equals(sh) || "HT".equals(sh) || "2H".equals(sh) || "ET".equals(sh) || "BT".equals(sh) || "P".equals(sh) || "LIVE".equals(sh) || "INT".equals(sh) || "SUSP".equals(sh)) st = "in";
+        else return null;
+        JSONObject gl = f.optJSONObject("goals");
+        if (gl == null || gl.isNull("home") || gl.isNull("away")) return null;
+        int hs = gl.optInt("home"), as = gl.optInt("away");
+        JSONObject sc = f.optJSONObject("score");
+        JSONObject ft = sc == null ? null : sc.optJSONObject("fulltime");
+        if (("AET".equals(sh) || "PEN".equals(sh)) && ft != null && !ft.isNull("home") && !ft.isNull("away")) { hs = ft.optInt("home"); as = ft.optInt("away"); }
+        r.put("hs", sw ? as : hs);
+        r.put("as", sw ? hs : as);
+        r.put("st", st);
+        int el = stt == null ? 0 : stt.optInt("elapsed", 0);
+        r.put("el", "post".equals(st) ? "FT" : (el > 0 ? el + "'" : sh));
+        return r;
+    }
+}
+EOF_X
+cat > src/main/assets/index.html <<'EOF_X'
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>&#x641;&#x648;&#x62a;&#x628;&#x627;&#x644; &#x628;&#x62a;</title>
+<style>
+:root{--bg:#0b1a2e;--card:#13263f;--card2:#1b3352;--acc:#1e88e5;--gold:#ffc107;--green:#2ecc71;--red:#e74c3c;--txt:#e8eef6;--mut:#8aa0b8}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--txt);font-family:Tahoma,sans-serif;font-size:14px;padding-bottom:70px}
+header{position:sticky;top:0;z-index:5;background:#0a2a4f;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px #0006}
+.logo{font-weight:bold;font-size:17px}
+.bal{background:#0006;border-radius:20px;padding:6px 12px;color:var(--gold);font-weight:bold}
+.leagues{display:flex;gap:8px;overflow-x:auto;padding:10px 12px;white-space:nowrap}
+.chip{background:var(--card);border:1px solid #234;border-radius:18px;padding:7px 13px;color:var(--mut);display:inline-block}
+.chip.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.match{background:var(--card);margin:8px 12px;border-radius:12px;padding:12px}
+.mt{display:flex;justify-content:space-between;color:var(--mut);font-size:12px;margin-bottom:8px}
+.teams{font-weight:bold;margin-bottom:10px;line-height:1.7;direction:ltr;text-align:left}
+.odds{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:6px}
+.odds.two{grid-template-columns:repeat(2,1fr)}
+.ob{background:var(--card2);border-radius:8px;padding:8px 4px;text-align:center;border:1px solid transparent}
+.ob small{display:block;color:var(--mut);font-size:11px;margin-bottom:2px}
+.ob b{color:var(--gold)}
+.ob.sel{background:var(--acc);border-color:#fff3}
+.ob.sel b,.ob.sel small{color:#fff}
+.ob.dis{opacity:.35}
+.ob i.pr{display:block;font-style:normal;font-size:10px;color:var(--mut);margin-top:2px}
+.ob.sel i.pr{color:#fffc}
+.warn{background:#e74c3c22;border-right:3px solid var(--red);border-radius:8px;padding:6px 8px;margin-top:6px;font-size:12px;line-height:1.8}
+.lnk{color:var(--acc);font-size:12px;margin-left:12px}
+nav{position:fixed;bottom:0;left:0;right:0;background:#0a2a4f;display:flex;box-shadow:0 -2px 8px #0006}
+nav button{flex:1;background:none;border:0;border-top:3px solid transparent;color:var(--mut);padding:10px 0;font-family:inherit;font-size:12px}
+nav button.on{color:#fff;border-top-color:var(--acc)}
+.badge{background:var(--red);color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-right:4px}
+.page{display:none}.page.on{display:block}
+.box{background:var(--card);margin:10px 12px;border-radius:12px;padding:14px}
+.gd{margin:8px 0 0;padding-right:20px;line-height:1.9}.gd li{margin-bottom:6px}.gdd summary{cursor:pointer;outline:none}
+.row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;gap:8px}
+.sl{border-bottom:1px solid #234;padding:8px 0}
+.x{color:var(--red);padding:0 6px}
+input{width:100%;background:var(--card2);border:1px solid #2a4a70;color:var(--txt);border-radius:8px;padding:10px;font-size:15px;font-family:inherit;margin:6px 0}
+.btn{width:100%;background:var(--green);color:#fff;border:0;border-radius:10px;padding:12px;font-size:15px;font-weight:bold;font-family:inherit;margin-top:8px}
+.btn.sec{background:var(--card2)}
+.btn.blue{background:var(--acc)}
+.quick{display:flex;gap:6px}.quick button{flex:1;background:var(--card2);color:var(--txt);border:0;border-radius:8px;padding:8px;font-family:inherit}
+.st{border-radius:6px;padding:2px 8px;font-size:12px}
+.st.p{background:#ffc10733;color:var(--gold)}.st.w{background:#2ecc7133;color:var(--green)}.st.l{background:#e74c3c33;color:var(--red)}
+.mut{color:var(--mut);font-size:12px}
+.ltr{direction:ltr;unicode-bidi:embed}
+.gold{color:var(--gold)}
+.empty{text-align:center;color:var(--mut);padding:40px 20px;line-height:2}
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#000d;color:#fff;padding:10px 16px;border-radius:20px;display:none;z-index:9;max-width:90%;text-align:center}
+.spin{text-align:center;padding:30px;color:var(--mut)}
+.day{padding:12px 14px 2px;color:var(--gold);font-weight:bold;font-size:13px}
+.dsec{background:#0a2a4f;margin:10px 12px 0;border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:bold;color:var(--gold)}
+.dsec.on{border-radius:12px 12px 0 0}
+.dcty{background:var(--card);margin:6px 12px 0;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+.dlg{margin:4px 12px 0 12px;padding:8px 14px;border-right:3px solid var(--acc);background:var(--card2);border-radius:8px;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.dwrap{padding-bottom:4px}
+.more{text-align:center;color:#64b5f6;padding:8px 0 2px;font-size:13px}.delbtn{width:auto;background:#8e2b35;color:#fff;border:1px solid #d85b65;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:bold;font-family:inherit;margin:0 4px;line-height:1.4}
+.chip.sm{padding:5px 11px;font-size:12px}
+.lbl{color:var(--mut);font-size:12px;margin:8px 0 4px}
+.hr{display:grid;grid-template-columns:58px 1fr 1fr;gap:6px;align-items:center;margin-bottom:5px}.hr .ob{padding:5px 2px}.hh span{text-align:center;font-size:12px;color:var(--mut);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.hpp{border-top:1px dashed var(--card2);margin-top:6px;padding-top:4px}
+.leagues:empty{display:none}
+.bell{margin-right:6px;font-size:15px}
+.tc{display:flex;justify-content:space-between;align-items:center;background:#0e2f57;margin:8px 12px 0;padding:13px 14px;border-radius:12px;font-weight:bold;font-size:15px}
+.tk{display:flex;justify-content:space-between;align-items:center;background:var(--card);margin:4px 12px 0 12px;padding:11px 14px;border-radius:10px;border-right:3px solid var(--acc)}
+.tl{display:flex;justify-content:space-between;align-items:center;background:var(--card2);margin:3px 26px 0 12px;padding:10px 14px;border-radius:8px;font-size:13px}
+.tl.off{opacity:.45}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.cell{background:var(--card2);border-radius:8px;padding:8px;text-align:center;font-size:12px}
+.cell b{display:block;font-size:15px;margin-top:3px}
+.upd{border:1px solid var(--green)}
+textarea{width:100%;background:var(--card2);border:1px solid #2a4a70;color:var(--txt);border-radius:8px;padding:10px;font-size:14px;font-family:inherit;margin:6px 0;min-height:60px;resize:vertical}
+.note{background:#0e2f57;border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.9;white-space:pre-wrap}
+.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.tbl th,.tbl td{padding:7px 3px;border-bottom:1px solid #234;text-align:center}
+.tbl th{color:var(--mut);font-weight:normal}
+.tbl td:first-child,.tbl th:first-child{text-align:right}
+.tbl tr.best td{background:#2ecc7122}
+.live{background:#e74c3c22;color:#ff6b6b;font-weight:bold;text-align:center;padding:7px;border-radius:8px;margin-bottom:8px}
+.live.fin{background:#2ecc7122;color:var(--green)}
+.tm{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sc{color:#ff6b6b;font-size:19px;min-width:26px;text-align:center}
+.sc.fin{color:var(--green)}
+.lv{color:#ff6b6b;font-size:12px;font-weight:normal;margin-right:6px}
+.live.na{background:none;color:var(--mut);font-weight:normal;font-size:12px}
+.lr{background:var(--card2);margin:3px 26px 0 12px;padding:6px 12px;border-radius:8px;font-size:13px;border-right:3px solid #ff6b6b}
+.lr .row{padding:2px 0;direction:ltr}
+.lvh{margin:6px 12px 0;padding:10px 14px;border-radius:10px;background:#e74c3c22;color:#ff6b6b;font-weight:bold;display:flex;justify-content:space-between}
+.ob.man{border:1px dashed #3d6a9a}
+.pf{font-size:11px;color:#cfe3ff;font-weight:normal;margin-left:8px}
+.pr1{display:flex;justify-content:space-between;align-items:center;background:var(--card2);border-radius:8px;padding:9px 10px;margin-top:6px}
+.pr1.on{border:1px solid var(--green)}
+select{width:100%;background:var(--card2);border:1px solid #2a4a70;color:var(--txt);border-radius:8px;padding:10px;font-size:14px;font-family:inherit;margin:6px 0}
+.sg{display:grid;gap:6px;margin-top:4px}.sg input{margin:2px 0;padding:8px 4px;font-size:14px;text-align:center}#p-calc .tbl{font-size:11px}#p-calc .tbl th,#p-calc .tbl td{padding:6px 2px}#p-calc .cell span{display:block;font-size:12px;margin-top:2px}
+</style>
+</head>
+<body>
+<header><div class="logo">&#x26bd; &#x641;&#x648;&#x62a;&#x628;&#x627;&#x644; &#x628;&#x62a;</div><div class="bal" id="bal">0</div></header>
+<div id="p-matches" class="page on"><div id="upd"></div><div id="leagues"></div><div id="list"></div><div id="mdet"></div></div>
+<div id="p-slip" class="page"><div id="slip"></div></div>
+<div id="p-bets" class="page"><div class="box"><button class="btn blue" onclick="checkResults()">&#x1f504; &#x628;&#x631;&#x648;&#x632;&#x631;&#x633;&#x627;&#x646;&#x6cc; &#x646;&#x62a;&#x627;&#x6cc;&#x62c; &#x647;&#x645;&#x647; &#x634;&#x631;&#x637;&#x200c;&#x647;&#x627;</button></div><div id="bets"></div></div>
+<div id="p-set" class="page"><div id="set"></div></div>
+<div id="p-calc" class="page"><div id="calc"></div></div>
+<nav>
+<button id="n-matches" class="on" onclick="go('matches')">&#x26bd; &#x628;&#x627;&#x632;&#x6cc;&#x200c;&#x647;&#x627;</button>
+<button id="n-slip" onclick="go('slip')">&#x1f3ab; &#x628;&#x644;&#x6cc;&#x637;<span id="cnt"></span></button>
+<button id="n-bets" onclick="go('bets')">&#x1f4cb; &#x634;&#x631;&#x637;&#x200c;&#x647;&#x627;&#x6cc; &#x645;&#x646;</button>
+<button id="n-calc" onclick="go('calc')">&#x1f9ee; &#x62f;&#x631;&#x635;&#x62f;</button>
+<button id="n-set" onclick="go('set')">&#x2699;&#xfe0f; &#x62a;&#x646;&#x638;&#x6cc;&#x645;&#x627;&#x62a;</button>
+</nav>
+<div class="toast" id="toast"></div>
+<script>
+var API = 'https://api.the-odds-api.com/v4/sports/';
+var ESPN_API = 'https://site.api.espn.com/apis/site/v2/sports/soccer/';
+var ESPN = {
+  soccer_epl: 'eng.1', soccer_efl_champ: 'eng.2', soccer_england_league1: 'eng.3', soccer_england_league2: 'eng.4', soccer_fa_cup: 'eng.fa', soccer_england_efl_cup: 'eng.league_cup',
+  soccer_spain_la_liga: 'esp.1', soccer_spain_segunda_division: 'esp.2', soccer_spain_copa_del_rey: 'esp.copa_del_rey',
+  soccer_italy_serie_a: 'ita.1', soccer_italy_serie_b: 'ita.2', soccer_italy_coppa_italia: 'ita.coppa_italia',
+  soccer_germany_bundesliga: 'ger.1', soccer_germany_bundesliga2: 'ger.2', soccer_germany_dfb_pokal: 'ger.dfb_pokal',
+  soccer_france_ligue_one: 'fra.1', soccer_france_ligue_two: 'fra.2', soccer_france_coupe_de_france: 'fra.coupe_de_france',
+  soccer_uefa_champs_league: 'uefa.champions', soccer_uefa_europa_league: 'uefa.europa', soccer_uefa_europa_conference_league: 'uefa.europa.conf',
+  soccer_uefa_champs_league_qualification: 'uefa.champions_qual', soccer_uefa_nations_league: 'uefa.nations', soccer_uefa_european_championship: 'uefa.euro',
+  soccer_fifa_world_cup: 'fifa.world', soccer_fifa_world_cup_qualifiers_europe: 'fifa.worldq.uefa', soccer_fifa_world_cup_qualifiers_south_america: 'fifa.worldq.conmebol',
+  soccer_netherlands_eredivisie: 'ned.1', soccer_portugal_primeira_liga: 'por.1', soccer_turkey_super_league: 'tur.1', soccer_belgium_first_div: 'bel.1',
+  soccer_spl: 'sco.1', soccer_greece_super_league: 'gre.1', soccer_austria_bundesliga: 'aut.1', soccer_switzerland_superleague: 'sui.1',
+  soccer_denmark_superliga: 'den.1', soccer_norway_eliteserien: 'nor.1', soccer_sweden_allsvenskan: 'swe.1', soccer_poland_ekstraklasa: 'pol.1', soccer_russia_premier_league: 'rus.1',
+  soccer_brazil_campeonato: 'bra.1', soccer_brazil_serie_b: 'bra.2', soccer_argentina_primera_division: 'arg.1', soccer_chile_campeonato: 'chi.1',
+  soccer_usa_mls: 'usa.1', soccer_mexico_ligamx: 'mex.1', soccer_conmebol_copa_libertadores: 'conmebol.libertadores', soccer_conmebol_copa_sudamericana: 'conmebol.sudamericana',
+  soccer_conmebol_copa_america: 'conmebol.america', soccer_saudi_arabia_pro_league: 'ksa.1', soccer_japan_j_league: 'jpn.1', soccer_korea_kleague1: 'kor.1',
+  soccer_china_superleague: 'chn.1', soccer_australia_aleague: 'aus.1'
+};
+var LIVE = {}, LT = {}, LTRY = {}, LERR = {}, FX_TTL = 30 * 60000, FXTRY = {}, LIVEC = null, LCT = 0, REVE = {};
+var LIVEM = [], ESN = ld('esn', {}), DAY = null, DAYT = 0, DAYF = 0, DAYTRY = 0, DAYU = true, DAYE = false, DAYN = 0, RMALL = false, AFE = false, AFOP = { t: 0, d: [] }, DAY_TTL = 10 * 60000, OPENL = {}, MEDIT = {};
+var MAN = ld('man', {});
+(function () { var n = Date.now(), ch = false; for (var k in MAN) { if (!MAN[k] || !MAN[k]._t || new Date(MAN[k]._t).getTime() + 3 * 86400000 < n) { delete MAN[k]; ch = true; } } if (ch) sv('man', MAN); })();
+(function () { for (var k in ESPN) REVE[ESPN[k]] = k; })();
+var PFX = { eng: 'england', esp: 'spain', ita: 'italy', ger: 'germany', fra: 'france', ned: 'netherlands', por: 'portugal', tur: 'turkey', bel: 'belgium', sco: 'scotland',
+  aut: 'austria', sui: 'switzerland', gre: 'greece', rus: 'russia', ukr: 'ukraine', den: 'denmark', nor: 'norway', swe: 'sweden', pol: 'poland', cze: 'czech', cro: 'croatia',
+  srb: 'serbia', rou: 'romania', fin: 'finland', irl: 'ireland', ksa: 'saudi', irn: 'iran', jpn: 'japan', kor: 'korea', chn: 'china', aus: 'australia', qat: 'qatar', uae: 'uae',
+  ind: 'india', tha: 'thailand', bra: 'brazil', arg: 'argentina', mex: 'mexico', usa: 'usa', col: 'colombia', chi: 'chile', uru: 'uruguay', per: 'peru', ecu: 'ecuador',
+  par: 'paraguay', can: 'canada', egy: 'egypt', mar: 'morocco', rsa: 'south_africa', tun: 'tunisia', alg: 'algeria', nga: 'nigeria', uefa: 'uefa', conmebol: 'conmebol',
+  concacaf: 'concacaf', afc: 'afc', caf: 'caf', fifa: 'national',
+  blr: 'belarus', ben: 'benin', bol: 'bolivia', bul: 'bulgaria', bfa: 'burkina', bdi: 'burundi', crc: 'costa_rica', civ: 'ivory', dom: 'dominican', slv: 'el_salvador', geo: 'georgia', gha: 'ghana', gua: 'guatemala', hon: 'honduras', hun: 'hungary', isl: 'iceland', idn: 'indonesia', isr: 'israel', jam: 'jamaica', ken: 'kenya', kos: 'kosovo', lux: 'luxembourg', mys: 'malaysia', mas: 'malaysia', mda: 'moldova', mng: 'mongolia', mne: 'montenegro', nca: 'nicaragua', nig: 'niger', nir: 'n_ireland', pan: 'panama', phi: 'philippines', sen: 'senegal', svk: 'slovakia', svn: 'slovenia', uzb: 'uzbekistan', ven: 'venezuela', wal: 'wales', zam: 'zambia', club: 'national', global: 'national' };
+var POP = ['soccer_epl', 'soccer_spain_la_liga', 'soccer_italy_serie_a', 'soccer_germany_bundesliga', 'soccer_france_ligue_one', 'soccer_uefa_champs_league', 'soccer_uefa_europa_league'];
+var FA = {
+  soccer_epl: '\ud83c\udff4 \u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0627\u0646\u06af\u0644\u06cc\u0633', soccer_efl_champ: '\ud83c\udff4 \u0686\u0645\u067e\u06cc\u0648\u0646\u0634\u06cc\u067e \u0627\u0646\u06af\u0644\u06cc\u0633', soccer_england_league1: '\ud83c\udff4 \u0644\u06cc\u06af \u06cc\u06a9 \u0627\u0646\u06af\u0644\u06cc\u0633',
+  soccer_fa_cup: '\ud83c\udff4 \u062c\u0627\u0645 \u062d\u0630\u0641\u06cc \u0627\u0646\u06af\u0644\u06cc\u0633', soccer_spain_la_liga: '\ud83c\uddea\ud83c\uddf8 \u0644\u0627\u0644\u06cc\u06af\u0627 \u0627\u0633\u067e\u0627\u0646\u06cc\u0627', soccer_spain_segunda_division: '\ud83c\uddea\ud83c\uddf8 \u0644\u0627\u0644\u06cc\u06af\u0627 \u06f2',
+  soccer_italy_serie_a: '\ud83c\uddee\ud83c\uddf9 \u0633\u0631\u06cc \u0622 \u0627\u06cc\u062a\u0627\u0644\u06cc\u0627', soccer_italy_serie_b: '\ud83c\uddee\ud83c\uddf9 \u0633\u0631\u06cc \u0628\u06cc \u0627\u06cc\u062a\u0627\u0644\u06cc\u0627', soccer_germany_bundesliga: '\ud83c\udde9\ud83c\uddea \u0628\u0648\u0646\u062f\u0633\u0644\u06cc\u06af\u0627 \u0622\u0644\u0645\u0627\u0646',
+  soccer_germany_bundesliga2: '\ud83c\udde9\ud83c\uddea \u0628\u0648\u0646\u062f\u0633\u0644\u06cc\u06af\u0627 \u06f2', soccer_france_ligue_one: '\ud83c\uddeb\ud83c\uddf7 \u0644\u0648\u0634\u0627\u0645\u067e\u06cc\u0648\u0646\u0647 \u0641\u0631\u0627\u0646\u0633\u0647', soccer_france_ligue_two: '\ud83c\uddeb\ud83c\uddf7 \u0644\u06cc\u06af \u06f2 \u0641\u0631\u0627\u0646\u0633\u0647',
+  soccer_uefa_champs_league: '\ud83c\udfc6 \u0644\u06cc\u06af \u0642\u0647\u0631\u0645\u0627\u0646\u0627\u0646 \u0627\u0631\u0648\u067e\u0627', soccer_uefa_europa_league: '\ud83c\udfc6 \u0644\u06cc\u06af \u0627\u0631\u0648\u067e\u0627', soccer_uefa_europa_conference_league: '\ud83c\udfc6 \u0644\u06cc\u06af \u06a9\u0646\u0641\u0631\u0627\u0646\u0633 \u0627\u0631\u0648\u067e\u0627',
+  soccer_netherlands_eredivisie: '\ud83c\uddf3\ud83c\uddf1 \u0627\u0631\u062f\u06cc\u0648\u06cc\u0633\u06cc \u0647\u0644\u0646\u062f', soccer_portugal_primeira_liga: '\ud83c\uddf5\ud83c\uddf9 \u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u067e\u0631\u062a\u063a\u0627\u0644', soccer_turkey_super_league: '\ud83c\uddf9\ud83c\uddf7 \u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u062a\u0631\u06a9\u06cc\u0647',
+  soccer_belgium_first_div: '\ud83c\udde7\ud83c\uddea \u0644\u06cc\u06af \u0628\u0644\u0698\u06cc\u06a9', soccer_spl: '\ud83c\udff4 \u0644\u06cc\u06af \u0627\u0633\u06a9\u0627\u062a\u0644\u0646\u062f', soccer_greece_super_league: '\ud83c\uddec\ud83c\uddf7 \u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u06cc\u0648\u0646\u0627\u0646',
+  soccer_japan_j_league: '\ud83c\uddef\ud83c\uddf5 \u062c\u06cc\u200c\u0644\u06cc\u06af \u0698\u0627\u067e\u0646', soccer_china_superleague: '\ud83c\udde8\ud83c\uddf3 \u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u0686\u06cc\u0646', soccer_korea_kleague1: '\ud83c\uddf0\ud83c\uddf7 \u06a9\u06cc\u200c\u0644\u06cc\u06af \u06a9\u0631\u0647',
+  soccer_australia_aleague: '\ud83c\udde6\ud83c\uddfa \u0627\u06cc\u200c\u0644\u06cc\u06af \u0627\u0633\u062a\u0631\u0627\u0644\u06cc\u0627', soccer_mexico_ligamx: '\ud83c\uddf2\ud83c\uddfd \u0644\u06cc\u06af\u0627 MX \u0645\u06a9\u0632\u06cc\u06a9', soccer_brazil_campeonato: '\ud83c\udde7\ud83c\uddf7 \u0633\u0631\u06cc \u0622 \u0628\u0631\u0632\u06cc\u0644',
+  soccer_argentina_primera_division: '\ud83c\udde6\ud83c\uddf7 \u0644\u06cc\u06af \u0622\u0631\u0698\u0627\u0646\u062a\u06cc\u0646', soccer_usa_mls: '\ud83c\uddfa\ud83c\uddf8 MLS \u0622\u0645\u0631\u06cc\u06a9\u0627', soccer_chile_campeonato: '\ud83c\udde8\ud83c\uddf1 \u0644\u06cc\u06af \u0634\u06cc\u0644\u06cc',
+  soccer_conmebol_copa_libertadores: '\ud83c\udfc6 \u06a9\u0648\u067e\u0627 \u0644\u06cc\u0628\u0631\u062a\u0627\u062f\u0648\u0631\u0633', soccer_conmebol_copa_sudamericana: '\ud83c\udfc6 \u06a9\u0648\u067e\u0627 \u0633\u0648\u062f\u0627\u0645\u0631\u06cc\u06a9\u0627\u0646\u0627',
+  soccer_fifa_world_cup: '\ud83c\udf0d \u062c\u0627\u0645 \u062c\u0647\u0627\u0646\u06cc', soccer_uefa_nations_league: '\ud83c\uddea\ud83c\uddfa \u0644\u06cc\u06af \u0645\u0644\u062a\u200c\u0647\u0627\u06cc \u0627\u0631\u0648\u067e\u0627',
+  soccer_england_efl_cup: '\ud83c\udff4 \u062c\u0627\u0645 \u0627\u062a\u062d\u0627\u062f\u06cc\u0647 \u0627\u0646\u06af\u0644\u06cc\u0633', soccer_england_league2: '\ud83c\udff4 \u0644\u06cc\u06af \u062f\u0648 \u0627\u0646\u06af\u0644\u06cc\u0633', soccer_spain_copa_del_rey: '\ud83c\uddea\ud83c\uddf8 \u06a9\u0648\u067e\u0627 \u062f\u0644 \u0631\u06cc',
+  soccer_italy_coppa_italia: '\ud83c\uddee\ud83c\uddf9 \u06a9\u0648\u067e\u0627 \u0627\u06cc\u062a\u0627\u0644\u06cc\u0627', soccer_germany_dfb_pokal: '\ud83c\udde9\ud83c\uddea \u062c\u0627\u0645 \u062d\u0630\u0641\u06cc \u0622\u0644\u0645\u0627\u0646', soccer_germany_liga3: '\ud83c\udde9\ud83c\uddea \u0644\u06cc\u06af \u06f3 \u0622\u0644\u0645\u0627\u0646',
+  soccer_france_coupe_de_france: '\ud83c\uddeb\ud83c\uddf7 \u062c\u0627\u0645 \u062d\u0630\u0641\u06cc \u0641\u0631\u0627\u0646\u0633\u0647', soccer_uefa_champs_league_qualification: '\ud83c\udfc6 \u0645\u0642\u062f\u0645\u0627\u062a\u06cc \u0644\u06cc\u06af \u0642\u0647\u0631\u0645\u0627\u0646\u0627\u0646', soccer_saudi_arabia_pro_league: '\ud83c\uddf8\ud83c\udde6 \u0644\u06cc\u06af \u062d\u0631\u0641\u0647\u200c\u0627\u06cc \u0639\u0631\u0628\u0633\u062a\u0627\u0646',
+  soccer_brazil_serie_b: '\ud83c\udde7\ud83c\uddf7 \u0633\u0631\u06cc \u0628\u06cc \u0628\u0631\u0632\u06cc\u0644', soccer_austria_bundesliga: '\ud83c\udde6\ud83c\uddf9 \u0628\u0648\u0646\u062f\u0633\u0644\u06cc\u06af\u0627 \u0627\u062a\u0631\u06cc\u0634', soccer_switzerland_superleague: '\ud83c\udde8\ud83c\udded \u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u0633\u0648\u0626\u06cc\u0633',
+  soccer_russia_premier_league: '\ud83c\uddf7\ud83c\uddfa \u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0631\u0648\u0633\u06cc\u0647', soccer_denmark_superliga: '\ud83c\udde9\ud83c\uddf0 \u0633\u0648\u067e\u0631\u0644\u06cc\u06af\u0627 \u062f\u0627\u0646\u0645\u0627\u0631\u06a9', soccer_norway_eliteserien: '\ud83c\uddf3\ud83c\uddf4 \u0627\u0644\u06cc\u062a\u0647\u200c\u0633\u0631\u06cc\u0646 \u0646\u0631\u0648\u0698',
+  soccer_sweden_allsvenskan: '\ud83c\uddf8\ud83c\uddea \u0622\u0644\u0633\u0648\u0646\u0633\u06a9\u0627\u0646 \u0633\u0648\u0626\u062f', soccer_sweden_superettan: '\ud83c\uddf8\ud83c\uddea \u0633\u0648\u067e\u0631\u062a\u0627\u0646 \u0633\u0648\u0626\u062f', soccer_poland_ekstraklasa: '\ud83c\uddf5\ud83c\uddf1 \u0627\u06a9\u0633\u062a\u0631\u0627\u06a9\u0644\u0627\u0633\u0627 \u0644\u0647\u0633\u062a\u0627\u0646',
+  soccer_finland_veikkausliiga: '\ud83c\uddeb\ud83c\uddee \u0644\u06cc\u06af \u0641\u0646\u0644\u0627\u0646\u062f', soccer_league_of_ireland: '\ud83c\uddee\ud83c\uddea \u0644\u06cc\u06af \u0627\u06cc\u0631\u0644\u0646\u062f', soccer_fifa_club_world_cup: '\ud83c\udfc6 \u062c\u0627\u0645 \u0628\u0627\u0634\u06af\u0627\u0647\u200c\u0647\u0627\u06cc \u062c\u0647\u0627\u0646',
+  soccer_conmebol_copa_america: '\ud83c\udf0e \u06a9\u0648\u067e\u0627 \u0622\u0645\u0631\u06cc\u06a9\u0627', soccer_uefa_european_championship: '\ud83c\uddea\ud83c\uddfa \u062c\u0627\u0645 \u0645\u0644\u062a\u200c\u0647\u0627\u06cc \u0627\u0631\u0648\u067e\u0627', soccer_africa_cup_of_nations: '\ud83c\udf0d \u062c\u0627\u0645 \u0645\u0644\u062a\u200c\u0647\u0627\u06cc \u0622\u0641\u0631\u06cc\u0642\u0627',
+  soccer_concacaf_gold_cup: '\ud83c\udf0e \u06af\u0644\u062f\u06a9\u0627\u067e', soccer_concacaf_leagues_cup: '\ud83c\udfc6 \u0644\u06cc\u06af\u0632 \u06a9\u0627\u067e', soccer_fifa_world_cup_qualifiers_europe: '\ud83c\udf0d \u0645\u0642\u062f\u0645\u0627\u062a\u06cc \u062c\u0627\u0645 \u062c\u0647\u0627\u0646\u06cc (\u0627\u0631\u0648\u067e\u0627)',
+  soccer_fifa_world_cup_qualifiers_south_america: '\ud83c\udf0d \u0645\u0642\u062f\u0645\u0627\u062a\u06cc \u062c\u0627\u0645 \u062c\u0647\u0627\u0646\u06cc (\u0622\u0645\u0631\u06cc\u06a9\u0627\u06cc \u062c\u0646\u0648\u0628\u06cc)'
+};
+var CONT = [['eu', '\ud83c\uddea\ud83c\uddfa \u0627\u0631\u0648\u067e\u0627'], ['asia', '\ud83c\udf0f \u0622\u0633\u06cc\u0627 \u0648 \u0627\u0642\u06cc\u0627\u0646\u0648\u0633\u06cc\u0647'], ['am', '\ud83c\udf0e \u0622\u0645\u0631\u06cc\u06a9\u0627'], ['af', '\ud83c\udf0d \u0622\u0641\u0631\u06cc\u0642\u0627'], ['world', '\ud83c\udfc6 \u062c\u0647\u0627\u0646\u06cc \u0648 \u062a\u06cc\u0645\u200c\u0647\u0627\u06cc \u0645\u0644\u06cc'], ['other', '\u26bd \u0633\u0627\u06cc\u0631']];
+var COUNTRIES = [
+  ['club_world', '\ud83c\udfc6', '\u062c\u0627\u0645 \u0628\u0627\u0634\u06af\u0627\u0647\u200c\u0647\u0627\u06cc \u062c\u0647\u0627\u0646', 'world', /club_world_cup/],
+  ['national', '\ud83c\udf0d', '\u062a\u06cc\u0645\u200c\u0647\u0627\u06cc \u0645\u0644\u06cc', 'world', /fifa|uefa_nations|european_championship|euro_qual|copa_america|gold_cup|asian_cup|africa_cup_of_nations|friendl|international|olympic|womens/],
+  ['uefa', '\ud83c\udfc6', '\u062c\u0627\u0645\u200c\u0647\u0627\u06cc \u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u0627\u0631\u0648\u067e\u0627', 'eu', /uefa/],
+  ['england', '\ud83c\udff4', '\u0627\u0646\u06af\u0644\u06cc\u0633', 'eu', /epl|efl|england|fa_cup/],
+  ['spain', '\ud83c\uddea\ud83c\uddf8', '\u0627\u0633\u067e\u0627\u0646\u06cc\u0627', 'eu', /spain/],
+  ['italy', '\ud83c\uddee\ud83c\uddf9', '\u0627\u06cc\u062a\u0627\u0644\u06cc\u0627', 'eu', /italy/],
+  ['germany', '\ud83c\udde9\ud83c\uddea', '\u0622\u0644\u0645\u0627\u0646', 'eu', /germany/],
+  ['france', '\ud83c\uddeb\ud83c\uddf7', '\u0641\u0631\u0627\u0646\u0633\u0647', 'eu', /france/],
+  ['netherlands', '\ud83c\uddf3\ud83c\uddf1', '\u0647\u0644\u0646\u062f', 'eu', /netherlands/],
+  ['portugal', '\ud83c\uddf5\ud83c\uddf9', '\u067e\u0631\u062a\u063a\u0627\u0644', 'eu', /portugal/],
+  ['turkey', '\ud83c\uddf9\ud83c\uddf7', '\u062a\u0631\u06a9\u06cc\u0647', 'eu', /turkey/],
+  ['belgium', '\ud83c\udde7\ud83c\uddea', '\u0628\u0644\u0698\u06cc\u06a9', 'eu', /belgium/],
+  ['scotland', '\ud83c\udff4', '\u0627\u0633\u06a9\u0627\u062a\u0644\u0646\u062f', 'eu', /spl|scotland/],
+  ['austria', '\ud83c\udde6\ud83c\uddf9', '\u0627\u062a\u0631\u06cc\u0634', 'eu', /austria/],
+  ['switzerland', '\ud83c\udde8\ud83c\udded', '\u0633\u0648\u0626\u06cc\u0633', 'eu', /switzerland/],
+  ['greece', '\ud83c\uddec\ud83c\uddf7', '\u06cc\u0648\u0646\u0627\u0646', 'eu', /greece/],
+  ['russia', '\ud83c\uddf7\ud83c\uddfa', '\u0631\u0648\u0633\u06cc\u0647', 'eu', /russia/],
+  ['ukraine', '\ud83c\uddfa\ud83c\udde6', '\u0627\u0648\u06a9\u0631\u0627\u06cc\u0646', 'eu', /ukraine/],
+  ['denmark', '\ud83c\udde9\ud83c\uddf0', '\u062f\u0627\u0646\u0645\u0627\u0631\u06a9', 'eu', /denmark/],
+  ['norway', '\ud83c\uddf3\ud83c\uddf4', '\u0646\u0631\u0648\u0698', 'eu', /norway/],
+  ['sweden', '\ud83c\uddf8\ud83c\uddea', '\u0633\u0648\u0626\u062f', 'eu', /sweden/],
+  ['poland', '\ud83c\uddf5\ud83c\uddf1', '\u0644\u0647\u0633\u062a\u0627\u0646', 'eu', /poland/],
+  ['czech', '\ud83c\udde8\ud83c\uddff', '\u0686\u06a9', 'eu', /czech/],
+  ['croatia', '\ud83c\udded\ud83c\uddf7', '\u06a9\u0631\u0648\u0627\u0633\u06cc', 'eu', /croatia/],
+  ['serbia', '\ud83c\uddf7\ud83c\uddf8', '\u0635\u0631\u0628\u0633\u062a\u0627\u0646', 'eu', /serbia/],
+  ['romania', '\ud83c\uddf7\ud83c\uddf4', '\u0631\u0648\u0645\u0627\u0646\u06cc', 'eu', /romania/],
+  ['finland', '\ud83c\uddeb\ud83c\uddee', '\u0641\u0646\u0644\u0627\u0646\u062f', 'eu', /finland/],
+  ['ireland', '\ud83c\uddee\ud83c\uddea', '\u0627\u06cc\u0631\u0644\u0646\u062f', 'eu', /ireland/],
+  ['afc', '\ud83c\udfc6', '\u062c\u0627\u0645\u200c\u0647\u0627\u06cc \u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u0622\u0633\u06cc\u0627', 'asia', /afc/],
+  ['saudi', '\ud83c\uddf8\ud83c\udde6', '\u0639\u0631\u0628\u0633\u062a\u0627\u0646', 'asia', /saudi/],
+  ['iran', '\ud83c\uddee\ud83c\uddf7', '\u0627\u06cc\u0631\u0627\u0646', 'asia', /iran/],
+  ['japan', '\ud83c\uddef\ud83c\uddf5', '\u0698\u0627\u067e\u0646', 'asia', /japan/],
+  ['korea', '\ud83c\uddf0\ud83c\uddf7', '\u06a9\u0631\u0647 \u062c\u0646\u0648\u0628\u06cc', 'asia', /korea/],
+  ['china', '\ud83c\udde8\ud83c\uddf3', '\u0686\u06cc\u0646', 'asia', /china/],
+  ['australia', '\ud83c\udde6\ud83c\uddfa', '\u0627\u0633\u062a\u0631\u0627\u0644\u06cc\u0627', 'asia', /australia/],
+  ['qatar', '\ud83c\uddf6\ud83c\udde6', '\u0642\u0637\u0631', 'asia', /qatar/],
+  ['uae', '\ud83c\udde6\ud83c\uddea', '\u0627\u0645\u0627\u0631\u0627\u062a', 'asia', /uae|emirates/],
+  ['india', '\ud83c\uddee\ud83c\uddf3', '\u0647\u0646\u062f', 'asia', /india/],
+  ['thailand', '\ud83c\uddf9\ud83c\udded', '\u062a\u0627\u06cc\u0644\u0646\u062f', 'asia', /thailand/],
+  ['conmebol', '\ud83c\udfc6', '\u062c\u0627\u0645\u200c\u0647\u0627\u06cc \u0622\u0645\u0631\u06cc\u06a9\u0627\u06cc \u062c\u0646\u0648\u0628\u06cc', 'am', /conmebol|libertadores|sudamericana/],
+  ['concacaf', '\ud83c\udfc6', '\u062c\u0627\u0645\u200c\u0647\u0627\u06cc \u0622\u0645\u0631\u06cc\u06a9\u0627\u06cc \u0634\u0645\u0627\u0644\u06cc', 'am', /concacaf/],
+  ['brazil', '\ud83c\udde7\ud83c\uddf7', '\u0628\u0631\u0632\u06cc\u0644', 'am', /brazil/],
+  ['argentina', '\ud83c\udde6\ud83c\uddf7', '\u0622\u0631\u0698\u0627\u0646\u062a\u06cc\u0646', 'am', /argentina/],
+  ['mexico', '\ud83c\uddf2\ud83c\uddfd', '\u0645\u06a9\u0632\u06cc\u06a9', 'am', /mexico/],
+  ['usa', '\ud83c\uddfa\ud83c\uddf8', '\u0622\u0645\u0631\u06cc\u06a9\u0627', 'am', /usa|mls/],
+  ['colombia', '\ud83c\udde8\ud83c\uddf4', '\u06a9\u0644\u0645\u0628\u06cc\u0627', 'am', /colombia/],
+  ['chile', '\ud83c\udde8\ud83c\uddf1', '\u0634\u06cc\u0644\u06cc', 'am', /chile/],
+  ['uruguay', '\ud83c\uddfa\ud83c\uddfe', '\u0627\u0631\u0648\u06af\u0648\u0626\u0647', 'am', /uruguay/],
+  ['peru', '\ud83c\uddf5\ud83c\uddea', '\u067e\u0631\u0648', 'am', /peru/],
+  ['ecuador', '\ud83c\uddea\ud83c\udde8', '\u0627\u06a9\u0648\u0627\u062f\u0648\u0631', 'am', /ecuador/],
+  ['paraguay', '\ud83c\uddf5\ud83c\uddfe', '\u067e\u0627\u0631\u0627\u06af\u0648\u0626\u0647', 'am', /paraguay/],
+  ['canada', '\ud83c\udde8\ud83c\udde6', '\u06a9\u0627\u0646\u0627\u062f\u0627', 'am', /canada/],
+  ['caf', '\ud83c\udfc6', '\u062c\u0627\u0645\u200c\u0647\u0627\u06cc \u0622\u0641\u0631\u06cc\u0642\u0627', 'af', /caf/],
+  ['egypt', '\ud83c\uddea\ud83c\uddec', '\u0645\u0635\u0631', 'af', /egypt/],
+  ['morocco', '\ud83c\uddf2\ud83c\udde6', '\u0645\u0631\u0627\u06a9\u0634', 'af', /morocco/],
+  ['south_africa', '\ud83c\uddff\ud83c\udde6', '\u0622\u0641\u0631\u06cc\u0642\u0627\u06cc \u062c\u0646\u0648\u0628\u06cc', 'af', /south_africa/],
+  ['tunisia', '\ud83c\uddf9\ud83c\uddf3', '\u062a\u0648\u0646\u0633', 'af', /tunisia/],
+  ['algeria', '\ud83c\udde9\ud83c\uddff', '\u0627\u0644\u062c\u0632\u0627\u06cc\u0631', 'af', /algeria/],
+  ['nigeria', '\ud83c\uddf3\ud83c\uddec', '\u0646\u06cc\u062c\u0631\u06cc\u0647', 'af', /nigeria/],
+  ['belarus', '\ud83c\udde7\ud83c\uddfe', '\u0628\u0644\u0627\u0631\u0648\u0633', 'eu', /^belarus_x$/],
+  ['benin', '\ud83c\udde7\ud83c\uddef', '\u0628\u0646\u06cc\u0646', 'af', /^benin_x$/],
+  ['bolivia', '\ud83c\udde7\ud83c\uddf4', '\u0628\u0648\u0644\u06cc\u0648\u06cc', 'am', /^bolivia_x$/],
+  ['bulgaria', '\ud83c\udde7\ud83c\uddec', '\u0628\u0644\u063a\u0627\u0631\u0633\u062a\u0627\u0646', 'eu', /^bulgaria_x$/],
+  ['burkina', '\ud83c\udde7\ud83c\uddeb', '\u0628\u0648\u0631\u06a9\u06cc\u0646\u0627\u0641\u0627\u0633\u0648', 'af', /^burkina_x$/],
+  ['burundi', '\ud83c\udde7\ud83c\uddee', '\u0628\u0648\u0631\u0648\u0646\u062f\u06cc', 'af', /^burundi_x$/],
+  ['costa_rica', '\ud83c\udde8\ud83c\uddf7', '\u06a9\u0627\u0633\u062a\u0627\u0631\u06cc\u06a9\u0627', 'am', /^costa_rica_x$/],
+  ['ivory', '\ud83c\udde8\ud83c\uddee', '\u0633\u0627\u062d\u0644 \u0639\u0627\u062c', 'af', /^ivory_x$/],
+  ['dominican', '\ud83c\udde9\ud83c\uddf4', '\u062c\u0645\u0647\u0648\u0631\u06cc \u062f\u0648\u0645\u06cc\u0646\u06cc\u06a9\u0646', 'am', /^dominican_x$/],
+  ['el_salvador', '\ud83c\uddf8\ud83c\uddfb', '\u0627\u0644\u0633\u0627\u0644\u0648\u0627\u062f\u0648\u0631', 'am', /^el_salvador_x$/],
+  ['georgia', '\ud83c\uddec\ud83c\uddea', '\u06af\u0631\u062c\u0633\u062a\u0627\u0646', 'eu', /^georgia_x$/],
+  ['ghana', '\ud83c\uddec\ud83c\udded', '\u063a\u0646\u0627', 'af', /^ghana_x$/],
+  ['guatemala', '\ud83c\uddec\ud83c\uddf9', '\u06af\u0648\u0627\u062a\u0645\u0627\u0644\u0627', 'am', /^guatemala_x$/],
+  ['honduras', '\ud83c\udded\ud83c\uddf3', '\u0647\u0646\u062f\u0648\u0631\u0627\u0633', 'am', /^honduras_x$/],
+  ['hungary', '\ud83c\udded\ud83c\uddfa', '\u0645\u062c\u0627\u0631\u0633\u062a\u0627\u0646', 'eu', /^hungary_x$/],
+  ['iceland', '\ud83c\uddee\ud83c\uddf8', '\u0627\u06cc\u0633\u0644\u0646\u062f', 'eu', /^iceland_x$/],
+  ['indonesia', '\ud83c\uddee\ud83c\udde9', '\u0627\u0646\u062f\u0648\u0646\u0632\u06cc', 'asia', /^indonesia_x$/],
+  ['israel', '\ud83c\uddee\ud83c\uddf1', '\u0627\u0633\u0631\u0627\u0626\u06cc\u0644', 'eu', /^israel_x$/],
+  ['jamaica', '\ud83c\uddef\ud83c\uddf2', '\u062c\u0627\u0645\u0627\u0626\u06cc\u06a9\u0627', 'am', /^jamaica_x$/],
+  ['kenya', '\ud83c\uddf0\ud83c\uddea', '\u06a9\u0646\u06cc\u0627', 'af', /^kenya_x$/],
+  ['kosovo', '\ud83c\uddfd\ud83c\uddf0', '\u06a9\u0648\u0632\u0648\u0648', 'eu', /^kosovo_x$/],
+  ['luxembourg', '\ud83c\uddf1\ud83c\uddfa', '\u0644\u0648\u06a9\u0632\u0627\u0645\u0628\u0648\u0631\u06af', 'eu', /^luxembourg_x$/],
+  ['malaysia', '\ud83c\uddf2\ud83c\uddfe', '\u0645\u0627\u0644\u0632\u06cc', 'asia', /^malaysia_x$/],
+  ['moldova', '\ud83c\uddf2\ud83c\udde9', '\u0645\u0648\u0644\u062f\u0627\u0648\u06cc', 'eu', /^moldova_x$/],
+  ['mongolia', '\ud83c\uddf2\ud83c\uddf3', '\u0645\u063a\u0648\u0644\u0633\u062a\u0627\u0646', 'asia', /^mongolia_x$/],
+  ['montenegro', '\ud83c\uddf2\ud83c\uddea', '\u0645\u0648\u0646\u062a\u0647\u200c\u0646\u06af\u0631\u0648', 'eu', /^montenegro_x$/],
+  ['nicaragua', '\ud83c\uddf3\ud83c\uddee', '\u0646\u06cc\u06a9\u0627\u0631\u0627\u06af\u0648\u0626\u0647', 'am', /^nicaragua_x$/],
+  ['niger', '\ud83c\uddf3\ud83c\uddea', '\u0646\u06cc\u062c\u0631', 'af', /^niger_x$/],
+  ['n_ireland', '\ud83c\uddec\ud83c\udde7', '\u0627\u06cc\u0631\u0644\u0646\u062f \u0634\u0645\u0627\u0644\u06cc', 'eu', /^n_ireland_x$/],
+  ['panama', '\ud83c\uddf5\ud83c\udde6', '\u067e\u0627\u0646\u0627\u0645\u0627', 'am', /^panama_x$/],
+  ['philippines', '\ud83c\uddf5\ud83c\udded', '\u0641\u06cc\u0644\u06cc\u067e\u06cc\u0646', 'asia', /^philippines_x$/],
+  ['senegal', '\ud83c\uddf8\ud83c\uddf3', '\u0633\u0646\u06af\u0627\u0644', 'af', /^senegal_x$/],
+  ['slovakia', '\ud83c\uddf8\ud83c\uddf0', '\u0627\u0633\u0644\u0648\u0627\u06a9\u06cc', 'eu', /^slovakia_x$/],
+  ['slovenia', '\ud83c\uddf8\ud83c\uddee', '\u0627\u0633\u0644\u0648\u0648\u0646\u06cc', 'eu', /^slovenia_x$/],
+  ['uzbekistan', '\ud83c\uddfa\ud83c\uddff', '\u0627\u0632\u0628\u06a9\u0633\u062a\u0627\u0646', 'asia', /^uzbekistan_x$/],
+  ['venezuela', '\ud83c\uddfb\ud83c\uddea', '\u0648\u0646\u0632\u0648\u0626\u0644\u0627', 'am', /^venezuela_x$/],
+  ['wales', '\ud83c\udff4', '\u0648\u0644\u0632', 'eu', /^wales_x$/],
+  ['zambia', '\ud83c\uddff\ud83c\uddf2', '\u0632\u0627\u0645\u0628\u06cc\u0627', 'af', /^zambia_x$/]
+];
+var PRI = ['soccer_uefa_champs_league', 'soccer_uefa_europa_league', 'soccer_uefa_europa_conference_league', 'soccer_uefa_champs_league_qualification',
+  'soccer_epl', 'soccer_efl_champ', 'soccer_fa_cup', 'soccer_england_efl_cup', 'soccer_england_league1', 'soccer_england_league2',
+  'soccer_spain_la_liga', 'soccer_spain_copa_del_rey', 'soccer_spain_segunda_division', 'soccer_italy_serie_a', 'soccer_italy_coppa_italia', 'soccer_italy_serie_b',
+  'soccer_germany_bundesliga', 'soccer_germany_dfb_pokal', 'soccer_germany_bundesliga2', 'soccer_germany_liga3',
+  'soccer_france_ligue_one', 'soccer_france_coupe_de_france', 'soccer_france_ligue_two',
+  'soccer_fifa_world_cup', 'soccer_uefa_european_championship', 'soccer_conmebol_copa_america', 'soccer_uefa_nations_league',
+  'soccer_conmebol_copa_libertadores', 'soccer_conmebol_copa_sudamericana', 'soccer_brazil_campeonato', 'soccer_brazil_serie_b'];
+var DFS = [['all', '\u0647\u0645\u0647 \u0631\u0648\u0632\u0647\u0627'], ['today', '\u0627\u0645\u0631\u0648\u0632'], ['tom', '\u0641\u0631\u062f\u0627'], ['week', '\u06f7 \u0631\u0648\u0632 \u0622\u06cc\u0646\u062f\u0647']];
+var ODDS_TTL = 3 * 3600000, SCORE_TTL = 10 * 60000, EX_TTL = 60 * 60000, SPORTS_TTL = 12 * 3600000, END_MS = 150 * 60000, START = 1000, BONUS = 100;
+var BUILD = parseInt('__BUILD__', 10) || 0, REPO = '__REPO__';
+var OPENC = {}, OPENK = {}, BF = 'all', ALLK = [], OT = {};
+var reg = 'day', cur = POP[0], DF = 'all', CUR = null, CURM = false, NL = 0, MATCHES = {}, OPEN = {}, EX = {}, SPORTS = [], cbs = {}, cbn = 0;
+
+function $(id) { return document.getElementById(id); }
+var LDC = LDC || {};
+function ld(k, d) {
+  var big = String(k).indexOf('af_') == 0; if (!LDC) LDC = {};
+  if (big && LDC.hasOwnProperty(k)) return LDC[k] === null ? d : LDC[k];
+  try { var v = Android.load(k); var r = v ? JSON.parse(v) : null; if (big) LDC[k] = r; return r === null ? d : r; } catch (e) { return d; }
+}
+function sv(k, v) { if (!LDC) LDC = {}; if (String(k).indexOf('af_') == 0) LDC[k] = (v === undefined ? null : v); Android.save(k, JSON.stringify(v)); }
+window.__cb = function (id, res) { var f = cbs[id]; delete cbs[id]; if (f) f(JSON.parse(res)); };
+function http(url, f) { var id = 'c' + (cbn++); cbs[id] = f; Android.get(url, id); }
+function key() { return ld('key', ''); }
+var LOWW = false;
+function rem(r) {
+  if (r.remaining && r.remaining != 'null') {
+    sv('remaining', r.remaining);
+    if (+r.remaining < 50 && !LOWW) { LOWW = true; toast('\u26a0\ufe0f \u0641\u0642\u0637 ' + fa(+r.remaining) + ' \u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0631\u0627\u062a \u0645\u0648\u0646\u062f\u0647'); }
+  }
+}
+function fmt(n) { return Math.round(n).toLocaleString('fa-IR'); }
+function fa(n) { return n.toLocaleString('fa-IR'); }
+function r2(n) { return Math.round(n * 100) / 100; }
+function fc(n) { return r2(n).toLocaleString('fa-IR', { maximumFractionDigits: 2 }); }
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+/* speed (update 32): one Intl formatter per format instead of a new one on every call, and day keys memoized per 15 minutes */
+var LFC = {}, DKC = {};
+function L(t, o, m, loc) {
+  var k = m + '|' + (loc || 'fa-IR') + '|' + JSON.stringify(o), f = LFC[k];
+  if (f === undefined) {
+    f = null;
+    try { var oo = JSON.parse(JSON.stringify(o)); oo.timeZone = 'Asia/Tehran'; f = new Intl.DateTimeFormat(loc || 'fa-IR', oo); f.format(new Date()); } catch (e) { f = null; }
+    LFC[k] = f;
+  }
+  var d = new Date(t);
+  if (f) { try { return f.format(d); } catch (e) {} }
+  try { var o2 = JSON.parse(JSON.stringify(o)); o2.timeZone = 'Asia/Tehran'; return d[m](loc || 'fa-IR', o2); } catch (e2) { return d[m](loc || 'fa-IR', o); }
+}
+function tm(t) { return L(t, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }, 'toLocaleString'); }
+function hm(t) { return L(t, { hour: '2-digit', minute: '2-digit' }, 'toLocaleTimeString'); }
+function dl(t) { return L(t, { weekday: 'long', day: 'numeric', month: 'long' }, 'toLocaleDateString'); }
+function dk0(t) { return L(t, { year: 'numeric', month: '2-digit', day: '2-digit' }, 'toLocaleDateString', 'en-CA'); }
+function dk(t) { var ms = typeof t == 'number' ? t : new Date(t).getTime(); if (isNaN(ms)) return dk0(t); var h = Math.floor(ms / 900000), v = DKC[h]; if (v === undefined) { v = DKC[h] = dk0(h * 900000); } return v; }
+function dayPanel(t, now) { var a = new Date(t), b = new Date(now), ak = dk(a), bk = dk(b); if (ak == bk) return true; var n = new Date(b.getTime() + 86400000); return ak == dk(n) && a.getHours() < 6; }
+function toast(t) { var e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(e._t); e._t = setTimeout(function () { e.style.display = 'none'; }, 2500); }
+function chip(t, on, act, cls) { return '<span class="chip' + (on ? ' on' : '') + (cls ? ' ' + cls : '') + '" onclick="' + act + '">' + t + '</span>'; }
+
+/* profiles (update 14) */
+var PR = ld('profs', null); if (!PR || !PR.l || !PR.l.length) { PR = { cur: 'p0', l: [{ id: 'p0', n: '\ud83e\udd16 \u0628\u0627 \u06a9\u0645\u06a9 Brain' }] }; sv('profs', PR); }
+function pk2(id, k) { return id == 'p0' ? k : k + '_' + id; }
+function pk(k) { return pk2(PR.cur, k); }
+function pn(id) { id = id || PR.cur; for (var i = 0; i < PR.l.length; i++) if (PR.l[i].id == id) return PR.l[i].n; return '?'; }
+var W = ld(pk('wallet'), null); if (!W) { W = { coins: START, last: 0 }; sv(pk('wallet'), W); }
+var BETS = ld(pk('bets'), []);
+var slip = ld(pk('slip'), []);
+var SLIPSTAKE = 0;
+var NOTE = '', FAVT = 0.55;
+function saveAll() { sv(pk('wallet'), W); sv(pk('bets'), BETS); renderBal(); }
+function renderBal() { $('bal').innerHTML = '<span class="pf" onclick="go(\'set\')">' + esc(pn()) + '</span>\ud83e\ude99 ' + fc(W.coins); }
+function updateCnt() { $('cnt').innerHTML = slip.length ? '<span class="badge">' + fmt(slip.length) + '</span>' : ''; }
+
+function go(p) {
+  SCR[skey(CURP)] = scrY();
+  ['matches', 'slip', 'bets', 'calc', 'set'].forEach(function (x) {
+    $('p-' + x).classList.toggle('on', x == p);
+    $('n-' + x).classList.toggle('on', x == p);
+  });
+  if (p == 'slip') renderSlip();
+  if (p == 'bets') { settle(); renderBets(); liveTick(false); }
+  if (p == 'matches') setTimeout(function () { liveTick(false); }, 300);
+  if (p == 'set') renderSet();
+  if (p == 'calc') renderCalc();
+  if (p == 'matches') rerender();
+  CURP = p; scrRestore(SCR[skey(p)] || 0);
+}
+/* scroll memory + match page (update 27) */
+var CURP = 'matches', SCR = {}, SEL = null;
+function scrY() { return window.pageYOffset || document.documentElement.scrollTop || 0; }
+function skey(p) { return p == 'matches' ? (SEL ? 'md' : 'm') : p; }
+function scrRestore(y) { window.scrollTo(0, y); setTimeout(function () { window.scrollTo(0, y); }, 80); setTimeout(function () { if (Math.abs(scrY() - y) > 40) window.scrollTo(0, y); }, 350); }
+function openM(id) {
+  if (!MATCHES[id]) return;
+  SCR.m = scrY(); SEL = id; renderDet(); window.scrollTo(0, 0);
+  if (!XI[id] && !started(MATCHES[id])) xFetch(id, false);
+}
+function closeM() { SEL = null; renderDet(); scrRestore(SCR.m || 0); }
+/* ---------- AI master football analysis prompt (update 43: odds-first, real odds only) ---------- */
+function aiGetRealOdd(m, p) {
+  var mn = MAN[m.id];
+  if (mn && mn[p] && Number(mn[p]) > 1) return {v:Number(mn[p]), source:'saved_in_app', at:mn._oddsAt || null};
+  if (p === '1' && m.h && Number(m.h) > 1) return {v:Number(m.h), source:'match_feed', at:m.oddsAt || null};
+  if (p === 'X' && m.d && Number(m.d) > 1) return {v:Number(m.d), source:'match_feed', at:m.oddsAt || null};
+  if (p === '2' && m.a && Number(m.a) > 1) return {v:Number(m.a), source:'match_feed', at:m.oddsAt || null};
+  if (p === 'O25' && m.ov && Number(m.ov) > 1) return {v:Number(m.ov), source:'match_feed', at:m.oddsAt || null};
+  if (p === 'U25' && m.un && Number(m.un) > 1) return {v:Number(m.un), source:'match_feed', at:m.oddsAt || null};
+  var x = exOf(m.id);
+  if (x && x.o && x.o[p] && Number(x.o[p]) > 1) return {v:Number(x.o[p]), source:'external_odds_feed', at:x.at || null};
+  return null;
+}
+function aiPromptCopy(id) {
+  var m = MATCHES[id]; if (!m) return;
+  var date = 'NA'; try { date = new Date(m.time).toISOString().slice(0, 10); } catch (e) {}
+  var mk = [
+    ['1','1X2','HOME','NA'],['X','1X2','DRAW','NA'],['2','1X2','AWAY','NA'],
+    ['1X','DOUBLE_CHANCE','1X','NA'],['X2','DOUBLE_CHANCE','X2','NA'],['12','DOUBLE_CHANCE','12','NA'],
+    ['O15','TOTAL_GOALS','OVER','1.5'],['U15','TOTAL_GOALS','UNDER','1.5'],
+    ['O25','TOTAL_GOALS','OVER','2.5'],['U25','TOTAL_GOALS','UNDER','2.5'],
+    ['O35','TOTAL_GOALS','OVER','3.5'],['U35','TOTAL_GOALS','UNDER','3.5'],
+    ['BY','BTTS','YES','NA'],['BN','BTTS','NO','NA']
+  ];
+  var odds = [], count = 0, savedAt = null;
+              var loadedPT = PTD[id] || null, loadedST = loadedPT && loadedPT.st ? loadedPT.st : null;
+            var manual = SMN[id] || {}, hParsed = sHistParse(manual.histH || '', 'H'), aParsed = sHistParse(manual.histA || '', 'A');
+            var useSeparate = hParsed.games.length > 0 || aParsed.games.length > 0;
+            var cleanAIField = function (v) { return String(v === null || v === undefined ? 'NA' : v).replace(/[|\r\n]/g, ' ').trim() || 'NA'; };
+            var historyCountHome = useSeparate ? Math.min(50, hParsed.games.length) : (loadedST && loadedST.g && loadedST.g[0] ? Math.min(50, loadedST.g[0].length) : 0);
+            var historyCountAway = useSeparate ? Math.min(50, aParsed.games.length) : (loadedST && loadedST.g && loadedST.g[1] ? Math.min(50, loadedST.g[1].length) : 0);
+            var historyText = 'TEAM_HISTORIES_STATUS|status=NOT_PARSED|message=No saved history for both teams.';
+            if (useSeparate) {
+              var hist = ['TEAM_HISTORIES_BEGIN', 'HISTORY_WEIGHTING|recent_weight=0.97^match_index|maximum_games_per_team=50|venue_sample_max=25'];
+              [[0, m.home, hParsed], [1, m.away, aParsed]].forEach(function (item) {
+                var side = item[0], teamName = item[1], parsed = item[2];
+                hist.push('TEAM_HISTORY|team=' + cleanAIField(teamName) + '|side=' + (side === 0 ? 'HOME' : 'AWAY') + '|games_available=' + parsed.games.length + '|games_included=' + Math.min(50, parsed.games.length) + '|valid_lines=' + parsed.valid + '|invalid_lines=' + parsed.invalid);
+                parsed.games.slice(0, 50).forEach(function (g, i) {
+                  var venue = g.venue === 'H' ? 'HOME' : (g.venue === 'A' ? 'AWAY' : 'UNKNOWN');
+                  var actualHome = g.venue === 'H' ? teamName : (g.venue === 'A' ? (g.opponent || 'NA') : 'NA');
+                  var actualAway = g.venue === 'A' ? teamName : (g.venue === 'H' ? (g.opponent || 'NA') : 'NA');
+                  var actualScore = g.venue === 'A' ? (g.a + '-' + g.f) : (g.f + '-' + g.a);
+                  hist.push('HISTORY_GAME|team=' + cleanAIField(teamName) + '|index=' + (i + 1) + '|date=' + cleanAIField(g.date) + '|venue=' + venue + '|opponent=' + cleanAIField(g.opponent) + '|goals_for=' + g.f + '|goals_against=' + g.a + '|score_from_team_perspective=' + g.f + '-' + g.a + '|historical_home=' + cleanAIField(actualHome) + '|historical_score=' + actualScore + '|historical_away=' + cleanAIField(actualAway) + '|recency_weight=' + Math.pow(0.97, i).toFixed(5));
+                });
+              });
+              if (loadedST && loadedST.h2h && loadedST.h2h.length) {
+                hist.push('H2H_HISTORY_BEGIN');
+                loadedST.h2h.slice(0, 10).forEach(function (g, i) { hist.push('H2H_GAME|index=' + (i + 1) + '|date=' + cleanAIField(g.d) + '|home=' + cleanAIField(g.h) + '|score=' + cleanAIField(g.hs) + '-' + cleanAIField(g.as) + '|away=' + cleanAIField(g.a)); });
+                hist.push('H2H_HISTORY_END');
+              }
+              hist.push('TEAM_HISTORIES_END'); historyText = hist.join('\n');
+            } else if (loadedST && loadedST.g) {
+              var hist = ['TEAM_HISTORIES_BEGIN'];
+              [0, 1].forEach(function (side) {
+                var teamName = loadedST.names && loadedST.names[side] ? loadedST.names[side] : (side === 0 ? m.home : m.away);
+                hist.push('TEAM_HISTORY|team=' + cleanAIField(teamName) + '|side=' + (side === 0 ? 'FIRST_PARSED_TEAM' : 'SECOND_PARSED_TEAM') + '|games_available=' + (loadedST.g[side] ? loadedST.g[side].length : 0) + '|games_included=' + (loadedST.g[side] ? Math.min(50, loadedST.g[side].length) : 0));
+                (loadedST.g[side] || []).slice(0, 50).forEach(function (g, i) { hist.push('HISTORY_GAME|team=' + cleanAIField(teamName) + '|index=' + (i + 1) + '|date=' + cleanAIField(g.d) + '|historical_home=' + cleanAIField(g.h) + '|score=' + cleanAIField(g.hs) + '-' + cleanAIField(g.as) + '|historical_away=' + cleanAIField(g.a)); });
+              });
+              if (loadedST.h2h && loadedST.h2h.length) {
+                hist.push('H2H_HISTORY_BEGIN'); loadedST.h2h.slice(0, 10).forEach(function (g, i) { hist.push('H2H_GAME|index=' + (i + 1) + '|date=' + cleanAIField(g.d) + '|home=' + cleanAIField(g.h) + '|score=' + cleanAIField(g.hs) + '-' + cleanAIField(g.as) + '|away=' + cleanAIField(g.a)); }); hist.push('H2H_HISTORY_END');
+              }
+              hist.push('TEAM_HISTORIES_END'); historyText = hist.join('\n');
+            }
+mk.forEach(function (x) {
+    var o = aiGetRealOdd(m, x[0]);
+    if (!o) return;
+    count++;
+    if (o.at && (!savedAt || o.at > savedAt)) savedAt = o.at;
+    odds.push('ODDS|market=' + x[1] + '|selection=' + x[2] + '|line=' + x[3] + '|odds=' + Number(o.v).toFixed(2) + '|source=' + o.source + '|captured_at=' + (o.at ? new Date(o.at).toISOString() : 'NA'));
+  });
+  if (!count) {
+    alert('⛔ هنوز هیچ ضریب واقعی برای این مسابقه در بت فوتبال ثبت نشده است. اول ضرایب واقعی را از بت‌وانا وارد و ذخیره کن؛ سپس دوباره دکمهٔ کپی دستور را بزن.');
+    return;
+  }
+  if (historyCountHome < 3 || historyCountAway < 3) {
+    alert('⛔ برای هر دو تیم حداقل ۳ بازی معتبر لازم است. در کارت مسابقه بخش «تحلیل با آمار دستی» را باز کن؛ تاریخچهٔ میزبان و میهمان را در دو کادر مستقل Paste کن. متن کامل PrimaTips هم فقط در صورت تشخیص تاریخچهٔ هر دو تیم قابل استفاده است. تعداد فعلی: میزبان ' + historyCountHome + ' بازی، میهمان ' + historyCountAway + ' بازی.');
+    return;
+  }
+  if (historyCountHome < 50 || historyCountAway < 50) {
+    if (!confirm('ضرایب واقعی: ' + count + ' | تاریخچهٔ میزبان: ' + historyCountHome + ' بازی | تاریخچهٔ میهمان: ' + historyCountAway + ' بازی. وزن‌دهی به‌ترتیب جدیدترین تا قدیمی‌ترین است (0.97 به توان شمارهٔ بازی) و از هر تیم حداکثر ۵۰ بازی وارد می‌شود. بازی گمشده ساخته نمی‌شود. ادامه بدهیم؟')) return;
+  } else if (!confirm('ضرایب واقعی: ' + count + ' | میزبان: ۵۰ بازی | میهمان: ۵۰ بازی. دو تاریخچهٔ مستقل با وزن‌دهی و تفکیک خانه/خارج همراه ضرایب کپی می‌شوند. ادامه می‌دهی؟')) return;
+  var q = [
+    'MASTER FOOTBALL ANALYSIS & VALUE BET PROMPT — ODDS FIRST',
+    'نقش: تحلیلگر فوتبال و مدل‌ساز آماری. احتمال مستقل را از داده‌ها بساز؛ ضرایب بازار را جایگزین احتمال مدل نکن.',
+    'MATCH|league=' + (m.lg || 'NA') + '|date=' + date + '|home=' + m.home + '|away=' + m.away,
+    'ODDS_INPUT_COUNT=' + count,
+    'ODDS_CAPTURED_AT=' + (savedAt ? new Date(savedAt).toISOString() : 'زمان ثبت برخی ضرایب در نسخه قبلی اپ موجود نیست؛ زمان دقیق را فرض نکن.'),
+    'REAL_ODDS_BEGIN', odds.join('\n'), 'REAL_ODDS_END', '',
+    'TEAM_HISTORY_INPUT_BEGIN', historyText, 'TEAM_HISTORY_INPUT_END', '',
+    'قانون حیاتی ضرایب: فقط سطرهای ODDS بین REAL_ODDS_BEGIN و REAL_ODDS_END ضرایب ورودی معتبر هستند. هیچ ضریب دیگری را از حافظه، سایت پیش‌بینی، یا با محاسبه از بازار دیگر جایگزین نکن. اگر برای بازاری ضریب واقعی نداریم، آن بازار را در بخش BET وارد نکن. برای هر ضریب ارائه‌شده، market/selection/line/odds را دقیقاً حفظ کن.',
+    'قانون تاریخچه: TEAM_HISTORY_INPUT می‌تواند از دو کادر جداگانهٔ تاریخچهٔ میزبان و میهمان یا از صفحهٔ کامل PrimaTips تأمین شده باشد. هر تیم را مستقل تحلیل کن و همهٔ بازی‌های واقعی تا حداکثر ۵۰ بازی را نگه دار. وزن هر بازی با recency_weight یا 0.97 به توان (index-1) داده شده، بنابراین ۱۰/۱۲ بازی جدیدتر اثر بیشتری از ۲۵ و ۵۰ بازی دارند؛ وزن‌ها را دوباره و متفاوت تعریف نکن. از داخل همان ۵۰ بازی، جداگانه عملکرد خانگی میزبان و عملکرد خارج از خانهٔ میهمان را استخراج کن؛ برای مقایسهٔ محیطی حداکثر ۲۵ بازی هم‌شرایط را با کاهش اعتماد در نمونهٔ کم و رگرسیون به میانگین استفاده کن. اگر venue نامشخص است، آن بازی را در زیرنمونهٔ خانه/خارج قرار نده. بازی مفقود نساز و تعداد واقعی هر دسته را گزارش بده.',
+    '۱) اطلاعات به‌روز را از منابع معتبر بررسی کن: لیگ/کشور، زمان و منطقه زمانی بازی، ضرایب و زمان ثبت، منابع و کامل‌بودن داده. اگر جست‌وجوی زنده نداری، صریح بگو. هیچ داده‌ای را جعل نکن.',
+    '۲) آمار هر دو تیم را جداگانه تحلیل کن: ۵، ۱۰، ۲۵ و در صورت وجود تا ۵۰ بازی؛ خانه/خارج؛ گل زده و خورده؛ xG/xGA فقط با داده معتبر؛ شوت، شوت در چارچوب، موقعیت بزرگ، نرخ تبدیل، کلین‌شیت، BTTS، Over/Under، قدرت حریف و میانگین لیگ. اندازه نمونه واقعی و روش وزن‌دهی بازی‌های جدیدتر را توضیح بده.',
+    '۳) قبل از تعیین درصدها، عوامل زمینه‌ای را بررسی و اثرشان را واقعاً در مدل اعمال کن: مربیان و تغییر مربی، تاکتیک و تطابق سبک‌ها، ترکیب احتمالی/رسمی، مصدومان و محرومان و غایبان مشکوک، به‌ویژه دروازه‌بان و بازیکنان کلیدی، عمق نیمکت و چرخش؛ آب‌وهوا در محل و زمان مسابقه و وضعیت زمین؛ خستگی، استراحت، سفر و فشردگی؛ انگیزه و وضعیت جدول؛ داور و آمار کارت/پنالتی در صورت نمونه کافی؛ اخبار و حواشی فقط با منبع معتبر؛ رودررو با وزن محدود؛ حرکت ضرایب و اختلاف قیمت بازار.',
+    'برای هر عامل مهم، منبع/زمان بررسی، قطعی یا احتمالی بودن، میزان اطمینان و اثر مورد انتظار بر گل‌های مورد انتظار یا احتمال‌ها را مشخص کن. اگر داده‌ای پیدا نشد، NA/غیرقابل‌تأیید بنویس و اثر ساختگی وارد نکن.',
+    '۴) احتمال‌ها را مستقل از ضرایب بازار بساز. در صورت کفایت داده، از Poisson یا Dixon-Coles یا روش مناسب استفاده کن؛ مزیت میزبانی، قدرت حمله/دفاع، کیفیت حریف و نرخ گل لیگ را لحاظ کن. مجموع HOME/DRAW/AWAY باید تقریباً 100% و بازارهای گل و BTTS باید با مدل گل مورد انتظار سازگار باشند.',
+    '۵) فقط بازارهای دارای ضریب واقعی در REAL_ODDS_BEGIN/END را برای Value Bet ارزیابی کن. برای هر کدام: احتمال سربه‌سر=1/odds؛ fair odds=1/model probability؛ EV%=(model probability*odds-1)*100. احتمال بازار بدون حاشیه را فقط با ضرایب کافی محاسبه کن. حداقل ضریب واجدشرایط 2.10 و حداقل EV برابر +5% است. عدم‌قطعیت، EV محافظه‌کارانه، هم‌بستگی بازارها و حساسیت به ترکیب را در نظر بگیر. احتمال بالا به‌تنهایی Value Bet نیست.',
+    '۶) برای هر بازار دارای ضریب واقعی و احتمال قابل دفاع یک سطر BET بساز، حتی اگر status=SKIP باشد؛ مقدار odds باید دقیقاً با ورودی یکسان باشد. اگر هیچ گزینه‌ای واجد شرایط نشد، سطرهای BET با status=SKIP را حفظ کن و NO_QUALIFIED_BETS را هم اضافه کن. هرگز BET با status=QUALIFIED را هم‌زمان با NO_QUALIFIED_BETS تولید نکن. اگر هیچ ضریب واقعی در ورودی نیست، به‌جای هر BET صریحاً بگو ضرایب ورودی موجود نیستند.',
+    '۷) خروجی نهایی فارسی باشد، همراه بلوک ماشین‌خوان زیر با کلیدهای انگلیسی و اعداد اعشاری نقطه‌دار:',
+    'BEGIN_VALUE_BETS',
+    'MATCH|league=' + (m.lg || 'NA') + '|date=' + date + '|home=' + m.home + '|away=' + m.away,
+    'DATA_STATUS|quality=GOOD/MEDIUM/POOR|verified_sources=...|missing_data=...',
+    'برای هر بازار موجود در ورودی که احتمال قابل دفاع دارد: BET|market=1X2/TOTAL_GOALS/BTTS/HANDICAP/TEAM_TOTAL/FIRST_HALF/DOUBLE_CHANCE|selection=...|line=NA یا مقدار واقعی|odds=ضریب دقیق ورودی|model_probability_pct=...|market_probability_no_vig_pct=... یا NA|fair_odds=...|ev_pct=...|conservative_ev_pct=... یا NA|confidence=HIGH/MEDIUM/LOW|status=QUALIFIED/SKIP',
+    'اگر هیچ گزینه‌ای واجد شرایط نیست: NO_QUALIFIED_BETS|reason=No selection satisfied the odds, EV and evidence thresholds.',
+    'END_VALUE_BETS', '',
+    '۸) برای واردکردن درصدها در نسخه فعلی بت فوتبال، این بخش را هم دقیقاً تکمیل کن. این درصدها باید خروجی مدل مستقل باشند، نه کپی ضرایب یا احتمال‌های یک سایت:',
+    'APP_IMPORT_START', 'Standard 1X2', 'Probability', 'HOME_PERCENT% DRAW_PERCENT% AWAY_PERCENT%',
+    'Double Chance', 'Probability', '1X_PERCENT% X2_PERCENT%',
+    'Over/Under 1.5', 'Probability', 'OVER15_PERCENT% UNDER15_PERCENT%',
+    'Over/Under 2.5', 'Probability', 'OVER25_PERCENT% UNDER25_PERCENT%',
+    'Over/Under 3.5', 'Probability', 'OVER35_PERCENT% UNDER35_PERCENT%',
+    'Both Teams To Score', 'Probability', 'YES_PERCENT% NO_PERCENT%', 'APP_IMPORT_END',
+    'در بخش APP_IMPORT_START/END فقط درصدهای نهایی عددی را جایگزین عبارت‌های نمونه کن؛ هیچ متن توضیحی داخل آن نگذار. بیرون از بلوک، منابع، ریسک‌ها و خلاصه فارسی را بنویس. سود تضمین‌شده نیست.'
+  ].join('\n');
+  try { if (window.Android && Android.setClip) { Android.setClip(q); toast('📋 دستور همراه ' + count + ' ضریب واقعی کپی شد؛ آن را به هوش مصنوعی بده.'); return; } } catch (e) {}
+  prompt('متن زیر را کپی کن:', q);
+}
+
+/* ---------- AI Value Bet importer (update 41): parse BEGIN_VALUE_BETS separately from PrimaTips ---------- */
+var AIRES = ld('aires', {});
+          function aiField(line, key) {
+            var parts = String(line || '').split('|');
+            for (var i=0;i<parts.length;i++) {
+              var at=parts[i].indexOf('=');
+              if (at>0 && parts[i].slice(0,at).trim().toLowerCase()===String(key).toLowerCase()) return parts[i].slice(at+1).trim();
+            }
+            return null;
+          }
+          function aiNum(v) {
+            if (v===null || v===undefined || /^NA$/i.test(String(v).trim()) || String(v).trim()==='') return null;
+            var s=String(v).trim().replace(/[%\s]/g,'').replace(/[۰-۹]/g,function(d){return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d);}).replace(/[٠-٩]/g,function(d){return '٠١٢٣٤٥٦٧٨٩'.indexOf(d);}).replace(/[٫]/g,'.').replace(/[٬]/g,'').replace(/,/g,'.');
+            if (!/^-?(?:\d+\.?\d*|\.\d+)$/.test(s)) return null;
+            var n=Number(s); return isFinite(n)?n:null;
+          }
+          function aiParseValueBets(txt) {
+            var lines=String(txt||'').replace(/^\uFEFF/,'').split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean);
+            var data={match:{},quality:'NA',sources:'NA',missing:'NA',bets:[],none:null,warnings:[],errors:[],coherent:true,validBetCount:0};
+            var startCount=0,endCount=0,inside=false,seenMatch=false,seenStatus=false;
+            lines.forEach(function(line){
+              if (line==='BEGIN_VALUE_BETS') { startCount++; if (inside) data.errors.push('نشانگر شروع تکراری است.'); inside=true; return; }
+              if (line==='END_VALUE_BETS') { endCount++; if (!inside) data.errors.push('نشانگر پایان قبل از شروع آمده است.'); inside=false; return; }
+              if (!inside) return;
+              if (/^MATCH\|/i.test(line)) {
+                if (seenMatch) data.errors.push('سطر MATCH تکراری است.');
+                seenMatch=true; data.match={league:aiField(line,'league')||'NA',date:aiField(line,'date')||'NA',home:aiField(line,'home')||'NA',away:aiField(line,'away')||'NA'}; return;
+              }
+              if (/^DATA_STATUS\|/i.test(line)) {
+                if (seenStatus) data.errors.push('سطر DATA_STATUS تکراری است.');
+                seenStatus=true; data.quality=(aiField(line,'quality')||'NA').toUpperCase(); data.sources=aiField(line,'verified_sources')||'NA'; data.missing=aiField(line,'missing_data')||'NA';
+                if (['GOOD','MEDIUM','POOR'].indexOf(data.quality)<0) data.errors.push('کیفیت داده باید GOOD، MEDIUM یا POOR باشد.');
+                return;
+              }
+              if (/^NO_QUALIFIED_BETS\|/i.test(line)) { data.none=aiField(line,'reason')||'هیچ گزینه واجد شرایطی گزارش نشده است'; return; }
+              if (!/^BET\|/i.test(line)) return;
+              var b={market:aiField(line,'market')||'NA',selection:aiField(line,'selection')||'NA',line:aiField(line,'line')||'NA',odds:aiNum(aiField(line,'odds')),prob:aiNum(aiField(line,'model_probability_pct')),marketProb:aiNum(aiField(line,'market_probability_no_vig_pct')),fairReported:aiNum(aiField(line,'fair_odds')),evReported:aiNum(aiField(line,'ev_pct')),conservativeEv:aiNum(aiField(line,'conservative_ev_pct')),confidence:(aiField(line,'confidence')||'LOW').toUpperCase(),status:(aiField(line,'status')||'SKIP').toUpperCase(),raw:line};
+              if (b.odds===null || b.odds<=1 || b.odds>1000) data.errors.push('ضریب نامعتبر در سطر '+(data.bets.length+1)+'.');
+              if (b.prob===null || b.prob<0 || b.prob>100) data.errors.push('احتمال مدل باید بین 0 و 100 باشد؛ سطر '+(data.bets.length+1)+'.');
+              if (b.marketProb!==null && (b.marketProb<0 || b.marketProb>100)) data.errors.push('احتمال بازار نامعتبر در سطر '+(data.bets.length+1)+'.');
+              if (['HIGH','MEDIUM','LOW'].indexOf(b.confidence)<0) { data.warnings.push('درجه اطمینان ناشناخته در '+b.market+'/'+b.selection+'؛ LOW فرض شد.'); b.confidence='LOW'; }
+              if (['QUALIFIED','SKIP'].indexOf(b.status)<0) { data.warnings.push('وضعیت ناشناخته در '+b.market+'/'+b.selection+'؛ SKIP فرض شد.'); b.status='SKIP'; }
+              b.ev=(b.odds!==null && b.prob!==null && b.prob>=0 && b.prob<=100)?((b.prob/100)*b.odds-1)*100:null;
+              b.fairCalc=(b.prob!==null && b.prob>0)?100/b.prob:null;
+              if (b.evReported!==null && b.ev!==null && Math.abs(b.evReported-b.ev)>1.01) data.warnings.push('EV گزارش‌شده با محاسبه مجدد فرق دارد: '+b.market+'/'+b.selection+'.');
+              if (b.fairReported!==null && b.fairCalc!==null && Math.abs(b.fairReported-b.fairCalc)>0.06) data.warnings.push('ضریب منصفانه گزارش‌شده با محاسبه مجدد فرق دارد: '+b.market+'/'+b.selection+'.');
+              b.reasons=[];
+              if (b.odds===null || b.odds<2.10) b.reasons.push('ضریب کمتر از 2.10 یا نامعتبر');
+              if (b.ev===null || b.ev<5) b.reasons.push('EV محاسبه‌شده کمتر از +5٪');
+              if (b.confidence==='LOW') b.reasons.push('اطمینان پایین');
+              if (data.quality==='POOR') b.reasons.push('کیفیت داده ضعیف');
+              if (b.status!=='QUALIFIED') b.reasons.push('مدل خروجی آن را واجد شرایط اعلام نکرده');
+              if (b.conservativeEv!==null && b.conservativeEv<0) b.reasons.push('EV محافظه‌کارانه منفی است');
+              data.bets.push(b);
+            });
+            if (inside) data.errors.push('END_VALUE_BETS پیدا نشد.');
+            if (startCount!==1 || endCount!==1) data.errors.push('باید دقیقاً یک BEGIN_VALUE_BETS و یک END_VALUE_BETS وجود داشته باشد.');
+            if (!seenMatch) data.errors.push('سطر MATCH وجود ندارد.');
+            if (!seenStatus) data.errors.push('سطر DATA_STATUS وجود ندارد.');
+            if (!data.bets.length && !data.none) data.errors.push('نه سطر BET وجود دارد و نه NO_QUALIFIED_BETS.');
+            if (data.none && data.bets.some(function(b){return b.status==='QUALIFIED';})) { data.coherent=false; data.warnings.push('تعارض: NO_QUALIFIED_BETS وجود دارد اما حداقل یک سطر QUALIFIED است.'); }
+            function checkSum(label, rows, target) {
+              if (rows.length!==target) return;
+              var sum=rows.reduce(function(a,b){return a+(b.prob===null?0:b.prob);},0);
+              if (rows.some(function(b){return b.prob===null;}) || sum<98 || sum>102) { data.coherent=false; data.warnings.push('جمع احتمال‌های '+label+' برابر '+sum.toFixed(2)+'٪ است؛ باید تقریباً 100٪ باشد.'); }
+            }
+            var one=data.bets.filter(function(b){return b.market==='1X2' && ['HOME','DRAW','AWAY'].indexOf(b.selection)>=0;});
+            if (one.length===3) checkSum('1X2',one,3);
+            [['TOTAL_GOALS','OVER','UNDER'],['BTTS','YES','NO']].forEach(function(spec){
+              var rows=data.bets.filter(function(b){return b.market===spec[0] && [spec[1],spec[2]].indexOf(b.selection)>=0;});
+              if (rows.length===2) checkSum(spec[0],rows,2);
+            });
+            data.bets.forEach(function(b){
+              if (!data.coherent) b.reasons.push('ناسازگاری در کنترل احتمال‌های بازار');
+              b.eligible=!!(data.errors.length===0 && data.coherent && b.odds!==null && b.odds>=2.10 && b.ev!==null && b.ev>=5 && b.confidence!=='LOW' && ['GOOD','MEDIUM'].indexOf(data.quality)>=0 && b.status==='QUALIFIED' && (b.conservativeEv===null || b.conservativeEv>=0));
+              if (!b.reasons.length && !b.eligible) b.reasons.push('شرایط تأیید کامل نشده است');
+            });
+            data.valid=startCount===1 && endCount===1 && seenMatch && seenStatus && data.errors.length===0 && (data.bets.length>0 || !!data.none);
+            return {data:data,valid:data.valid};
+          }
+          function aiImportValueBets(id) {
+            var m=MATCHES[id]; if(!m) return;
+            var t=''; try { if(window.Android && Android.clip) t=Android.clip(); } catch(e) {}
+            if (!t || t.indexOf('BEGIN_VALUE_BETS')<0) t=prompt('قالب کامل خروجی هوش مصنوعی را کپی کن و اینجا Paste کن. باید شامل BEGIN_VALUE_BETS و END_VALUE_BETS باشد.','');
+            if (!t) return;
+            var parsed=aiParseValueBets(t);
+            if (!parsed.valid) { toast('قالب ناقص یا نامعتبر است: '+(parsed.data.errors[0]||'ساختار استاندارد پیدا نشد')); return; }
+            var d=parsed.data;
+            if (d.match.home!=='NA' && sim1(d.match.home,m.home)+sim1(d.match.away,m.away)<1.0 && sim1(d.match.home,m.away)+sim1(d.match.away,m.home)<1.0) {
+              if (!confirm('هشدار: نام تیم‌های قالب با مسابقه انتخاب‌شده تطابق روشنی ندارد. با این حال ذخیره شود؟')) return;
+            }
+            d.pastedAt=Date.now(); AIRES[id]=d; sv('aires',AIRES); rerender(); toast('خروجی وارد شد؛ EV و ضریب منصفانه دوباره محاسبه و شرایط بررسی شد.');
+          }
+          function aiImportClear(id) { delete AIRES[id]; sv('aires',AIRES); rerender(); }
+          function aiValuePanel(m) {
+            var d=AIRES[m.id];
+            var h='<div class="hpp" style="margin-top:10px"><div class="lbl">🧾 واردکردن خروجی Value Bet هوش مصنوعی</div><div class="mut" style="line-height:1.8">قالب BEGIN_VALUE_BETS را اینجا وارد کن؛ این بخش جدا از PrimaTips است. EV و ضریب منصفانه از روی ضریب و احتمال مدل دوباره محاسبه می‌شوند.</div><div class="quick" style="margin-top:6px"><button class="btn blue" onclick="aiImportValueBets(\''+m.id+'\')">📥 واردکردن قالب خروجی هوش مصنوعی</button>'+(d?'<button onclick="aiImportClear(\''+m.id+'\')">🗑 پاک‌کردن نتیجه</button>':'')+'</div>';
+            if (!d) return h+'</div>';
+            h+='<div class="note" style="white-space:normal;line-height:1.8"><b>'+esc(d.match.home||m.home)+' - '+esc(d.match.away||m.away)+'</b><br>لیگ: '+esc(d.match.league||'NA')+' | تاریخ: '+esc(d.match.date||'NA')+'<br>کیفیت داده: <b>'+esc(d.quality||'NA')+'</b><br><span class="mut">منابع: '+esc(d.sources||'NA')+'<br>داده‌های مفقود: '+esc(d.missing||'NA')+'</span></div>';
+            if (d.none) h+='<div class="warn">گزارش هوش مصنوعی: هیچ گزینه واجد شرایطی یافت نشد — '+esc(d.none)+'</div>';
+            if (d.errors && d.errors.length) h+='<div class="warn"><b>خطاهای قالب:</b><br>'+d.errors.map(function(x){return esc(x);}).join('<br>')+'</div>';
+            if (d.warnings && d.warnings.length) h+='<div class="warn"><b>هشدارهای کنترل کیفیت:</b><br>'+d.warnings.map(function(x){return esc(x);}).join('<br>')+'</div>';
+            if (d.bets && d.bets.length) {
+              h+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="width:100%;min-width:720px;font-size:12px;border-collapse:collapse"><thead><tr><th>بازار</th><th>انتخاب</th><th>ضریب</th><th>احتمال مدل</th><th>ضریب منصفانهٔ محاسبه‌شده</th><th>EV مجدد</th><th>EV گزارش‌شده</th><th>نتیجه</th></tr></thead><tbody>';
+              d.bets.forEach(function(b){
+                var fmt=function(v,dec){return v===null||v===undefined?'NA':Number(v).toFixed(dec===undefined?2:dec);};
+                var verdict=b.eligible?'واجد شرایط طبق فیلتر':'رد / نیازمند بررسی';
+                if (b.odds===null || b.prob===null) verdict='اطلاعات ناکافی';
+                var reason=b.reasons&&b.reasons.length?b.reasons.join('؛ '):'همهٔ فیلترهای اولیه برقرارند';
+                h+='<tr><td>'+esc(b.market)+'</td><td>'+esc(b.selection)+(b.line!=='NA'?' '+esc(b.line):'')+'</td><td dir="ltr" style="text-align:center">'+fmt(b.odds)+'</td><td dir="ltr" style="text-align:center">'+fmt(b.prob)+'%</td><td dir="ltr" style="text-align:center">'+fmt(b.fairCalc)+'</td><td dir="ltr" style="text-align:center">'+fmt(b.ev)+'%</td><td dir="ltr" style="text-align:center">'+fmt(b.evReported)+'%</td><td>'+verdict+'<div class="mut">'+esc(reason)+'</div></td></tr>';
+              });
+              h+='</tbody></table></div>';
+            }
+            h+='<div class="mut" style="line-height:1.9;margin-top:8px">فیلتر اولیه: ضریب حداقل 2.10، EV مجدد حداقل +5٪، اطمینان متوسط یا بالا، کیفیت دادهٔ خوب یا متوسط، وضعیت QUALIFIED و در صورت ارائه‌شدن EV محافظه‌کارانهٔ غیرمنفی. احتمال‌ها و ضرایب واقعی مستقلاً تأیید نمی‌شوند. این فیلتر تضمین سود نیست.</div>';
+            return h+'</div>';
+          }
+
+function renderDet() {
+  var d = $('mdet'); if (!d) return;
+  var m = SEL ? MATCHES[SEL] : null; if (SEL && !m) SEL = null;
+  $('leagues').style.display = m ? 'none' : ''; $('list').style.display = m ? 'none' : '';
+  if (!m) { d.innerHTML = ''; return; }
+  d.innerHTML = '<div class="more" style="margin:8px 12px" onclick="closeM()">\u2192 \u0628\u0631\u06af\u0634\u062a \u0628\u0647 \u0644\u06cc\u0633\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627</div>' + card(m) +
+    '<div class="quick" style="margin:8px 12px"><button class="btn blue" onclick="aiPromptCopy(\'' + m.id + '\')">🤖 کپی دستور تحلیل جامع هوش مصنوعی</button></div>' + aiValuePanel(m) +
+    '<div class="mut" style="padding:4px 14px;line-height:1.8">\u0627\u06cc\u0646 \u0635\u0641\u062d\u0647 \u0647\u0645\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0642\u0641\u0644 \u0645\u06cc\u200c\u0645\u0648\u0646\u0647. \u0645\u06cc\u200c\u062a\u0648\u0646\u06cc \u0628\u0631\u06cc \u062a\u0628 \ud83e\uddee \u062f\u0631\u0635\u062f \u06cc\u0627 \u0628\u0644\u06cc\u0637 \u0648 \u0628\u0631\u06af\u0631\u062f\u06cc\u060c \u0628\u0627\u0632 \u0647\u0645\u06cc\u0646\u200c\u062c\u0627\u06cc\u06cc.</div>';
+}
+function appBack() {
+  if (!pageOn('matches')) { go('matches'); return true; }
+  if (SEL) { closeM(); return true; }
+  return false;
+}
+
+/* ---------- leagues ---------- */
+function loadSports(done) {
+  var c = ld('sports2', null);
+  if (c && Date.now() - c.t < SPORTS_TTL && c.d.length) { SPORTS = c.d; done(); return; }
+  var fb = function () { SPORTS = (c && c.d && c.d.length) ? c.d : POP.map(function (k) { return { key: k, title: k, active: true }; }); done(); };
+  if (!key()) { fb(); return; }
+  http(API + '?all=true&apiKey=' + encodeURIComponent(key()), function (r) {
+    if (r.status == 200) {
+      try {
+        var s = JSON.parse(r.body).filter(function (s) { return s.group && s.group.indexOf('Soccer') == 0 && !s.has_outrights && !/_winner$/.test(s.key); })
+          .map(function (s) { return { key: s.key, title: s.title, active: !!s.active }; });
+        if (s.length) { SPORTS = s; sv('sports2', { t: Date.now(), d: s }); done(); return; }
+      } catch (e) {}
+    }
+    fb();
+  });
+}
+/* ESPN leagues from Saeed's list (update 15): probed once a week, only ones ESPN really has are shown */
+var ESX = [
+  ['arg.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u0627\u0648\u0644 \u0622\u0631\u0698\u0627\u0646\u062a\u06cc\u0646 (Primera Nacional)'],
+  ['bol.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0628\u0648\u0644\u06cc\u0648\u06cc'],
+  ['can.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u06a9\u0627\u0646\u0627\u062f\u0627'],
+  ['can.w.nsl', '\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u06a9\u0627\u0646\u0627\u062f\u0627 (NSL)'],
+  ['chi.2', '\u0644\u06cc\u06af \u0622\u0633\u0646\u0633\u0648 \u0634\u06cc\u0644\u06cc'],
+  ['col.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u06a9\u0644\u0645\u0628\u06cc\u0627'],
+  ['col.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u062f\u0648\u0645 \u06a9\u0644\u0645\u0628\u06cc\u0627 (BetPlay)'],
+  ['gua.1', '\u0644\u06cc\u06af \u0645\u0644\u06cc \u06af\u0648\u0627\u062a\u0645\u0627\u0644\u0627'],
+  ['slv.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0627\u0644\u0633\u0627\u0644\u0648\u0627\u062f\u0648\u0631'],
+  ['jam.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u062c\u0627\u0645\u0627\u0626\u06cc\u06a9\u0627'],
+  ['pan.1', '\u0644\u06cc\u06af \u067e\u0627\u0646\u0627\u0645\u0627'],
+  ['mex.2', '\u0644\u06cc\u06af \u0627\u06a9\u0633\u067e\u0627\u0646\u0633\u06cc\u0648\u0646 \u0645\u06a9\u0632\u06cc\u06a9'],
+  ['mex.w.1', '\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u0645\u06a9\u0632\u06cc\u06a9'],
+  ['usa.usl.1', 'USL \u0686\u0645\u067e\u06cc\u0648\u0646\u0634\u06cc\u067e'],
+  ['usa.usl.l1', 'USL \u0644\u06cc\u06af \u0648\u0627\u0646'],
+  ['usa.usl.cup', '\u062c\u0627\u0645 USL'],
+  ['usa.usl.l1.cup', '\u062c\u0627\u0645 USL \u0644\u06cc\u06af \u0648\u0627\u0646'],
+  ['usa.nwsl', 'NWSL \u0632\u0646\u0627\u0646 \u0622\u0645\u0631\u06cc\u06a9\u0627'],
+  ['usa.w.usl.1', '\u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 USL'],
+  ['uru.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0627\u0631\u0648\u06af\u0648\u0626\u0647'],
+  ['uru.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u062f\u0648\u0645 \u0627\u0631\u0648\u06af\u0648\u0626\u0647'],
+  ['ven.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u062f\u0648\u0645 \u0648\u0646\u0632\u0648\u0626\u0644\u0627'],
+  ['concacaf.nations.league', '\u0644\u06cc\u06af \u0645\u0644\u062a\u200c\u0647\u0627\u06cc \u06a9\u0648\u0646\u06a9\u0627\u06a9\u0627\u0641'],
+  ['fifa.friendly', '\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u062f\u0648\u0633\u062a\u0627\u0646\u0647 \u0645\u0644\u06cc'],
+  ['club.friendly', '\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u062f\u0648\u0633\u062a\u0627\u0646\u0647 \u0628\u0627\u0634\u06af\u0627\u0647\u06cc'],
+  ['eng.w.1', '\u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u0627\u0646\u06af\u0644\u06cc\u0633'],
+  ['eng.w.2', '\u062f\u0633\u062a\u0647 \u062f\u0648\u0645 \u0632\u0646\u0627\u0646 \u0627\u0646\u06af\u0644\u06cc\u0633'],
+  ['fra.w.1', '\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u0641\u0631\u0627\u0646\u0633\u0647'],
+  ['ger.w.1', '\u0628\u0648\u0646\u062f\u0633\u0644\u06cc\u06af\u0627\u06cc \u0632\u0646\u0627\u0646 \u0622\u0644\u0645\u0627\u0646'],
+  ['ger.w.2', '\u0628\u0648\u0646\u062f\u0633\u0644\u06cc\u06af\u0627\u06cc \u06f2 \u0632\u0646\u0627\u0646 \u0622\u0644\u0645\u0627\u0646'],
+  ['esp.3', '\u067e\u0631\u06cc\u0645\u0631\u0627 \u0641\u062f\u0631\u0627\u0633\u06cc\u0648\u0646 \u0627\u0633\u067e\u0627\u0646\u06cc\u0627'],
+  ['esp.w.1', '\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u0627\u0633\u067e\u0627\u0646\u06cc\u0627 (Liga F)'],
+  ['ita.3', '\u0633\u0631\u06cc C \u0627\u06cc\u062a\u0627\u0644\u06cc\u0627'],
+  ['ita.w.1', '\u0633\u0631\u06cc \u0622 \u0632\u0646\u0627\u0646 \u0627\u06cc\u062a\u0627\u0644\u06cc\u0627'],
+  ['ned.2', '\u0627\u0631\u0633\u062a\u0647 \u062f\u06cc\u0648\u06cc\u0632\u06cc\u0647 \u0647\u0644\u0646\u062f'],
+  ['ned.w.1', '\u0627\u0631\u062f\u06cc\u0648\u06cc\u0632\u06cc\u0647 \u0632\u0646\u0627\u0646 \u0647\u0644\u0646\u062f'],
+  ['nor.2', '\u062f\u0633\u062a\u0647 \u0627\u0648\u0644 \u0646\u0631\u0648\u0698'],
+  ['nor.w.1', '\u062a\u0648\u067e\u0633\u0631\u06cc\u06cc\u0646 \u0632\u0646\u0627\u0646 \u0646\u0631\u0648\u0698'],
+  ['swe.w.1', '\u062f\u0627\u0645\u0627\u0644\u0633\u0648\u0646\u0633\u06a9\u0627\u0646 \u0632\u0646\u0627\u0646 \u0633\u0648\u0626\u062f'],
+  ['por.2', '\u0644\u06cc\u06af \u06f2 \u067e\u0631\u062a\u063a\u0627\u0644'],
+  ['gre.2', '\u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u06f2 \u06cc\u0648\u0646\u0627\u0646'],
+  ['rus.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u0627\u0648\u0644 \u0631\u0648\u0633\u06cc\u0647'],
+  ['ukr.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u0627\u0648\u0644 \u0627\u0648\u06a9\u0631\u0627\u06cc\u0646'],
+  ['srb.2', '\u0644\u06cc\u06af \u062f\u0633\u062a\u0647 \u0627\u0648\u0644 \u0635\u0631\u0628\u0633\u062a\u0627\u0646'],
+  ['svk.2', '\u0644\u06cc\u06af \u06f2 \u0627\u0633\u0644\u0648\u0627\u06a9\u06cc'],
+  ['svn.2', '\u0644\u06cc\u06af \u06f2 \u0627\u0633\u0644\u0648\u0648\u0646\u06cc'],
+  ['sco.w.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0632\u0646\u0627\u0646 \u0627\u0633\u06a9\u0627\u062a\u0644\u0646\u062f'],
+  ['bel.w.1', '\u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u0632\u0646\u0627\u0646 \u0628\u0644\u0698\u06cc\u06a9'],
+  ['jpn.2', '\u062c\u06cc\u200c\u0644\u06cc\u06af \u06f2 \u0698\u0627\u067e\u0646'],
+  ['jpn.3', '\u062c\u06cc\u200c\u0644\u06cc\u06af \u06f3 \u0698\u0627\u067e\u0646'],
+  ['irn.2', '\u0644\u06cc\u06af \u0622\u0632\u0627\u062f\u06af\u0627\u0646 \u0627\u06cc\u0631\u0627\u0646'],
+  ['phi.1', '\u0644\u06cc\u06af \u0641\u0648\u062a\u0628\u0627\u0644 \u0641\u06cc\u0644\u06cc\u067e\u06cc\u0646'],
+  ['gha.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u063a\u0646\u0627'],
+  ['nga.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0646\u06cc\u062c\u0631\u06cc\u0647'],
+  ['zam.1', '\u0633\u0648\u067e\u0631\u0644\u06cc\u06af \u0632\u0627\u0645\u0628\u06cc\u0627'],
+  ['mar.2', '\u0628\u0637\u0648\u0644\u0647 \u06f2 \u0645\u0631\u0627\u06a9\u0634'],
+  ['tun.2', '\u0644\u06cc\u06af \u06f2 \u062a\u0648\u0646\u0633'],
+  ['sen.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0633\u0646\u06af\u0627\u0644'],
+  ['geo.1', '\u0627\u0631\u0648\u0648\u0646\u0648\u0644\u06cc \u0644\u06cc\u06af\u0627\u06cc \u06af\u0631\u062c\u0633\u062a\u0627\u0646'],
+  ['mng.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0645\u063a\u0648\u0644\u0633\u062a\u0627\u0646'],
+  ['uae.1', '\u0644\u06cc\u06af \u0628\u0631\u062a\u0631 \u0627\u0645\u0627\u0631\u0627\u062a']
+];
+var ESXN = {}; ESX.forEach(function (x) { ESXN[x[0]] = x[1]; });
+var ESV = ld('esv', null), ESVR = 0, ESVP = 0;
+function probeES(force) {
+  if (ESVR) return;
+  if (!force && ESV && ESV.v == 16 && Date.now() - ESV.t < 7 * 86400000) return;
+  var list = ESX.filter(function (x) { return !REVE[x[0]]; }), ok = {}, i = 0, done = 0, net = 0, run = 0;
+  var ds = [], now = Date.now(); for (var k = -1; k < 7; k++) ds.push(ymd(now + k * 86400000));
+  ESVR = 1; ESVP = 0;
+  var fin = function () {
+    ESVR = 0;
+    if (net > 0) { ESV = { v: 16, t: Date.now(), ok: ok }; sv('esv', ESV); }
+    if (force) toast(net > 0 ? '\u2705 ' + fa(Object.keys(ok).length) + ' ' + '\u0644\u06cc\u06af \u0627\u0632 \u0644\u06cc\u0633\u062a\u062a \u062a\u0648 ESPN \u0628\u0627\u0632\u06cc \u062f\u0627\u0631\u0647' : '\u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u0648\u0635\u0644 \u0646\u06cc\u0633\u062a\u060c \u0628\u0639\u062f\u0627\u064b \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646');
+    if (reg == 'browse' && pageOn('matches')) renderTree();
+    if (pageOn('set')) renderSet();
+  };
+  var pump = function () {
+    while (run < 4 && i < list.length) {
+      (function (s) {
+        run++;
+        espnFetch(s, ds, function (evs, err) {
+          run--; done++; ESVP = done;
+          if (evs || (err && err.e != 0)) net++;
+          if (evs && evs.length) ok[s] = 1;
+          if (reg == 'browse' && pageOn('matches') && done % 8 == 0) renderTree();
+          if (done >= list.length) fin(); else pump();
+        });
+      })(list[i++][0]);
+    }
+  };
+  if (!list.length) fin(); else pump();
+}
+function esl(lg) { return ESPN[lg] || (String(lg).indexOf('es_') == 0 ? lg.slice(3) : null); }
+function isES(lg) { return String(lg).indexOf('es_') == 0; }
+function lname(k) {
+  if (FA[k]) return FA[k];
+  if (isAF(k)) { var af = AFLG[k]; return af ? afCty(af.c).f + ' ' + esc(af.n) : '\u26bd'; }
+  if (isES(k)) return cinfo(k).f + ' ' + esc(ESXN[k.slice(3)] || ESN[k.slice(3)] || k.slice(3));
+  for (var i = 0; i < SPORTS.length; i++) if (SPORTS[i].key == k) return '\u26bd ' + esc(SPORTS[i].title);
+  return k;
+}
+function cinfo(k) {
+  if (isES(k)) {
+    var pf = PFX[k.slice(3).split('.')[0]];
+    for (var j = 0; j < COUNTRIES.length; j++) if (COUNTRIES[j][0] == pf) return { id: pf, f: COUNTRIES[j][1], fa: COUNTRIES[j][2], c: COUNTRIES[j][3], o: j };
+    return { id: 'x', f: '\u26bd', fa: '\u0633\u0627\u06cc\u0631', c: 'other', o: 999 };
+  }
+  for (var i = 0; i < COUNTRIES.length; i++) {
+    var c = COUNTRIES[i];
+    if (c[4].test(k)) return { id: c[0], f: c[1], fa: c[2], c: c[3], o: i };
+  }
+  return { id: 'x', f: '\u26bd', fa: '\u0633\u0627\u06cc\u0631', c: 'other', o: 999 };
+}
+function rank(k) {
+  var i = PRI.indexOf(k); if (i >= 0) return i;
+  if (/cup|pokal|coppa|copa_del_rey|coupe|qualif/.test(k)) return 60;
+  if (/2$|two|segunda|serie_b|league1|league2|liga3|superettan|champ$/.test(k)) return 70;
+  return 50;
+}
+function leaguesFor(g) {
+  var have = {}; SPORTS.forEach(function (s) { if (s.active) have[s.key] = 1; });
+  var p = POP.filter(function (k) { return have[k]; });
+  return (p.length ? p : POP).map(function (k) { return { key: k }; });
+}
+function renderLeagues() {
+  var h = '<div class="leagues">' + chip('\ud83d\udcc5 \u0627\u0645\u0631\u0648\u0632', reg == 'day', "pickReg('day')") + chip('\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627', reg == 'af', "pickReg('af')") + '</div>';
+  if (reg == 'pop') {
+    h += '<div class="leagues">';
+    leaguesFor('pop').forEach(function (s) { h += chip(lname(s.key), s.key == cur, "pickLeague('" + s.key + "')", 'sm'); });
+    h += '</div>';
+  }
+  if (reg == 'lg') h += '<div class="leagues">' + chip('\ud83d\udccd ' + lname(cur), true, '', 'sm') + chip('\u21a9\ufe0f \u0628\u0631\u06af\u0634\u062a \u0628\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627', false, "pickReg('browse')", 'sm') + '</div>';
+  if (reg == 'day') h += '<div class="leagues">' + chip('\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647', DAYU && !DAYE, 'DAYU=true;DAYE=false;renderLeagues();renderDay(true)', 'sm') + chip('\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632', !DAYU && !DAYE, 'DAYU=false;DAYE=false;renderLeagues();renderDay(true)', 'sm') + chip('\ud83c\udfc1 \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632', DAYE, 'DAYE=true;renderLeagues();renderDay(true)', 'sm') + '<span class="mut" style="padding:0 6px">\u0645\u0646\u0628\u0639: ' + (afKey() ? 'API-Football' : 'ESPN') + '</span></div>';
+  if (reg == 'af') h += '<div class="leagues">' + chip('\u0627\u0645\u0631\u0648\u0632', AFD == 0, 'AFD=0;AFL=null;renderLeagues();renderAF(false)', 'sm') + chip('\u0641\u0631\u062f\u0627', AFD == 1, 'AFD=1;AFL=null;renderLeagues();renderAF(false)', 'sm') + chip('\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647', AFU && !AFE, 'AFU=!AFU;AFE=false;renderLeagues();renderAF(false)', 'sm') + chip('\ud83c\udfc1 \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0647\u0627', AFE, 'AFE=!AFE;AFL=null;renderLeagues();renderAF(false)', 'sm') + (AFL ? chip('\u21a9\ufe0f \u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627', false, 'AFL=null;renderLeagues();renderAF(false)', 'sm') : '') + '</div>';
+  if (reg != 'browse' && reg != 'day' && reg != 'af') {
+    h += '<div class="leagues">';
+    DFS.forEach(function (d) { h += chip(d[1], DF == d[0], "pickDF('" + d[0] + "')", 'sm'); });
+    h += '</div>';
+  }
+  $('leagues').innerHTML = h;
+}
+function pickReg(g) {
+  reg = g; renderLeagues();
+  if (g == 'browse') { renderTree(); return; }
+  if (g == 'all') { renderAll(); return; }
+  if (g == 'day') { renderDay(false); return; }
+  if (g == 'af') { renderAF(false); return; }
+  if (POP.indexOf(cur) < 0) cur = leaguesFor('pop')[0].key;
+  loadOdds(false);
+}
+function pickLeague(k) { cur = k; renderLeagues(); loadOdds(false); }
+function openLeague(k) { cur = k; reg = POP.indexOf(k) >= 0 ? 'pop' : 'lg'; renderLeagues(); loadOdds(false); window.scrollTo(0, 0); }
+function pickDF(d) { DF = d; renderLeagues(); rerender(); }
+function rerender() { if (sTyping()) { RRP = 1; return; } if (reg == 'browse') renderTree(); else if (reg == 'day') renderDay(true); else if (reg == 'af') renderAF(false); else if (reg == 'all') renderAll(); else if (CUR) renderMatches(CUR, false);  renderDet(); }
+function tgl(o, k) { o[k] = !o[k]; renderTree(); }
+function dayFresh() { return DAY && Date.now() - DAYT < DAY_TTL; }
+function renderTree() {
+  CUR = null;
+  var groups = {}, have = {}, now = Date.now(), today = dk(now), DC = {};
+  if (!dayFresh() && !DAYF && now - DAYTRY > 120000) fetchDay(function () { if (reg == 'browse' && pageOn('matches')) renderTree(); });
+  if (DAY) DAY.d.forEach(function (m) { if (!m.pp && dk(m.time) == today && !started(m)) DC[m.lg] = (DC[m.lg] || 0) + 1; });
+  var ls = SPORTS.slice();
+  ls.forEach(function (s) { have[s.key] = 1; });
+  var addK = function (k) { if (have[k]) return; have[k] = 1; ls.push({ key: k, title: isES(k) ? (ESXN[k.slice(3)] || ESN[k.slice(3)] || k.slice(3)) : k, active: true }); };
+  Object.keys(DC).forEach(addK); LIVEM.forEach(function (m) { addK(m.lg); });
+  probeES(false); if (ESV && ESV.ok) Object.keys(ESV.ok).forEach(function (s) { addK(REVE[s] || ('es_' + s)); });
+  ls.forEach(function (s) {
+    var ci = cinfo(s.key), g = groups[ci.c] = groups[ci.c] || {};
+    var cc = g[ci.id] = g[ci.id] || { ci: ci, ls: [] };
+    cc.ls.push(s);
+  });
+  liveCounts();
+  var h = '<div class="mut" style="padding:4px 14px 8px">\u062f\u06cc\u062f\u0646 \u0644\u06cc\u0633\u062a \u0648 \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647. \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0636\u0631\u0627\u06cc\u0628 \u06cc\u0647 \u0644\u06cc\u06af \u0631\u0648 \u0628\u06af\u06cc\u0631\u06cc \u0627\u0639\u062a\u0628\u0627\u0631 \u0645\u0635\u0631\u0641 \u0645\u06cc\u0634\u0647. \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0636\u0631\u06cc\u0628 \u0646\u062f\u0627\u0631\u0646 \u0631\u0648 \u0628\u0627 \u270d\ufe0f \u062f\u0633\u062a\u06cc \u0636\u0631\u06cc\u0628 \u0628\u062f\u0647.</div>';
+  if (ESVR) h += '<div class="mut" style="padding:0 14px 6px">\ud83d\udd0e \u062f\u0627\u0631\u0645 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062c\u062f\u06cc\u062f \u0631\u0648 \u062a\u0648 ESPN \u0686\u06a9 \u0645\u06cc\u200c\u06a9\u0646\u0645 (\u0631\u0627\u06cc\u06af\u0627\u0646)... ' + fa(ESVP) + '/' + fa(ESX.length) + '</div>';
+  if (LIVEM.length) {
+    h += '<div class="lvh" onclick="tgl(OPENL,\'all\')"><span>\ud83d\udd34 \u0627\u0644\u0627\u0646 ' + fa(LIVEM.length) + ' \u0628\u0627\u0632\u06cc \u0632\u0646\u062f\u0647 \u062f\u0631 \u062c\u0631\u06cc\u0627\u0646\u0647</span><span>' + (OPENL.all ? '\u25b2' : '\u25bc \u0628\u0628\u06cc\u0646') + '</span></div>';
+    if (OPENL.all) h += liveRows(LIVEM, true);
+  } else if (!LIVEC) h += '<div class="mut" style="padding:0 14px">\u062f\u0631 \u062d\u0627\u0644 \u06af\u0631\u0641\u062a\u0646 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0632\u0646\u062f\u0647...</div>';
+  CONT.forEach(function (c) {
+    var g = groups[c[0]]; if (!g) return;
+    var cs = Object.keys(g).map(function (k) { return g[k]; }).sort(function (a, b) { return a.ci.o - b.ci.o; });
+    var act = 0; cs.forEach(function (x) { x.ls.forEach(function (s) { if (s.active) act++; }); });
+    h += '<div class="tc" onclick="tgl(OPENC,\'' + c[0] + '\')"><span>' + c[1] + lvc('c_' + c[0]) + '</span><span class="mut">' + fa(act) + ' \u0644\u06cc\u06af \u0641\u0639\u0627\u0644 ' + (OPENC[c[0]] ? '\u25b2' : '\u25bc') + '</span></div>';
+    if (!OPENC[c[0]]) return;
+    cs.forEach(function (x) {
+      var id = x.ci.id + '_' + c[0], n = 0; x.ls.forEach(function (s) { if (s.active) n++; });
+      h += '<div class="tk" onclick="tgl(OPENK,\'' + id + '\')"><span>' + x.ci.f + ' ' + x.ci.fa + lvc(id) + '</span><span class="mut">' + (n ? fa(n) + ' \u0644\u06cc\u06af' : '\u062e\u0627\u0631\u062c \u0627\u0632 \u0641\u0635\u0644') + ' ' + (OPENK[id] ? '\u25b2' : '\u25bc') + '</span></div>';
+      if (!OPENK[id]) return;
+      var lm = LIVEM.filter(function (m) { return m.cid == id; });
+      if (lm.length) h += liveRows(lm, true);
+      x.ls.sort(function (a, b) { return (rank(a.key) - rank(b.key)) || (a.title < b.title ? -1 : 1); }).forEach(function (s) {
+        var dc = DC[s.key] ? '<span class="mut"> \ud83d\udcc5 ' + fa(DC[s.key]) + ' \u0627\u0645\u0631\u0648\u0632</span>' : '';
+        h += s.active ? '<div class="tl" onclick="openLeague(\'' + s.key + '\')"><span>' + lname(s.key) + lvc('L' + s.key) + dc + '</span><span class="gold">\u203a</span></div>'
+          : '<div class="tl off"><span>' + lname(s.key) + '</span><span class="mut">\u062e\u0627\u0631\u062c \u0627\u0632 \u0641\u0635\u0644</span></div>';
+      });
+    });
+  });
+  $('list').innerHTML = h;
+}
+function liveRows(a, lg) {
+  var h = '';
+  a.forEach(function (m) {
+    var L = LIVE[m.id] || {};
+    h += '<div class="lr" onclick="openLeague(\'' + m.lg + '\')"><div class="row"><span>' + esc(m.home) + '</span><b class="sc">' + (L.hs || 0) + '</b></div><div class="row"><span>' + esc(m.away) + '</span><b class="sc">' + (L.as || 0) + '</b></div>' +
+      '<div class="mut">\ud83d\udd34 <span class="ltr">' + esc(L.clk || '') + '</span>' + (lg ? ' | ' + lname(m.lg) : '') + '</div></div>';
+  });
+  return h;
+}
+
+/* ---------- odds ---------- */
+function mkt(b, k) { if (!b || !b.markets) return null; for (var i = 0; i < b.markets.length; i++) if (b.markets[i].key == k) return b.markets[i]; return null; }
+function books(e) {
+  var pref = ['onexbet', 'pinnacle', 'williamhill', 'unibet_eu', 'betfair_ex_eu'], bs = e.bookmakers || [], out = [];
+  pref.forEach(function (p) { bs.forEach(function (b) { if (b.key == p) out.push(b); }); });
+  bs.forEach(function (b) { if (out.indexOf(b) < 0) out.push(b); });
+  return out;
+}
+function totals(bs, mk, pt) {
+  for (var i = 0; i < bs.length; i++) {
+    var t = mkt(bs[i], mk), ov = null, un = null;
+    if (t) t.outcomes.forEach(function (x) { if (x.point == pt) { if (x.name == 'Over') ov = x.price; else if (x.name == 'Under') un = x.price; } });
+    if (ov && un) return [ov, un];
+  }
+  return null;
+}
+function compact(d, lg) {
+  return d.map(function (e) {
+    var o = { id: e.id, lg: lg, home: e.home_team, away: e.away_team, time: e.commence_time, h: null, d: null, a: null, ov: null, un: null };
+    var bs = books(e);
+    for (var i = 0; i < bs.length; i++) {
+      var m = mkt(bs[i], 'h2h');
+      if (m) { m.outcomes.forEach(function (x) { if (x.name == e.home_team) o.h = x.price; else if (x.name == e.away_team) o.a = x.price; else o.d = x.price; }); break; }
+    }
+    var t = totals(bs, 'totals', 2.5);
+    if (t) { o.ov = t[0]; o.un = t[1]; }
+    return o;
+  }).filter(function (o) { return o.h && o.a; });
+}
+function fetchOdds(lg, cb) {
+  http(API + lg + '/odds/?apiKey=' + encodeURIComponent(key()) + '&regions=eu&markets=h2h,totals&oddsFormat=decimal', function (r) {
+    rem(r);
+    if (r.status == 200) {
+      var d = [];
+      try { d = compact(JSON.parse(r.body), lg); } catch (e) {}
+      var old = ld('odds_' + lg, null), now = Date.now(), seen = {};
+      d.forEach(function (m) { seen[m.id] = 1; });
+      if (old && old.d) old.d.forEach(function (m) { if (seen[m.id]) return; if (alive(m, now)) d.push(m); else sv('ex_' + m.id, null); });
+      sv('odds_' + lg, { t: now, d: d });
+      updCL(lg, seen);
+      var idx = ld('oddsIdx', []); if (idx.indexOf(lg) < 0) { idx.push(lg); sv('oddsIdx', idx); }
+      cb(d, r);
+    } else cb(null, r);
+  });
+}
+function alive(m, now) { return new Date(m.time).getTime() + END_MS > (now || Date.now()); }
+function started(m) { return new Date(m.time).getTime() <= Date.now(); }
+function agoTxt(t) {
+  var mn = Math.round((Date.now() - t) / 60000); if (mn < 60) return fmt(Math.max(mn, 1)) + ' \u062f\u0642\u06cc\u0642\u0647 \u067e\u06cc\u0634';
+  var hr = Math.floor(mn / 60); if (hr < 24) return fmt(hr) + ' \u0633\u0627\u0639\u062a \u067e\u06cc\u0634'; return fmt(Math.floor(hr / 24)) + ' \u0631\u0648\u0632 \u067e\u06cc\u0634';
+}
+function fetchFx(lg, cb) {
+  var s = esl(lg); if (!s) { cb(null); return; }
+  FXTRY[lg] = Date.now();
+  var ds = [], now = Date.now(); for (var i = -1; i < 7; i++) ds.push(ymd(now + i * 86400000));
+  espnFetch(s, ds, function (evs, err) {
+    if (!evs) { cb(null, err); return; }
+    var out = [];
+    evs.forEach(function (e) {
+      var c = e.competitions && e.competitions[0]; if (!c || !c.competitors) return;
+      var H = null, A = null; c.competitors.forEach(function (x) { if (x.homeAway == 'home') H = x; else A = x; });
+      if (!H || !A) return;
+      var ty = ((e.status || c.status || {}).type) || {};
+      if (/POSTPONED|CANCELED|CANCELLED/.test(ty.name || '')) return;
+      var tn = function (x) { return (x.team && (x.team.displayName || x.team.name)) || '?'; };
+      var m = { id: 'e' + e.id, lg: lg, home: tn(H), away: tn(A), time: e.date, h: null, d: null, a: null, ov: null, un: null, fx: 1 };
+      if (ty.state == 'in' || ty.completed) {
+        var hs = parseInt(H.score, 10), as = parseInt(A.score, 10);
+        LIVE[m.id] = { hs: isNaN(hs) ? 0 : hs, as: isNaN(as) ? 0 : as, st: ty.completed ? 'post' : 'in', clk: ty.shortDetail || '', t: Date.now() };
+      }
+      out.push(m);
+    });
+    sv('fx_' + lg, { t: Date.now(), d: out });
+    var ix = ld('fxIdx', []); if (ix.indexOf(lg) < 0) { ix.push(lg); sv('fxIdx', ix); }
+    cb(out);
+  });
+}
+function sameM(a, b) {
+  if (Math.abs(new Date(a.time).getTime() - new Date(b.time).getTime()) > 6 * 3600000) return false;
+  return sim1(a.home, b.home) + sim1(a.away, b.away) >= 1.2 || sim1(a.home, b.away) + sim1(a.away, b.home) >= 1.2;
+}
+function leagueList(lg, now) {
+  var c = ld('odds_' + lg, null), f = ld('fx_' + lg, null);
+  var od = (c && c.d) ? c.d.filter(function (m) { return alive(m, now); }) : [];
+  var fx = (f && f.d) ? f.d.filter(function (m) { return alive(m, now); }) : [];
+  var out = od.slice();
+  fx.forEach(function (x) { if (!od.some(function (m) { return sameM(m, x); })) out.push(x); });
+  return out;
+}
+function ccont(id) { for (var i = 0; i < COUNTRIES.length; i++) if (COUNTRIES[i][0] == id) return COUNTRIES[i][3]; return 'other'; }
+/* all-leagues ESPN feed (update 14) */
+function espnLM(j) {
+  var lm = {}, ch = false;
+  (j.leagues || []).forEach(function (l) { lm[String(l.id)] = l.slug; if (l.slug && l.name && ESN[l.slug] != l.name) { ESN[l.slug] = l.name; ch = true; } });
+  if (ch) sv('esn', ESN);
+  return lm;
+}
+function evM(e, lm) {
+  var c = e.competitions && e.competitions[0]; if (!c || !c.competitors) return null;
+  var H = null, A = null; c.competitors.forEach(function (x) { if (x.homeAway == 'home') H = x; else A = x; });
+  if (!H || !A) return null;
+  var sl = (e.league && e.league.slug) || '';
+  if (!sl) { var mm = /~l:(\d+)/.exec(e.uid || ''); if (mm) sl = lm[mm[1]] || ''; }
+  if (!sl) return null;
+  var ty = ((e.status || c.status || {}).type) || {};
+  var tn = function (x) { return (x.team && (x.team.displayName || x.team.name)) || '?'; };
+  var m = { id: 'e' + e.id, lg: REVE[sl] || ('es_' + sl), home: tn(H), away: tn(A), time: e.date, h: null, d: null, a: null, ov: null, un: null, fx: 1, st: ty.state || 'pre' };
+  if (/POSTPON|CANCEL|ABANDON/i.test(String(ty.name || ''))) m.pp = 1;
+  if (ty.state == 'in' || ty.completed) {
+    var hs = parseInt(H.score, 10), as = parseInt(A.score, 10);
+    LIVE[m.id] = { hs: isNaN(hs) ? 0 : hs, as: isNaN(as) ? 0 : as, st: ty.completed ? 'post' : 'in', clk: ty.shortDetail || '', t: Date.now() };
+  }
+  return m;
+}
+function liveCounts(force) {
+  if (!force && Date.now() - LCT < 55000) return; LCT = Date.now();
+  var go = function (url, fb) {
+    http(url, function (r) {
+      if (r.status != 200) { if (fb) go(fb, null); else if (!LIVEC) LIVEC = { tot: 0 }; return; }
+      try {
+        var j = JSON.parse(r.body), lm = espnLM(j), C = { tot: 0 }, LM = [];
+        (j.events || []).forEach(function (e) {
+          var m = evM(e, lm); if (!m || m.st != 'in') return;
+          var ci = cinfo(m.lg), k = ci.id + '_' + ci.c;
+          m.cid = k; LM.push(m);
+          C['L' + m.lg] = (C['L' + m.lg] || 0) + 1; C[k] = (C[k] || 0) + 1; C['c_' + ci.c] = (C['c_' + ci.c] || 0) + 1; C.tot++;
+        });
+        LIVEC = C; LIVEM = LM.sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
+        if (BETS.some(function (b) { return b.st == 'p' && b.sel.some(function (x) { return x.res == 'p' && LIVE[x.id] && LIVE[x.id].st == 'post'; }); })) afterLive();
+        if (pageOn('matches')) { if (reg == 'browse') renderTree(); else if (reg == 'day') renderDay(true); }
+      } catch (e) {}
+    });
+  };
+  go(ESPN_API + 'all/scoreboard?limit=500', ESPN_API + 'all/scoreboard');
+}
+function espnJ(url, cb) {
+  http(url, function (r) {
+    if (r.status != 200) { cb(null, r.status); return; }
+    try { cb(JSON.parse(r.body), null); } catch (e) { cb(null, 'JSON'); }
+  });
+}
+function fetchDay(cb) {
+  if (DAYF) return; DAYF = 1; DAYTRY = Date.now();
+  var now = Date.now(), ds = [dk(now - 86400000), dk(now), dk(now + 86400000)].map(function (d) { return d.replace(/-/g, ''); });
+  var all = [], seen = {}, left = ds.length, ok = 0, er = null;
+  var eat = function (j) { ok++; var lm = espnLM(j); (j.events || []).forEach(function (e) { if (seen[e.id]) return; seen[e.id] = 1; var m = evM(e, lm); if (m) all.push(m); }); };
+  var fin = function () { DAYF = 0; if (ok) { DAY = { d: all }; DAYT = Date.now(); } cb(!!ok, er); };
+  ds.forEach(function (d) {
+    var u = ESPN_API + 'all/scoreboard?dates=' + d;
+    espnJ(u + '&limit=500', function (j) {
+      var next = function (j2, e2) {
+        if (j2) eat(j2); else er = e2;
+        if (--left == 0) { if (ok) fin(); else espnJ(ESPN_API + 'all/scoreboard', function (j3, e3) { if (j3) eat(j3); else er = e3; fin(); }); }
+      };
+      if (j) next(j); else espnJ(u, next);
+    });
+  });
+}
+function renderDay(soft, force) {
+  CUR = null;
+  if (afKey()) { dayAF(soft, force); return; }
+  if (soft || (!force && dayFresh())) { if (DAY) { showDay(); return; } if (soft) return; }
+  if (DAYF) { if (!DAY) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632...</div>'; return; }
+  if (!DAY) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 (\u0631\u0627\u06cc\u06af\u0627\u0646\u060c \u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f)...</div>';
+  else toast('\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc...');
+  fetchDay(function (ok, er) {
+    if (reg != 'day' || !pageOn('matches')) return;
+    if (DAY) { showDay(); if (!ok) toast('\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f (' + er + ')');  else if (force) toast('\u2705 \u0628\u0631\u0648\u0632 \u0634\u062f\u060c ' + fa(DAYN) + ' \u0628\u0627\u0632\u06cc'); }
+    else $('list').innerHTML = '<div class="empty">\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (er ? ' (\u062e\u0637\u0627 ' + esc(er) + ')' : '') + '<br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u0648 VPN \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br><br>' + chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646', false, 'renderDay(false,1)') + '</div>';
+  });
+  liveCounts();
+}
+function showDay() {
+  var now = Date.now(), today = dk(now), oc = {}, out = [], used = {}, lgs = {};
+  DAY.d.forEach(function (m) {
+    if (m.pp || !dayPanel(m.time, now)) return;
+    if (DAYE) { if (!dayFin(m, now)) return; } else { if (!alive(m, now)) return; if (DAYU && started(m)) return; }
+    if (!isES(m.lg)) {
+      if (!(m.lg in oc)) { var c = ld('odds_' + m.lg, null); oc[m.lg] = (c && c.d) ? c.d : []; }
+      var hit = null; oc[m.lg].forEach(function (o) { if (!hit && !used[o.id] && sameM(o, m)) hit = o; });
+      if (hit) { used[hit.id] = 1; m = hit; }
+    }
+    out.push(m); lgs[m.lg] = 1;
+  });
+  out.sort(function (a, b) { return new Date(a.time).getTime() - new Date(b.time).getTime(); });
+  NL = Object.keys(lgs).length; ALLK = []; DAYN = out.length;
+  if (!out.length) { $('list').innerHTML = '<div class="empty">' + (DAYE ? '\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u06cc\u0633\u062a.' : DAYU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u0645\u0648\u0646\u062f\u0647.<br>\u00ab\u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632\u00bb \u0631\u0648 \u0628\u0632\u0646\u060c \u06cc\u0627 \u0628\u0631\u0627\u06cc \u0641\u0631\u062f\u0627 \u0628\u0631\u0648 \u0633\u0631\u0627\u063a \u00ab\u0647\u0645\u0647 \u06a9\u0634\u0648\u0631\u0647\u0627\u00bb.' : '\u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f') + '<br><br>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)') + '</div>'; return; }
+  RMALL = DAYE; renderMatches(out, true); RMALL = false;
+}
+
+/* smart auto refresh of today (update 26) */
+/* even pacing of API-Football (update 31): what is left of the 100/day is spread over the hours left until the UTC reset; skipped when no game is live */
+var AF_RES = 5, AF_FLOOR = 5 * 60000;
+function afQuota() {
+  var rr = ld('afrem', null); if (!rr) return null;
+  var n = new Date(), reset = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());
+  return rr.t < reset ? null : rr.n;
+}
+function afIv() {
+  var q = afQuota(); if (q === null) q = 100;
+  var n = Date.now(), d = new Date(n), reset = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) + 86400000, left = q - AF_RES;
+  if (left <= 0) return 0;
+  return Math.max(AF_FLOOR, (reset - n) / left);
+}
+function afLow() { return afIv() === 0; }
+function afNeed() {
+  var now = Date.now(), c = ld('af_' + afDate(0), null), y = false;
+  if (c && c.d) c.d.forEach(function (m) { if (!y && !m.pp && m.st != 'post' && started(m) && alive(m, now)) y = true; });
+  if (!y) BETS.forEach(function (b) { if (b.st == 'p') b.sel.forEach(function (x) { var k = new Date(x.time).getTime(); if (x.res == 'p' && k <= now && now - k < END_MS) y = true; }); });
+  return y;
+}
+function afAuto() {
+  if (!afKey() || !(pageOn('matches') || pageOn('bets'))) return;
+  var iv = afIv(); if (!iv || Date.now() - ld('aflast', 0) < iv || !afNeed()) return;
+  afGet(afDate(0), 0, function () {});
+}
+function afMin() { return fa(Math.round((afIv() || 3600000) / 60000)); }
+function afNextTxt() {
+  if (!afKey()) return '';
+  if (afLow()) return ' | \u23f8 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u062e\u0627\u0645\u0648\u0634 \u0634\u062f (\u0633\u0647\u0645\u06cc\u0647 \u06a9\u0645\u060c ' + fa(afQuota()) + ' \u0645\u0648\u0646\u062f\u0647)';
+  if (!afNeed()) return ' | \ud83d\udca4 \u0627\u0644\u0627\u0646 \u0628\u0627\u0632\u06cc \u0632\u0646\u062f\u0647\u200c\u0627\u06cc \u0646\u06cc\u0633\u062a\u060c \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u0635\u0628\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647 \u062a\u0627 \u0633\u0647\u0645\u06cc\u0647 \u0630\u062e\u06cc\u0631\u0647 \u0628\u0634\u0647';
+  var nx = Math.max(Date.now(), ld('aflast', 0) + afIv());
+  return ' | \ud83d\udd01 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u0628\u0639\u062f\u06cc: ' + hm(new Date(nx).toISOString()) + ' (\u0647\u0631 ' + afMin() + ' \u062f\u0642\u06cc\u0642\u0647)';
+}
+/* today tab from API-Football + finished games (update 25) */
+function dayFin(m, now) { var L = LIVE[m.id]; return started(m) && ((L && L.st == 'post') || m.st == 'post' || !alive(m, now || Date.now())); }
+function afOddsPool(now) {
+  if (now - AFOP.t < 60000) return AFOP.d;
+  var d = [];
+  SPORTS.forEach(function (s) { var c = ld('odds_' + s.key, null); if (c && c.d) c.d.forEach(function (o) { if (Math.abs(new Date(o.time).getTime() - now) < 2 * 86400000) d.push(o); }); });
+  AFOP = { t: now, d: d }; return d;
+}
+function dayAF(soft, force) {
+  var ds = afDate(0), dn = afDate(1), c = ld('af_' + ds, null), cn = ld('af_' + dn, null);
+  if (soft) { if (c) showDayAF({ d: (c.d || []).concat(cn && cn.d ? cn.d : []) }); return; }
+  if (!c) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 \u0627\u0632 API-Football...</div>';
+  else if (force) toast('\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc...');
+  afGet(ds, force ? 0 : 0.75 * 3600000, function (d, er) {
+    if (reg != 'day' || !pageOn('matches')) return;
+    if (!d) { $('list').innerHTML = '<div class="empty">\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (er ? '<br><span class="ltr">' + esc(er) + '</span>' : '') + '<br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a\u060c VPN \u0648 \u06a9\u0644\u06cc\u062f API-Football \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br><br>' + chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646', false, 'renderDay(false,1)') + '</div>'; return; }
+    if (cn && cn.d) d = { t: d.t, d: (d.d || []).concat(cn.d) };
+    showDayAF(d);
+    if (force) toast(er ? '\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f: ' + er : '\u2705 \u0628\u0631\u0648\u0632 \u0634\u062f\u060c ' + fa(DAYN) + ' \u0628\u0627\u0632\u06cc');
+  });
+}
+function showDayAF(d) {
+  var now = Date.now(), today = dk(now), out = [], lgs = {}, used = {}, oc = afOddsPool(now);
+  d.d.forEach(function (m) {
+    if (m.pp || !dayPanel(m.time, now)) return;
+    if (started(m)) afLive(m);
+    if (DAYE) { if (!dayFin(m, now)) return; } else { if (!alive(m, now)) return; if (DAYU && started(m)) return; }
+    var hit = null; oc.forEach(function (o) { if (!hit && !used[o.id] && sameM(o, m)) hit = o; });
+    if (hit) { used[hit.id] = 1; if (LIVE[m.id] && !LIVE[hit.id]) LIVE[hit.id] = LIVE[m.id]; m = hit; }
+    MATCHES[m.id] = m; out.push(m); lgs[m.lg] = 1;
+  });
+  out.sort(function (a, b) { return new Date(a.time).getTime() - new Date(b.time).getTime(); });
+  NL = Object.keys(lgs).length; ALLK = []; DAYN = out.length;
+  if (!out.length) { $('list').innerHTML = '<div class="empty">' + (DAYE ? '\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u06cc\u0633\u062a.' : (DAYU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632 \u0646\u0645\u0648\u0646\u062f\u0647. \u00ab\u0641\u0631\u062f\u0627\u00bb \u0631\u0648 \u062a\u0648 \u062a\u0628 \u00ab\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627\u00bb \u0628\u0628\u06cc\u0646.' : '\u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f')) + '<br><br>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)', false, 'renderDay(false,1)') + '</div>'; return; }
+  RMALL = DAYE; renderMatches(out, true); RMALL = false;
+}
+/* API-Football, all leagues of the world (update 24) */
+var AFBT = {}, AF_API = 'https://v3.football.api-sports.io/', AFD = 0, AFU = true, AFL = null, AFO = {}, AFB = {}, AFCS = [], AFLG = ld('aflg', {});
+function afKey() { return ld('afkey', ''); }
+function isAF(lg) { return String(lg).indexOf('af_') == 0; }
+function afHttp(path, f) { var id = 'c' + (cbn++); cbs[id] = f; Android.get2(AF_API + path, 'x-apisports-key', afKey(), id); }
+function afRem(r) { if (r.remaining && r.remaining != 'null' && !isNaN(+r.remaining)) sv('afrem', { n: +r.remaining, t: Date.now() }); }
+function afErr(j) { var e = j && j.errors; if (!e || e.length === 0) return ''; var s = []; for (var k in e) s.push(e[k]); return s.join(' '); }
+var AFP = { FT: 'post', AET: 'post', PEN: 'post', '1H': 'in', HT: 'in', '2H': 'in', ET: 'in', BT: 'in', P: 'in', LIVE: 'in', INT: 'in', SUSP: 'in' }, AFX = { PST: 1, CANC: 1, ABD: 1, AWD: 1, WO: 1 };
+function afDate(off) { return dk(Date.now() + off * 86400000); }
+function afCty(c) {
+  if (!c || c == 'World') return { f: '\ud83c\udf0d', n: '\u062c\u0647\u0627\u0646\u06cc' };
+  var id = String(c).toLowerCase().replace(/-/g, '_');
+  for (var j = 0; j < COUNTRIES.length; j++) if (COUNTRIES[j][0] == id) return { f: COUNTRIES[j][1], n: COUNTRIES[j][2] };
+  return { f: '\u26bd', n: c };
+}
+function afM(f) {
+  var fx = f.fixture || {}, lg = f.league || {}, t = f.teams || {}, st = (fx.status || {}).short || 'NS';
+  if (!fx.id || !t.home || !t.away) return null;
+  var k = 'af_' + lg.id;
+  if (!AFLG[k] || AFLG[k].n != lg.name) AFLG[k] = { n: lg.name || '?', c: lg.country || 'World' };
+  var m = { id: 'af' + fx.id, lg: k, home: t.home.name, away: t.away.name, time: fx.date, h: null, d: null, a: null, ov: null, un: null, fx: 1, st: AFP[st] || 'pre', ss: st, ft: Date.now(), vc: (fx.venue || {}).city || '', vn: (fx.venue || {}).name || '' };
+  if (AFX[st]) m.pp = 1;
+  var g = f.goals || {}, ft = (f.score || {}).fulltime || {}, hs = g.home, as = g.away;
+  if ((st == 'AET' || st == 'PEN') && ft.home !== null && ft.home !== undefined) { hs = ft.home; as = ft.away; }
+  if (m.st != 'pre' && hs !== null && hs !== undefined) { m.hs = hs; m.as = as; m.el = (fx.status || {}).elapsed; }
+  return m;
+}
+function afLive(m) {
+  if (m.pp) { LIVE[m.id] = { hs: 0, as: 0, st: 'post', pp: 1, clk: '', t: m.ft || Date.now() }; return; }
+  if (m.st == 'pre' || m.hs === undefined) return;
+  var O = LIVE[m.id]; if (O && O.t > (m.ft || 0) && !(O.st != 'post' && m.st == 'post')) return;
+  LIVE[m.id] = { hs: m.hs, as: m.as, st: m.st, clk: m.st == 'post' ? 'FT' : (m.el ? m.el + "'" : m.ss), t: m.ft || Date.now() };
+}
+function afGet(ds, ttl, cb) {
+  var c = ld('af_' + ds, null);
+  if (c && Date.now() - c.t < ttl) { cb(c, null); return; }
+  if (!afKey()) { cb(c, 'nokey'); return; }
+  if (AFB[ds] && Date.now() - (AFBT[ds] || 0) < 45000) { AFB[ds].push(cb); return; }
+  var oldq = AFB[ds] || []; AFB[ds] = oldq.concat([cb]); AFBT[ds] = Date.now(); sv('aflast', Date.now());
+  var my = AFBT[ds];
+  afHttp('fixtures?date=' + ds + '&timezone=Asia/Tehran', function (r) {
+    afRem(r);
+    var out = c, er = null;
+    if (r.status != 200) er = 'HTTP ' + r.status + ' ' + String(r.body || '').slice(0, 80);
+    else {
+      try {
+        var j = JSON.parse(r.body), e = afErr(j);
+        if (e) er = e;
+        else {
+          var d = []; (j.response || []).forEach(function (f) { var m = afM(f); if (m) d.push(m); });
+          out = { t: Date.now(), d: d }; sv('af_' + ds, out); sv('aflg', AFLG);
+          var ks = ld('afks', []), now = Date.now();
+          if (ks.indexOf(ds) < 0) ks.push(ds);
+          ks = ks.filter(function (x) { var keep = now - new Date(x + 'T12:00:00').getTime() < 5 * 86400000; if (!keep) sv('af_' + x, null); return keep; });
+          sv('afks', ks);
+        }
+      } catch (x) { er = 'JSON'; }
+    }
+    if (AFBT[ds] != my) return;
+    if (out) out.d.forEach(afLive);
+    var q = AFB[ds] || []; delete AFB[ds]; delete AFBT[ds];
+    q.forEach(function (f) { f(out, er); });
+    if (out && !er) afterLive();
+  });
+}
+var AFSE = '';
+function afSync(force, done) {
+  if (!afKey()) { if (done) done(); return; }
+  var now = Date.now(), ds = {};
+  BETS.forEach(function (b) {
+    if (b.st != 'p') return;
+    b.sel.forEach(function (x) {
+      if (x.res != 'p' || !isAF(x.lg)) return;
+      var k = new Date(x.time).getTime(); if (k > now || now - k > 84 * 3600000) return;
+      var L = LIVE[x.id]; if (L && L.st == 'post') return;
+      ds[dk(k)] = 1;
+    });
+  });
+  SH.forEach(function (x) { if (x.res != 'p' || !isAF(x.lg)) return; var k = new Date(x.time).getTime(); if (k + 100 * 60000 > now || now - k > 84 * 3600000) return; var L = LIVE[x.mid]; if (L && L.st == 'post') return; ds[dk(k)] = 1; });
+  var ks = Object.keys(ds), left = ks.length;
+  if (!left) { if (done) done(); return; }
+  AFSE = '';
+  ks.forEach(function (d) { afGet(d, force ? 120000 : Math.max(15 * 60000, afIv() || 6 * 3600000), function (c, er) { if (er && er != 'nokey') AFSE = er; if (c) c.d.forEach(afLive); if (--left == 0) { afterLive(); if (done) done(); } }); });
+}
+function renderAF(force) {
+  CUR = null;
+  if (!afKey()) { $('list').innerHTML = '<div class="empty">\ud83c\udf10 \u0628\u0631\u0627\u06cc \u062f\u06cc\u062f\u0646 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627\u060c \u06a9\u0644\u06cc\u062f \u0631\u0627\u06cc\u06af\u0627\u0646 API-Football \u0631\u0648 \u062a\u0648 \u2699\ufe0f \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0648\u0627\u0631\u062f \u06a9\u0646.<br><br>' + chip('\u2699\ufe0f \u0631\u0641\u062a\u0646 \u0628\u0647 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a', false, "go('set')") + '</div>'; return; }
+  var ds = afDate(AFD), c = ld('af_' + ds, null);
+  if (!c) $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc ' + (AFD ? '\u0641\u0631\u062f\u0627' : '\u0627\u0645\u0631\u0648\u0632') + ' \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627...</div>';
+  afGet(ds, force ? 0 : (AFD ? 3 : 0.75) * 3600000, function (d, er) {
+    if (reg != 'af' || !pageOn('matches')) return;
+    if (force && d && !er) toast('\u2705 \u0628\u0631\u0648\u0632 \u0634\u062f\u060c ' + fa(d.d.length) + ' \u0628\u0627\u0632\u06cc');
+    if (er && d) toast('\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0634\u062f: ' + er);
+    if (!d) { $('list').innerHTML = '<div class="empty">\u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (er ? '<br><span class="ltr">' + esc(er) + '</span>' : '') + '<br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a\u060c VPN \u0648 \u06a9\u0644\u06cc\u062f API-Football \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br><br>' + chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646', false, 'renderAF(1)') + '</div>'; return; }
+    showAF(d);
+  });
+}
+function afTog(i) { var c = AFCS[i]; AFO[c] = !AFO[c]; showAF(ld('af_' + afDate(AFD), { t: 0, d: [] })); }
+function afPick(k) { AFL = k; renderLeagues(); showAF(ld('af_' + afDate(AFD), { t: 0, d: [] })); window.scrollTo(0, 0); }
+function showAF(d) {
+  var now = Date.now(), ms = d.d.filter(function (m) { if (started(m)) afLive(m); return !m.pp && (AFE ? dayFin(m, now) : (alive(m, now) && (!AFU || !started(m)))); });
+  ms.forEach(function (m) { MATCHES[m.id] = m; if (started(m)) afLive(m); });
+  if (AFL) {
+    var L = ms.filter(function (m) { return m.lg == AFL; });
+    if (L.length) { NL = 1; ALLK = []; RMALL = AFE; renderMatches(L, true); RMALL = false; return; }
+    AFL = null; renderLeagues();
+  }
+  var g = {}, n = 0;
+  ms.forEach(function (m) { var li = AFLG[m.lg] || { n: '?', c: 'World' }, c = g[li.c] = g[li.c] || { n: 0, l: {} }; c.n++; c.l[m.lg] = (c.l[m.lg] || 0) + 1; n++; });
+  AFCS = Object.keys(g).sort(function (a, b) { if (a == 'World') return -1; if (b == 'World') return 1; return g[b].n - g[a].n; });
+  var rr = ld('afrem', null);
+  var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(n) + ' \u0628\u0627\u0632\u06cc \u0627\u0632 ' + fmt(AFCS.length) + ' \u06a9\u0634\u0648\u0631' + (d.t ? ' | \u062f\u0631\u06cc\u0627\u0641\u062a: ' + agoTxt(d.t) : '') + (rr ? ' | \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647: ' + fa(rr.n) : '') + afNextTxt() + '</span>' + chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)', false, 'renderAF(1)', 'sm') + '</div>';
+  if (!n) h += '<div class="empty">' + (AFE ? '\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0627\u06cc \u0646\u06cc\u0633\u062a.' : AFU ? '\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u200c\u0627\u06cc \u0646\u0645\u0648\u0646\u062f\u0647. \u00ab\u23f3 \u0641\u0642\u0637 \u0634\u0631\u0648\u0639\u200c\u0646\u0634\u062f\u0647\u00bb \u0631\u0648 \u062e\u0627\u0645\u0648\u0634 \u06a9\u0646 \u06cc\u0627 \u0628\u0631\u0648 \u0633\u0631\u0627\u063a \u0641\u0631\u062f\u0627.' : '\u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f') + '</div>';
+  AFCS.forEach(function (c, i) {
+    var o = AFO[c], cc = g[c], ci = afCty(c);
+    h += '<div class="box" style="margin:6px 14px;padding:10px"><div class="row" onclick="afTog(' + i + ')"><b>' + (o ? '\u25be ' : '\u25b8 ') + ci.f + ' ' + esc(ci.n) + '</b><span class="mut">' + fa(cc.n) + ' \u0628\u0627\u0632\u06cc</span></div>';
+    if (o) Object.keys(cc.l).sort(function (a, b) { return cc.l[b] - cc.l[a]; }).forEach(function (k) {
+      h += '<div class="row" style="padding:8px 4px;border-top:1px solid rgba(255,255,255,.08)" onclick="afPick(\'' + k + '\')"><span>\u26bd ' + esc((AFLG[k] || {}).n || k) + '</span><span class="mut">' + fa(cc.l[k]) + ' \u203a</span></div>';
+    });
+    h += '</div>';
+  });
+  $('list').innerHTML = h;
+}
+function saveAF() { sv('afkey', $('afk').value.trim()); toast('\u06a9\u0644\u06cc\u062f API-Football \u0630\u062e\u06cc\u0631\u0647 \u0634\u062f'); renderSet(); }
+function testAF() {
+  var v = $('afk').value.trim(); if (!v) { toast('\u0627\u0648\u0644 \u06a9\u0644\u06cc\u062f \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  if (v != afKey()) sv('afkey', v);
+  toast('\u062f\u0631 \u062d\u0627\u0644 \u062a\u0633\u062a \u06a9\u0644\u06cc\u062f...');
+  afHttp('status', function (r) {
+    if (r.status != 200) { toast('\u274c \u062e\u0637\u0627 ' + r.status + '\u060c \u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u0648 VPN \u0631\u0648 \u0686\u06a9 \u06a9\u0646'); return; }
+    try {
+      var j = JSON.parse(r.body), e = afErr(j);
+      if (e) { toast('\u274c ' + e); return; }
+      var q = (j.response || {}).requests || {}, lim = q.limit_day || 100, cu = q.current || 0;
+      sv('afrem', { n: lim - cu, t: Date.now() });
+      toast('\u2705 \u06a9\u0644\u06cc\u062f \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647! \u0627\u0645\u0631\u0648\u0632 ' + fa(cu) + ' \u0627\u0632 ' + fa(lim) + ' \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0645\u0635\u0631\u0641 \u0634\u062f\u0647');
+      renderSet();
+    } catch (x) { toast('\u274c \u062c\u0648\u0627\u0628 \u0646\u0627\u0645\u0639\u062a\u0628\u0631'); }
+  });
+}
+function lvc(k) { var n = LIVEC && LIVEC[k]; return n ? '<span class="lv">\ud83d\udd34 ' + fa(n) + ' \u0632\u0646\u062f\u0647</span>' : ''; }
+function noFx(lg, err) {
+  $('list').innerHTML = '<div class="empty">' + (esl(lg) ? '\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc ' + lname(lg) + ' \u0627\u0632 \u0645\u0646\u0628\u0639 \u0631\u0627\u06cc\u06af\u0627\u0646 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f' + (err && err.e ? ' (\u062e\u0637\u0627 ' + esc(err.e) + ')' : '') + '.' : '\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646 \u0628\u0631\u0627\u06cc ' + lname(lg) + ' \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a.') + '<br><br>' +
+    (esl(lg) ? chip('\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646 (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'FXTRY={};loadOdds(false,1)') + '<br><br>' : '') +
+    (isES(lg) ? '<div class="mut">\u0627\u06cc\u0646 \u0644\u06cc\u06af \u062a\u0648 The Odds API \u0646\u06cc\u0633\u062a. \u0636\u0631\u0627\u06cc\u0628\u0634 \u0631\u0648 \u062f\u0633\u062a\u06cc \u0627\u0632 1xBet \u0648\u0627\u0631\u062f \u06a9\u0646.</div></div>' : chip('\ud83d\udce5 \u062f\u0631\u06cc\u0627\u0641\u062a \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af', false, 'loadOdds(true)') + '<div class="mut">(\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0644\u06cc\u06af)</div></div>');
+}
+function errBox(r, retry) {
+  return '<div class="empty">\u062e\u0637\u0627 \u062f\u0631 \u062f\u0631\u06cc\u0627\u0641\u062a \u0627\u0637\u0644\u0627\u0639\u0627\u062a (' + r.status + ')<br><span class="ltr">' + esc(r.body).slice(0, 200) + '</span><br><br>\u0627\u06cc\u0646\u062a\u0631\u0646\u062a\u060c VPN \u0648 \u06a9\u0644\u06cc\u062f API \u0631\u0648 \u0686\u06a9 \u06a9\u0646<br>' + chip('\u062a\u0644\u0627\u0634 \u062f\u0648\u0628\u0627\u0631\u0647', false, retry) + '</div>';
+}
+function loadOdds(force, fxForce) {
+  var list = $('list'), lg = cur;
+  var c = ld('odds_' + lg, null);
+  if (!force) {
+    var f = ld('fx_' + lg, null), fresh = f && Date.now() - f.t < FX_TTL;
+    if (c || f) renderMatches(leagueList(lg, Date.now()), false);
+    if (esl(lg) && (!fresh || fxForce) && (fxForce || Date.now() - (FXTRY[lg] || 0) > 120000)) {
+      if (!c && !f) list.innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 (\u0631\u0627\u06cc\u06af\u0627\u0646)...</div>';
+      fetchFx(lg, function (d, err) {
+        if (lg != cur || reg == 'all' || reg == 'browse') return;
+        if (d && !d.length && isES(lg) && !c) {
+          var s5 = lg.slice(3); if (ESV && ESV.ok && ESV.ok[s5]) { delete ESV.ok[s5]; sv('esv', ESV); }
+          if (!leagueList(lg, Date.now()).length) { noFx(lg, { e: 'ESPN \u0628\u0631\u0627\u06cc \u06f8 \u0631\u0648\u0632 \u0647\u06cc\u0686 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0627\u0632 \u0627\u06cc\u0646 \u0644\u06cc\u06af \u0646\u062f\u0627\u062f' }); return; }
+        }
+        if (d || c || f) renderMatches(leagueList(lg, Date.now()), false); else noFx(lg, err);
+      });
+      return;
+    }
+    if (!c && !f) noFx(lg);
+    return;
+  }
+  if (isES(lg)) { toast('\u0627\u06cc\u0646 \u0644\u06cc\u06af \u062a\u0648 The Odds API \u0646\u06cc\u0633\u062a\u060c \u0631\u0648\u06cc \u270d\ufe0f \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628 \u0631\u0648 \u062f\u0633\u062a\u06cc \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  if (!key()) { toast('\u0628\u0631\u0627\u06cc \u06af\u0631\u0641\u062a\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0627\u0648\u0644 \u0627\u0632 \u0628\u062e\u0634 \u2699\ufe0f \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u06a9\u0644\u06cc\u062f API \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  list.innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627...</div>';
+  fetchOdds(lg, function (d, r) {
+    if (lg != cur || reg == 'all' || reg == 'browse') return;
+    if (d) renderMatches(leagueList(lg, Date.now()), false);
+    else if (c || ld('fx_' + lg, null)) { renderMatches(leagueList(lg, Date.now()), false); toast('\u062e\u0637\u0627 \u062f\u0631 \u06af\u0631\u0641\u062a\u0646 \u0636\u0631\u0627\u06cc\u0628 (' + r.status + ')'); }
+    else list.innerHTML = errBox(r, 'loadOdds(true)');
+  });
+}
+function renderAll() {
+  var oi = ld('oddsIdx', []), fi = ld('fxIdx', []), all = [], n = 0, now = Date.now(), stale = [];
+  var idx = oi.slice(); fi.forEach(function (k) { if (idx.indexOf(k) < 0) idx.push(k); });
+  var ko = [], kf = []; ALLK = [];
+  idx.forEach(function (k) {
+    var a = leagueList(k, now);
+    if (a.length) {
+      all = all.concat(a); n++; ALLK.push(k);
+      if (oi.indexOf(k) >= 0) ko.push(k); if (fi.indexOf(k) >= 0) kf.push(k);
+      var f = ld('fx_' + k, null);
+      if (esl(k) && (!f || now - f.t > FX_TTL) && now - (FXTRY[k] || 0) > 300000) stale.push(k);
+    } else { sv('odds_' + k, null); sv('fx_' + k, null); }
+  });
+  if (ko.length != oi.length) sv('oddsIdx', ko);
+  if (kf.length != fi.length) sv('fxIdx', kf);
+  if (stale.length) {
+    var sl = stale.length;
+    stale.forEach(function (k) { fetchFx(k, function () { if (--sl == 0 && reg == 'all' && pageOn('matches')) renderAll(); }); });
+  }
+  if (!all.length) {
+    CUR = null;
+    $('list').innerHTML = '<div class="empty">\u0627\u06cc\u0646\u062c\u0627 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0628\u0627\u0632 \u06a9\u0631\u062f\u06cc\u060c \u0628\u0647 \u062a\u0631\u062a\u06cc\u0628 \u0633\u0627\u0639\u062a \u0634\u0631\u0648\u0639 \u0646\u0634\u0648\u0646 \u062f\u0627\u062f\u0647 \u0645\u06cc\u0634\u0647.<br><br>' +
+      chip('\ud83d\udce5 \u062f\u0631\u06cc\u0627\u0641\u062a \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u0645\u062d\u0628\u0648\u0628', false, 'loadMany(POP)') + '<div class="mut">(\u062d\u062f\u0648\u062f \u06f1\u06f4 \u0627\u0639\u062a\u0628\u0627\u0631 \u0645\u0635\u0631\u0641 \u0645\u06cc\u0634\u0647)</div></div>';
+    return;
+  }
+  NL = n; renderMatches(all, true);
+}
+function loadMany(ks) {
+  if (!key()) { toast('\u0627\u0648\u0644 \u06a9\u0644\u06cc\u062f API \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  if (!ks.length) ks = POP;
+  var i = 0;
+  $('list').innerHTML = '<div class="spin">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a ' + fmt(ks.length) + ' \u0644\u06cc\u06af...</div>';
+  (function next() { if (i >= ks.length) { if (reg == 'all') renderAll(); return; } fetchOdds(ks[i++], function () { next(); }); })();
+}
+function inDF(t) {
+  if (DF == 'all') return true;
+  var n = Date.now();
+  if (DF == 'today') return dk(t) == dk(n);
+  if (DF == 'tom') return dk(t) == dk(n + 86400000);
+  return t - n < 7 * 86400000;
+}
+
+/* ---------- extra markets ---------- */
+function exOf(id) {
+  if (EX[id]) return EX[id];
+  var c = ld('ex_' + id, null);
+  if (c && c.o) { EX[id] = c; return c; }
+  return null;
+}
+function fetchEx(m) {
+  http(API + m.lg + '/events/' + m.id + '/odds?apiKey=' + encodeURIComponent(key()) + '&regions=eu&markets=btts,alternate_totals&oddsFormat=decimal', function (r) {
+    rem(r);
+    var o = {};
+    if (r.status == 200) {
+      try {
+        var bs = books(JSON.parse(r.body));
+        for (var i = 0; i < bs.length; i++) {
+          var b = mkt(bs[i], 'btts'), y = null, n = null;
+          if (b) b.outcomes.forEach(function (x) { if (x.name == 'Yes') y = x.price; else if (x.name == 'No') n = x.price; });
+          if (y && n) { o.BY = y; o.BN = n; break; }
+        }
+        TLN.forEach(function (pt) { var t = totals(bs, 'alternate_totals', pt); if (t) { o[tkey('O', pt)] = t[0]; o[tkey('U', pt)] = t[1]; } });
+      } catch (e) {}
+    }
+    var v = { t: Date.now(), o: o, err: !Object.keys(o).length };
+    EX[m.id] = v;
+    if (r.status == 200) { sv('ex_' + m.id, v); var sx = {}; sx[m.id] = 1; updCL(m.lg, sx); } else toast('\u062e\u0637\u0627 \u062f\u0631 \u062f\u0631\u06cc\u0627\u0641\u062a (' + r.status + ')');
+    rerender();
+  });
+}
+/* closing line value (update 13) */
+function updCL(lg, ids) {
+  var now = Date.now(), ch = false, c = ld('odds_' + lg, null), map = {};
+  if (c && c.d) c.d.forEach(function (m) { map[m.id] = m; });
+  BETS.forEach(function (b) {
+    if (b.st != 'p') return;
+    b.sel.forEach(function (x) {
+      if (x.lg != lg || x.res != 'p' || !ids[x.id] || new Date(x.time).getTime() <= now) return;
+      var m = map[x.id] || MATCHES[x.id]; if (!m) return;
+      var p = x.pick == 'O' ? 'O25' : (x.pick == 'U' ? 'U25' : x.pick), o = getOdd(m, p); if (!o) return;
+      x.cl = o; x.clt = now; ch = true;
+    });
+  });
+  if (ch) sv(pk('bets'), BETS);
+}
+function clMk(p) {
+  if (p == 'BY' || p == 'BN') return 'btts';
+  if (hcp(p)) return null;
+  if (/^[OU]\d\d$/.test(p) && p.slice(1) != '25') return 'alternate_totals';
+  if (p == 'O25' || p == 'U25' || p == 'O' || p == 'U') return 'totals';
+  return 'h2h';
+}
+function findBet(bid) { var b = null; BETS.forEach(function (z) { if (z.id == bid) b = z; }); return b; }
+function fetchCL(bid, j) {
+  var b = findBet(bid); if (!b || !b.sel[j]) return;
+  var x = b.sel[j];
+  if (!key()) { toast('\u0627\u0648\u0644 \u06a9\u0644\u06cc\u062f API \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  if (new Date(x.time).getTime() <= Date.now()) { toast('\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0634\u062f\u0647\u060c \u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u0631\u0648 \u062f\u0633\u062a\u06cc \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  var mk = clMk(x.pick), p = x.pick == 'O' ? 'O25' : (x.pick == 'U' ? 'U25' : x.pick);
+  if (!mk) { toast('\u0636\u0631\u06cc\u0628 \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u0628\u0627 \u00ab\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u062f\u0633\u062a\u06cc\u00bb \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  toast('\u062f\u0631 \u062d\u0627\u0644 \u06af\u0631\u0641\u062a\u0646 \u0636\u0631\u06cc\u0628 \u0627\u0644\u0627\u0646...');
+  http(API + x.lg + '/events/' + x.id + '/odds?apiKey=' + encodeURIComponent(key()) + '&regions=eu&markets=' + mk + '&oddsFormat=decimal', function (r) {
+    rem(r);
+    if (r.status != 200) { toast('\u062e\u0637\u0627 \u062f\u0631 \u062f\u0631\u06cc\u0627\u0641\u062a (' + r.status + ')'); return; }
+    var o = null;
+    try {
+      var e = JSON.parse(r.body), bs = books(e);
+      if (mk == 'h2h') { var c = compact([e], x.lg)[0]; if (c) o = getOdd(c, p); }
+      else if (mk == 'btts') {
+        for (var i = 0; i < bs.length && !o; i++) { var bt = mkt(bs[i], 'btts'); if (bt) bt.outcomes.forEach(function (y) { if ((p == 'BY' && y.name == 'Yes') || (p == 'BN' && y.name == 'No')) o = y.price; }); }
+      } else { var t = totals(bs, mk, ptOf(p)); if (t) o = p.charAt(0) == 'O' ? t[0] : t[1]; }
+    } catch (er) {}
+    if (!o) { toast('\u0636\u0631\u06cc\u0628 \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f'); return; }
+    x.cl = o; x.clt = Date.now(); sv(pk('bets'), BETS); renderBets(); toast('\u0636\u0631\u06cc\u0628 \u0627\u0644\u0627\u0646 \u062b\u0628\u062a \u0634\u062f: ' + o.toFixed(2));
+  });
+}
+/* closing-odds reminder (update 39): 5 minutes before kickoff a notification asks for the closing odds (CLV) */
+function clRem(b) {
+  if (!b) return;
+  b.sel.forEach(function (x, j) {
+    var at = new Date(x.time).getTime() - 5 * 60000; if (at <= Date.now() || x.cl) return;
+    try { Android.alarm('cl' + b.id + '_' + j, String(at), '\ud83d\udcc8 \u06f5 \u062f\u0642\u06cc\u0642\u0647 \u0628\u0647 \u0634\u0631\u0648\u0639: \u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u0631\u0648 \u062b\u0628\u062a \u06a9\u0646', x.home + ' - ' + x.away + ' | ' + pl(x) + ' @' + x.odd.toFixed(2) + ' | \u062a\u0648 \u00ab\u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u0645\u0646\u00bb \u0631\u0648\u06cc \u00ab\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u062f\u0633\u062a\u06cc\u00bb \u0628\u0632\u0646'); } catch (e) {}
+  });
+}
+function setCL(bid, j) {
+  var b = findBet(bid); if (!b || !b.sel[j]) return;
+  var x = b.sel[j], dv0 = ''; try { var ct = Android.clip ? Android.clip() : ''; if (ct) { var po = parseOdds(ct); if (po && po.o && po.o[x.pick]) dv0 = String(po.o[x.pick]); } } catch (e) {}
+  var v = prompt('\u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc (\u0644\u062d\u0638\u0647 \u0634\u0631\u0648\u0639 \u0628\u0627\u0632\u06cc) \u0627\u06cc\u0646 \u0627\u0646\u062a\u062e\u0627\u0628 \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646:', dv0 || x.cl || '');
+  if (v === null) return;
+  v = parseFloat(String(v).replace(/[\u06f0-\u06f9]/g, function (d) { return '\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9'.indexOf(d); }).replace('\u066b', '.'));
+  if (!(v > 1)) { toast('\u06cc\u0647 \u0636\u0631\u06cc\u0628 \u062f\u0631\u0633\u062a \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  x.cl = r2(v); x.clt = Date.now(); try { Android.cancelAlarm('cl' + b.id + '_' + j); } catch (e) {} sv(pk('bets'), BETS); renderBets(); toast('\u0630\u062e\u06cc\u0631\u0647 \u0634\u062f \u2705');
+}
+function exRef(id) { if (MATCHES[id] && !started(MATCHES[id])) fetchEx(MATCHES[id]); }
+function more(id) {
+  OPEN[id] = !OPEN[id];
+  if (OPEN[id] && !exOf(id) && MATCHES[id] && !started(MATCHES[id])) fetchEx(MATCHES[id]);
+  rerender();
+}
+
+/* ---------- match list ---------- */
+function od(m, k) { if (m[k]) return m[k]; var mn = MAN[m.id]; return mn ? (mn[{ h: '1', d: 'X', a: '2' }[k]] || null) : null; }
+function getOdd(m, p) {
+  var mn = MAN[m.id]; if (mn && mn[p]) return mn[p];
+  if (p == '1X' || p == 'X2' || p == '12') {
+    var oa = p == 'X2' ? od(m, 'd') : od(m, 'h'), obb = p == '1X' ? od(m, 'd') : od(m, 'a');
+    if (!oa || !obb) return null;
+    return Math.max(1.01, r2(1 / (1 / oa + 1 / obb)));
+  }
+  if (p == '1') return od(m, 'h'); if (p == 'X') return od(m, 'd'); if (p == '2') return od(m, 'a');
+  if (p == 'O25' && m.ov) return m.ov; if (p == 'U25' && m.un) return m.un;
+  var x = exOf(m.id); return x && x.o && x.o[p] ? x.o[p] : null;
+}
+/* no-vig implied probability (update 13) */
+function oppP(p) {
+  if (p == 'BY') return 'BN'; if (p == 'BN') return 'BY';
+  if (/^[OU]\d\d$/.test(p)) return (p.charAt(0) == 'O' ? 'U' : 'O') + p.slice(1);
+  var h = hcp(p); if (h) return hkey(h.s == '1' ? '2' : '1', -h.v);
+  return null;
+}
+function nv(m, p) {
+  if (!m) return null;
+  if (p == '1' || p == 'X' || p == '2' || p == '1X' || p == 'X2' || p == '12') {
+    var oh = od(m, 'h'), oa2 = od(m, 'a'), odd2 = od(m, 'd');
+    if (!oh || !oa2 || (m.fx && !odd2)) return null;
+    var qh = 1 / oh, qa = 1 / oa2, qd = odd2 ? 1 / odd2 : 0, s = qh + qa + qd;
+    var P = { '1': qh / s, 'X': qd / s, '2': qa / s };
+    if (p.length == 1) return (p == 'X' && !odd2) ? null : P[p];
+    return P[p.charAt(0)] + P[p.charAt(1)];
+  }
+  var o = oppP(p); if (!o) return null;
+  var a = getOdd(m, p), b = getOdd(m, o); if (!a || !b) return null;
+  return (1 / a) / (1 / a + 1 / b);
+}
+function pct(q) { return fa(Math.round(q * 100)) + '\u066a'; }
+function favOf(m) {
+  var a = nv(m, '1'), b = nv(m, '2');
+  if (a === null || b === null) return null;
+  if (a >= FAVT) return { s: '1', q: a }; if (b >= FAVT) return { s: '2', q: b };
+  return null;
+}
+function against(m, p) {
+  var f = favOf(m); if (!f) return null;
+  var bad = f.s == '1' ? { '2': 1, 'X2': 1, 'X': 1 } : { '1': 1, '1X': 1, 'X': 1 };
+  return bad[p] ? f : null;
+}
+function ob(m, p, label) {
+  var odd = getOdd(m, p), q = odd ? nv(m, p) : null, pr = q === null ? '' : '<i class="pr">' + pct(q) + '</i>';
+  if (!odd) return '<div class="ob dis"><small>' + label + '</small><b>-</b></div>';
+  if (started(m)) return '<div class="ob dis"><small>' + label + '</small><b>' + odd.toFixed(2) + '</b>' + pr + '</div>';
+  var s = slip.some(function (x) { return x.id == m.id && x.pick == p; });
+  return '<div class="ob' + (s ? ' sel' : '') + '" onclick="tog(\'' + m.id + '\',\'' + p + '\')"><small>' + label + '</small><b>' + odd.toFixed(2) + '</b>' + pr + '</div>';
+}
+function sec(m, t, a, b) {
+  if (!getOdd(m, a[0]) && !getOdd(m, b[0])) return '';
+  return '<div class="lbl">' + t + '</div><div class="odds two">' + ob(m, a[0], a[1]) + ob(m, b[0], b[1]) + '</div>';
+}
+function card(m) {
+  var L = LIVE[m.id], st = started(m), ot = OT[m.lg];
+  var tag = !st ? '\ud83d\udd52 ' : (L ? (L.st == 'post' ? '\ud83c\udfc1 \u062a\u0645\u0648\u0645 \u0634\u062f ' : '\ud83d\udd34 ' + (L.clk ? '<span class="ltr">' + esc(L.clk) + '</span> ' : '\u0632\u0646\u062f\u0647 ')) : '\ud83d\udd34 \u0634\u0631\u0648\u0639 \u0634\u062f\u0647 ');
+  var old = (!m.fx && !st && ot && Date.now() - ot > ODDS_TTL) ? ' <span class="mut">\u23f3 ' + agoTxt(ot) + '</span>' : '';
+  var scc = (st && L) ? '<b class="sc' + (L.st == 'post' ? ' fin' : '') + '">' : '';
+  var h = '<div class="match"><div class="mt"><span>' + tag + hm(m.time) + old + ' <span class="bell" onclick="bell(\'' + m.id + '\')">' + (REM[m.id] ? '\ud83d\udd14' : '\ud83d\udd15') + '</span></span><span>' + lname(m.lg) + '</span></div>' +
+    '<div class="teams"' + (SEL == m.id ? '' : ' onclick="openM(\'' + m.id + '\')"') + '><div class="tm"><span>' + esc(m.home) + '</span>' + (scc ? scc + L.hs + '</b>' : '') + '</div>' +
+    '<div class="tm"><span>' + esc(m.away) + '</span>' + (scc ? scc + L.as + '</b>' : '') + '</div>' + (SEL == m.id ? '' : '<div class="mut" style="direction:rtl;text-align:right;font-weight:normal;font-size:11px">\ud83d\udc46 \u0628\u0632\u0646 \u062a\u0627 \u0635\u0641\u062d\u0647 \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0628\u0627\u0632 \u0628\u0634\u0647</div>') + '</div>' + liveBox(m);
+  if (m.fx) return h + (st ? '' : manBox(m) + xPanel(m) + mdlPanel(m) + ptPanel(m) + sPanel(m.id) + hpPanel(m) + (SEL == m.id ? '' : '<div class="quick" style="margin:8px 0"><button class="btn blue" onclick="aiPromptCopy(\'' + m.id + '\')">🤖 کپی دستور تحلیل جامع هوش مصنوعی</button></div>')) + '</div>';
+  h += '<div class="odds">' + ob(m, '1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646') + ob(m, 'X', '\u0645\u0633\u0627\u0648\u06cc') + ob(m, '2', '\u06f2 \u0645\u0647\u0645\u0627\u0646') + '</div>';
+if (m.d) h += '<div class="lbl">\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 (\u0628\u0631\u062f \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc)</div><div class="odds">' + ob(m, '1X', '\u06f1 \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc') + ob(m, 'X2', '\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2') + ob(m, '12', '\u06f1 \u06cc\u0627 \u06f2') + '</div>';
+  if (m.ov && m.un) h += '<div class="odds two">' + ob(m, 'O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5 \u06af\u0644') + ob(m, 'U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5 \u06af\u0644') + '</div>';
+  if (OPEN[m.id]) {
+    var x = exOf(m.id);
+    if (!x) h += started(m) ? '<div class="mut" style="text-align:center;padding:8px">\u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0634\u062f\u0647</div>' : '<div class="spin" style="padding:10px">\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0628\u0627\u0632\u0627\u0631\u0647\u0627...</div>';
+    else {
+      var s = sec(m, '\u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0646\u061f', ['BY', '\u0628\u0644\u0647'], ['BN', '\u062e\u06cc\u0631']) +
+        sec(m, '\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f1.\u06f5', ['O15', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1.\u06f5'], ['U15', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f1.\u06f5']) +
+        ((m.ov && m.un) ? '' : sec(m, '\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f2.\u06f5', ['O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5'], ['U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5'])) +
+        sec(m, '\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f3.\u06f5', ['O35', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f3.\u06f5'], ['U35', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f3.\u06f5']);
+      h += s || '<div class="mut" style="text-align:center;padding:8px">\u0641\u0639\u0644\u0627\u064b \u0628\u0627\u0632\u0627\u0631 \u0628\u06cc\u0634\u062a\u0631\u06cc \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0646\u06cc\u0633\u062a</div>';
+      if (!started(m)) h += '<div class="mut" style="text-align:center;padding:4px" onclick="exRef(\'' + m.id + '\')">\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631\u0647\u0627 (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)' + (x.t ? '\u060c \u062f\u0631\u06cc\u0627\u0641\u062a: ' + agoTxt(x.t) : '') + '</div>';
+    }
+    h += '<div class="more" onclick="more(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646</div>';
+  } else h += '<div class="more" onclick="more(\'' + m.id + '\')">\u2795 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 (\u06af\u0644 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645\u060c \u06f1.\u06f5\u060c \u06f3.\u06f5)</div>';
+  h += xPanel(m) + mdlPanel(m) + ptPanel(m) + sPanel(m.id) + hpPanel(m);
+  if (SEL != m.id) h += '<div class="quick" style="margin:8px 0"><button class="btn blue" onclick="aiPromptCopy(\'' + m.id + '\')">🤖 کپی دستور تحلیل جامع هوش مصنوعی</button></div>';
+  return h + '</div>';
+}
+/* manual odds (update 14) */
+function num(v) { return parseFloat(String(v).replace(/[\u06f0-\u06f9]/g, function (d) { return '\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9'.indexOf(d); }).replace(/[\u066b,]/g, '.')); }
+function hkey(s, v) { return 'H' + s + ':' + (v > 0 ? '+' : '') + v; }
+function hsg(v) { return '\u200e' + (v > 0 ? '+' : (v < 0 ? '-' : '')) + fa(Math.abs(v)) + '\u200e'; }
+function tkey(c, v) { return c + ('0' + Math.round(v * 10)).slice(-2); }
+var HP = {}, HLN = [-2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5], TLN = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5];
+function hpTog(id) { HP[id] = !HP[id]; rerender(); }
+/* ---------- weather, lineups and absentees (update 39) ----------
+   weather: Open-Meteo (free, no key), city from API-Football venue or ESPN, else the home team name.
+   lineups: ESPN summary (free) or API-Football (1 request, only from 75 minutes before kickoff). absentees: API-Football injuries (1 request). */
+var XI = ld('xinfo', {}), XO = {}, XB = {}, GEO = ld('geo', {});
+(function () { var n = Date.now(), ch = false; for (var k in XI) { if (!XI[k] || !XI[k]._t || new Date(XI[k]._t).getTime() + 3 * 86400000 < n) { delete XI[k]; ch = true; } } if (ch) sv('xinfo', XI); })();
+function xGet(url, f) { http(url, function (r) { if (r.status != 200) { f(null, 'HTTP ' + r.status); return; } try { f(JSON.parse(r.body), null); } catch (e) { f(null, 'JSON'); } }); }
+function xCity(m) { if (m.vc) return m.vc; var X = XI[m.id]; if (X && X.vc) return X.vc; return String(m.home || '').replace(/\b(FC|CF|SC|AC|AFC|CD|SD|UD|SV|VfB|VfL|FK|SK|BK|IF|CA|CR|EC|SE|RC|RCD|AS|SS|US|SSC)\b/g, '').replace(/\s+/g, ' ').trim(); }
+function xWxKind(wc, pr, pp) { if (pr >= 0.5 || pp >= 60 || (wc >= 51 && wc <= 67) || (wc >= 80 && wc <= 99)) return 'rain'; if (wc >= 2) return 'cloudy'; return 'clear'; }
+function xWeather(m, done) {
+  var city = xCity(m); if (!city) { done('no city'); return; }
+  var k = new Date(m.time).getTime(); if (k - Date.now() > 15 * 86400000) { done('far'); return; }
+  var go = function (g) {
+    var d = new Date(k).toISOString().slice(0, 10), hr = new Date(Math.round(k / 3600000) * 3600000).toISOString().slice(0, 13) + ':00';
+    xGet('https://api.open-meteo.com/v1/forecast?latitude=' + g.la + '&longitude=' + g.lo + '&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m&timezone=GMT&start_date=' + d + '&end_date=' + d, function (j, er) {
+      if (!j || !j.hourly || !j.hourly.time) { done(er || 'no data'); return; }
+      var i = j.hourly.time.indexOf(hr); if (i < 0) i = Math.min(j.hourly.time.length - 1, new Date(k).getUTCHours());
+      var H = j.hourly, X = XI[m.id] = XI[m.id] || {};
+      X.wx = { c: g.n || city, t: H.temperature_2m[i], pr: H.precipitation[i] || 0, pp: H.precipitation_probability ? H.precipitation_probability[i] : null, wc: H.weather_code ? H.weather_code[i] : 0, ws: H.wind_speed_10m ? H.wind_speed_10m[i] : null, at: Date.now() };
+      X.wx.k = xWxKind(X.wx.wc, X.wx.pr, X.wx.pp || 0);
+      var D = sD(m.id); D.weather = X.wx.k; D.temp = String(Math.round(X.wx.t)); D._t = m.time; sv('sman', SMN);
+      done(null);
+    });
+  };
+  if (GEO[city]) { go(GEO[city]); return; }
+  xGet('https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=' + encodeURIComponent(city), function (j, er) {
+    var r = j && j.results && j.results[0];
+    if (!r) { done('city ' + city); return; }
+    GEO[city] = { la: r.latitude, lo: r.longitude, n: r.name + (r.country ? ', ' + r.country : '') }; sv('geo', GEO); go(GEO[city]);
+  });
+}
+function xSide(m, name) { return sim1(name, m.home) >= sim1(name, m.away) ? 0 : 1; }
+function xEspn(m, done) {
+  var k = new Date(m.time).getTime(), s = esl(m.lg), eid = /^e\d+$/.test(m.id) ? m.id.slice(1) : ((LIVE[m.id] && LIVE[m.id].eid) || '');
+  var sum = function (slug, id) {
+    xGet(ESPN_API + slug + '/summary?event=' + id, function (j) {
+      if (!j) { done('espn'); return; }
+      var X = XI[m.id] = XI[m.id] || {}, gi = j.gameInfo && j.gameInfo.venue;
+      if (gi && gi.address && gi.address.city && !X.vc) X.vc = gi.address.city;
+      var R = j.rosters || [], f = ['', ''], st = [[], []], ok = 0;
+      R.forEach(function (t) {
+        var i = t.homeAway == 'away' ? 1 : 0; f[i] = t.formation || '';
+        (t.roster || []).forEach(function (p) { if (p.starter) { st[i].push({ n: (p.athlete || {}).displayName || '?', p: ((p.position || {}).abbreviation || '').charAt(0) }); ok++; } });
+      });
+      if (ok >= 18 && (!X.lu || X.lu.src != 'af')) X.lu = { src: 'espn', f: f, s: st, at: Date.now() };
+      done(null);
+    });
+  };
+  if (eid && s) { sum(s, eid); return; }
+  espnFetch(s || 'all', [ymd(k)], function (evs) {
+    if (!evs) { done('espn'); return; }
+    var e = null, bs = 0;
+    evs.forEach(function (ev) { var c = ev.competitions && ev.competitions[0]; if (!c || !c.competitors) return; var H = null, A = null; c.competitors.forEach(function (x) { if (x.homeAway == 'home') H = x; else A = x; }); if (!H || !A) return; var sc = simT(m.home, H.team) + simT(m.away, A.team); if (Math.abs(new Date(ev.date).getTime() - k) < 20 * 60000) sc += 0.3; if (sc > bs) { bs = sc; e = ev; } });
+    if (!e || bs < 1.2) { done('espn: not found'); return; }
+    var slug = s;
+    if (!slug) { var lg = (e.leagues && e.leagues[0]) || (e.season && e.season.slug ? null : null); slug = lg && lg.slug ? lg.slug : null; if (!slug && e.uid) { var mm = /~l:(\d+)/.exec(e.uid); slug = mm && REVE && REVE[mm[1]] ? REVE[mm[1]] : null; } }
+    if (!slug) slug = 'all';
+    sum(slug, e.id);
+  });
+}
+function xAF(m, force, done) {
+  if (!afKey() || !afIv()) { done('af'); return; }
+  var fid = /^af\d+$/.test(m.id) ? +m.id.slice(2) : afIdOf(m).id; if (!fid) { done('af: no id'); return; }
+  var X = XI[m.id] = XI[m.id] || {}, k = new Date(m.time).getTime(), left = 0, er = null;
+  var fin = function () { if (--left <= 0) done(er); };
+  var needInj = force || !X.inj || Date.now() - X.inj.at > 3 * 3600000;
+  var needLu = (!X.lu || X.lu.src != 'af') && k - Date.now() < 75 * 60000;
+  if (!needInj && !needLu) { done(null); return; }
+  if (needInj) { left++; afHttp('injuries?fixture=' + fid, function (r) { afRem(r); try { var j = JSON.parse(r.body), e = afErr(j); if (e) er = e; else { var L = [[], []]; (j.response || []).forEach(function (z) { var t = xSide(m, (z.team || {}).name || ''), p = z.player || {}; L[t].push({ n: p.name || '?', r: p.reason || '', q: /question|doubt/i.test(p.type || '') ? 1 : 0 }); }); X.inj = { l: L, at: Date.now() }; } } catch (x) { er = 'JSON'; } fin(); }); }
+  if (needLu) { left++; afHttp('fixtures/lineups?fixture=' + fid, function (r) { afRem(r); try { var j = JSON.parse(r.body), e = afErr(j); if (e) er = e; else { var f = ['', ''], st = [[], []], ok = 0; (j.response || []).forEach(function (t) { var i = xSide(m, (t.team || {}).name || ''); f[i] = t.formation || ''; (t.startXI || []).forEach(function (z) { var p = z.player || {}; st[i].push({ n: p.name || '?', p: p.pos || '' }); ok++; }); }); if (ok >= 18) X.lu = { src: 'af', f: f, s: st, at: Date.now() }; } } catch (x) { er = 'JSON'; } fin(); }); }
+}
+function xFetch(id, paid) {
+  var m = MATCHES[id]; if (!m || XB[id]) return;
+  XB[id] = 1; var left = 3, ers = [];
+  var fin = function (e) { if (e) ers.push(e); if (--left > 0) return; delete XB[id]; var X = XI[id] = XI[id] || {}; X._t = m.time; X.at = Date.now(); sv('xinfo', XI); rerender(); if (paid) toast(ers.length ? '\u26a0\ufe0f \u0628\u0639\u0636\u06cc \u0645\u0648\u0627\u0631\u062f \u0646\u06cc\u0648\u0645\u062f: ' + ers.join('\u060c ') : '\u2705 \u0622\u0628\u200c\u0648\u0647\u0648\u0627\u060c \u062a\u0631\u06a9\u06cc\u0628 \u0648 \u063a\u0627\u06cc\u0628\u200c\u0647\u0627 \u0628\u0631\u0648\u0632 \u0634\u062f'); };
+  xEspn(m, function (e) { fin(e); xWeather(m, fin); });
+  if (paid) xAF(m, true, fin); else fin(null);
+}
+function xAdj(id, lh, la, wx) {
+  var X = XI[id]; if (!X) return [lh, la, ''];
+  var t = [];
+  if (X.inj && X.inj.l) {
+    var c = X.inj.l.map(function (L) { return L.reduce(function (a, p) { return a + (p.q ? 0.5 : 1); }, 0); });
+    var ah = 1 - Math.min(0.12, 0.025 * c[0]), aa = 1 - Math.min(0.12, 0.025 * c[1]), dh = 1 + Math.min(0.08, 0.015 * c[0]), da = 1 + Math.min(0.08, 0.015 * c[1]);
+    lh *= ah * da; la *= aa * dh;
+    if (c[0] || c[1]) t.push('\u063a\u0627\u06cc\u0628\u200c\u0647\u0627: \u0645\u06cc\u0632\u0628\u0627\u0646 ' + fa(c[0]) + '\u060c \u0645\u0647\u0645\u0627\u0646 ' + fa(c[1]));
+  }
+  if (wx && X.wx) { var wf = { clear: 1, cloudy: 0.995, rain: 0.97 }[X.wx.k] || 1, tp = X.wx.t, tf = tp < 5 ? 0.96 : (tp > 33 ? 0.95 : 1); if (X.wx.ws > 40) tf *= 0.97; lh *= wf * tf; la *= wf * tf; }
+  return [lh, la, t.join(' | ')];
+}
+function xLu(m) { var X = XI[m.id]; return X && X.lu && X.lu.s && X.lu.s[0].length >= 9 ? X.lu : null; }
+function xTog(id) { XO[id] = !XO[id]; if (XO[id] && !XI[id] && !XB[id]) xFetch(id, false); rerender(); }
+function xPanel(m) {
+  if (started(m)) return '';
+  var X = XI[m.id], o = XO[m.id];
+  var wi = X && X.wx ? { clear: '\u2600\ufe0f', cloudy: '\u2601\ufe0f', rain: '\ud83c\udf27' }[X.wx.k] + ' ' + fa(Math.round(X.wx.t)) + '\u00b0' : '';
+  var h = '<div class="more" onclick="xTog(\'' + m.id + '\')">\ud83c\udf26 \u0622\u0628\u200c\u0648\u0647\u0648\u0627\u060c \u062a\u0631\u06a9\u06cc\u0628 \u0648 \u063a\u0627\u06cc\u0628\u200c\u0647\u0627' + (wi ? ' | ' + wi : '') + (xLu(m) ? ' | \u2705 \u062a\u0631\u06a9\u06cc\u0628' : '') + (XB[m.id] ? ' \u23f3' : '') + '</div>';
+  if (!o) return h;
+  h += '<div class="hpp"><div class="lbl">\ud83c\udf26 \u0622\u0628\u200c\u0648\u0647\u0648\u0627\u060c \u062a\u0631\u06a9\u06cc\u0628 \u0648 \u063a\u0627\u06cc\u0628\u200c\u0647\u0627</div>';
+  if (X && X.wx) { var w = X.wx; h += '<div class="note" style="white-space:normal">' + wi + ' ' + { clear: '\u0635\u0627\u0641', cloudy: '\u0627\u0628\u0631\u06cc', rain: '\u0628\u0627\u0631\u0627\u0646\u06cc' }[w.k] + ' | \ud83c\udf27 ' + fc(w.pr) + ' \u0645\u06cc\u0644\u06cc\u200c\u0645\u062a\u0631' + (w.pp !== null && w.pp !== undefined ? ' (' + fa(w.pp) + '\u066a)' : '') + (w.ws !== null && w.ws !== undefined ? ' | \ud83d\udca8 ' + fa(Math.round(w.ws)) + ' \u06a9\u06cc\u0644\u0648\u0645\u062a\u0631' : '') + '<br><span class="mut">' + esc(w.c) + '\u060c \u0633\u0627\u0639\u062a \u0628\u0627\u0632\u06cc. \u062e\u0648\u062f\u06a9\u0627\u0631 \u062a\u0648 \u00ab\u062a\u062d\u0644\u06cc\u0644 \u0628\u0627 \u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc\u00bb \u0647\u0645 \u0646\u0634\u0633\u062a</span></div>'; }
+  else h += '<div class="mut">' + (XB[m.id] ? '\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a...' : '\u0622\u0628\u200c\u0648\u0647\u0648\u0627 \u0647\u0646\u0648\u0632 \u06af\u0631\u0641\u062a\u0647 \u0646\u0634\u062f\u0647') + '</div>';
+  var lu = xLu(m), nm = [m.home, m.away];
+  if (lu) {
+    h += '<div class="note" style="white-space:normal"><b>\u2705 \u062a\u0631\u06a9\u06cc\u0628 \u0631\u0633\u0645\u06cc</b> (' + (lu.src == 'af' ? 'API-Football' : 'ESPN') + ')<br>' + esc(m.home) + ' <b class="ltr">' + esc(lu.f[0] || '?') + '</b> | ' + esc(m.away) + ' <b class="ltr">' + esc(lu.f[1] || '?') + '</b>';
+    [0, 1].forEach(function (i) { h += '<details class="gdd"><summary class="mut">' + esc(nm[i]) + '</summary><div class="ltr mut" style="line-height:1.8">' + lu.s[i].map(function (p) { return esc(p.p ? p.p + ' ' : '') + esc(p.n); }).join('<br>') + '</div></details>'; });
+    h += '</div>';
+  } else h += '<div class="mut" style="line-height:1.8">\u23f3 \u062a\u0631\u06a9\u06cc\u0628 \u0647\u0646\u0648\u0632 \u0627\u0639\u0644\u0627\u0645 \u0646\u0634\u062f\u0647. \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06f4\u06f5 \u062a\u0627 \u06f6\u06f0 \u062f\u0642\u06cc\u0642\u0647 \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc \u0645\u06cc\u0627\u062f \u0648 \u0628\u0647\u062a\u0631\u06cc\u0646 \u0632\u0645\u0627\u0646 \u0628\u0633\u062a\u0646 \u0634\u0631\u0637 \u0628\u0639\u062f \u0627\u0632 \u0627\u0648\u0646\u0647</div>';
+  if (X && X.inj) {
+    h += '<div class="note" style="white-space:normal"><b>\ud83d\ude91 \u063a\u0627\u06cc\u0628\u200c\u0647\u0627</b> (API-Football)';
+    [0, 1].forEach(function (i) { var L = X.inj.l[i] || []; h += '<br>' + esc(nm[i]) + ': ' + (L.length ? L.map(function (p) { return esc(p.n) + (p.q ? ' (\u2754)' : '') + (p.r ? ' <span class="mut">' + esc(p.r) + '</span>' : ''); }).join('\u060c ') : '\u06a9\u0633\u06cc \u0646\u06cc\u0633\u062a'); });
+    var a = xAdj(m.id, 1, 1, false); h += '<br><span class="mut">\u0627\u062b\u0631 \u0631\u0648\u06cc \u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631: \u0645\u06cc\u0632\u0628\u0627\u0646 ' + sLn(Math.round((a[0] - 1) * 100)) + '\u066a\u060c \u0645\u0647\u0645\u0627\u0646 ' + sLn(Math.round((a[1] - 1) * 100)) + '\u066a</span></div>';
+  }
+  h += '<div class="quick" style="margin-top:6px"><button onclick="xFetch(\'' + m.id + '\',0)">\ud83d\udd04 \u0622\u0628\u200c\u0648\u0647\u0648\u0627 \u0648 \u062a\u0631\u06a9\u06cc\u0628 (\u0631\u0627\u06cc\u06af\u0627\u0646)</button>' + (afKey() ? '<button onclick="xFetch(\'' + m.id + '\',1)">\ud83d\ude91 + \u063a\u0627\u06cc\u0628\u200c\u0647\u0627 \u0648 \u062a\u0631\u06a9\u06cc\u0628 API-Football (\u06f1 \u062a\u0627 \u06f2 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)</button>' : '') + '</div>';
+  return h + '</div>';
+}
+function hpPanel(m) {
+  if (started(m)) return '';
+  if (!HP[m.id]) return '<div class="more" onclick="hpTog(\'' + m.id + '\')">\ud83d\udcd0 \u067e\u0646\u0644 \u0647\u0646\u062f\u06cc\u06a9\u067e \u0648 \u0645\u062c\u0645\u0648\u0639 \u06af\u0644 (\u06f0.\u06f5 \u062a\u0627 \u06f5.\u06f5)</div>';
+  var h = '<div class="hpp"><div class="lbl">\ud83d\udcd0 \u0647\u0646\u062f\u06cc\u06a9\u067e (\u0639\u062f\u062f \u06a9\u0646\u0627\u0631 \u062a\u06cc\u0645 \u0628\u0647 \u06af\u0644\u200c\u0647\u0627\u0634 \u0627\u0636\u0627\u0641\u0647 \u0645\u06cc\u0634\u0647)</div><div class="hr hh"><span></span><span>' + esc(m.home) + '</span><span>' + esc(m.away) + '</span></div>';
+  HLN.forEach(function (v) { h += '<div class="hr"><span class="mut">' + hsg(v) + (v % 1 == 0 ? ' \u21a9' : '') + '</span>' + mb(m, hkey('1', v), hsg(v)) + mb(m, hkey('2', -v), hsg(-v)) + '</div>'; });
+  h += '<div class="lbl">\u26bd \u0645\u062c\u0645\u0648\u0639 \u06af\u0644</div><div class="hr hh"><span></span><span>\u0628\u06cc\u0634\u062a\u0631</span><span>\u06a9\u0645\u062a\u0631</span></div>';
+  TLN.forEach(function (v) { h += '<div class="hr"><span class="mut">' + fa(v) + (v % 1 == 0 ? ' \u21a9' : '') + '</span>' + mb(m, tkey('O', v), '\u0628\u06cc\u0634\u062a\u0631') + mb(m, tkey('U', v), '\u06a9\u0645\u062a\u0631') + '</div>'; });
+  h += '<div class="mut" style="padding:4px;line-height:1.8">\u270d\ufe0f \u0631\u0648\u06cc \u062e\u0648\u0646\u0647 \u062e\u0627\u0644\u06cc \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628 1xBet \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633\u060c \u0631\u0648\u06cc \u062e\u0648\u0646\u0647 \u067e\u0631 \u0628\u0632\u0646 \u062a\u0627 \u0628\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637. \u21a9 \u06cc\u0639\u0646\u06cc \u062e\u0637 \u06a9\u0627\u0645\u0644: \u0627\u06af\u0647 \u062f\u0642\u06cc\u0642\u0627\u064b \u0628\u0631\u0627\u0628\u0631 \u0628\u0634\u0647 \u067e\u0648\u0644 \u0628\u0631\u0645\u06cc\u200c\u06af\u0631\u062f\u0647. \u0628\u0631\u0627\u06cc \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u06cc\u0628 \u067e\u0631\u060c \u00ab\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634\u00bb \u0631\u0648 \u0628\u0632\u0646.</div>';
+  h += '<div class="quick"><button onclick="medit(\'' + m.id + '\')">' + (MEDIT[m.id] ? '\u2705 \u062a\u0645\u0648\u0645 \u0634\u062f' : '\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u0627\u06cc\u0628') + '</button><button onclick="pasteOdds(\'' + m.id + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646</button><button onclick="hpTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646 \u067e\u0646\u0644</button></div></div>';
+  return h;
+}
+function mb(m, p, label) {
+  var odd = getOdd(m, p), ed = MEDIT[m.id], q = odd ? nv(m, p) : null, pr = q === null ? '' : '<i class="pr">' + pct(q) + '</i>';
+  var s = !ed && slip.some(function (x) { return x.id == m.id && x.pick == p; });
+  var act = (ed || !odd) ? 'setMan' : 'tog';
+  return '<div class="ob man' + (s ? ' sel' : '') + '" onclick="' + act + '(\'' + m.id + '\',\'' + p + '\')"><small>' + label + '</small><b>' + (odd ? odd.toFixed(2) : '\u270d\ufe0f') + '</b>' + pr + '</div>';
+}
+function manBox(m) {
+  var mn = MAN[m.id], n = mn ? Object.keys(mn).filter(function (k) { return k != '_t'; }).length : 0, ed = MEDIT[m.id];
+  var tip = (isES(m.lg) || isAF(m.lg)) ? '' : '<div class="mut" style="text-align:center;padding:4px">\u06cc\u0627 \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af \u0631\u0648 \u0627\u0632 \u062f\u06a9\u0645\u0647 \u0628\u0627\u0644\u0627 \u0628\u06af\u06cc\u0631 (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)</div>';
+  if (!n && !ed) return '<div class="more" onclick="pasteOdds(\'' + m.id + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627</div><div class="more" onclick="medit(\'' + m.id + '\')">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647 (\u0627\u0632 1xBet)</div>' + tip;
+  var h = '<div class="odds">' + mb(m, '1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646') + mb(m, 'X', '\u0645\u0633\u0627\u0648\u06cc') + mb(m, '2', '\u06f2 \u0645\u0647\u0645\u0627\u0646') + '</div>';
+  h += '<div class="lbl">\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647</div><div class="odds">' + mb(m, '1X', '\u06f1 \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc') + mb(m, 'X2', '\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2') + mb(m, '12', '\u06f1 \u06cc\u0627 \u06f2') + '</div>';
+  h += '<div class="lbl">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f2.\u06f5</div><div class="odds two">' + mb(m, 'O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5') + mb(m, 'U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5') + '</div>';
+  if (ed || (mn && (mn.BY || mn.BN || mn.O15 || mn.U15 || mn.O35 || mn.U35))) {
+    h += '<div class="lbl">\u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0646\u061f</div><div class="odds two">' + mb(m, 'BY', '\u0628\u0644\u0647') + mb(m, 'BN', '\u062e\u06cc\u0631') + '</div>';
+    h += '<div class="lbl">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f1.\u06f5</div><div class="odds two">' + mb(m, 'O15', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1.\u06f5') + mb(m, 'U15', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f1.\u06f5') + '</div>';
+    h += '<div class="lbl">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u06f3.\u06f5</div><div class="odds two">' + mb(m, 'O35', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f3.\u06f5') + mb(m, 'U35', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f3.\u06f5') + '</div>';
+  }
+  h += '<div class="mut" style="text-align:center;padding:4px">' + (ed ? '\u270d\ufe0f \u0631\u0648\u06cc \u0647\u0631 \u062e\u0648\u0646\u0647 \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628 1xBet \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633. \u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 \u0627\u06af\u0647 \u062e\u0627\u0644\u06cc \u0628\u0645\u0648\u0646\u0647 \u0627\u0632 \u06f1\u060c \u0645\u0633\u0627\u0648\u06cc \u0648 \u06f2 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647.' : '\u270d\ufe0f \u0636\u0631\u0627\u06cc\u0628 \u062f\u0633\u062a\u06cc. \u0631\u0648\u06cc \u0636\u0631\u06cc\u0628 \u0628\u0632\u0646 \u062a\u0627 \u0628\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637') + '</div>';
+  h += '<div class="more" onclick="pasteOdds(\'' + m.id + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627</div>';
+  h += '<div class="more" onclick="medit(\'' + m.id + '\')">' + (ed ? '\u2705 \u062a\u0645\u0648\u0645 \u0634\u062f' : '\u270f\ufe0f \u0648\u06cc\u0631\u0627\u06cc\u0634 \u0636\u0631\u0627\u06cc\u0628 \u0648 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631') + '</div>';
+  return h;
+}
+function medit(id) { MEDIT[id] = !MEDIT[id]; rerender(); }
+function setMan(id, p) {
+  var m = MATCHES[id]; if (!m) return;
+  if (started(m)) { toast('\u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0634\u062f\u0647'); return; }
+  var mn = MAN[id] || { _t: m.time };
+  var v = prompt('\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u00ab' + pl({ pick: p, home: m.home, away: m.away }) + '\u00bb \u0631\u0648 \u0627\u0632 1xBet \u0648\u0627\u0631\u062f \u06a9\u0646\n' + m.home + ' - ' + m.away + '\n(\u062e\u0627\u0644\u06cc \u0628\u0630\u0627\u0631\u06cc \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0647)', mn[p] || '');
+  if (v === null) return;
+  v = String(v).trim();
+  if (!v) delete mn[p];
+  else { var n = num(v); if (!(n >= 1.01 && n < 1000)) { toast('\u0636\u0631\u06cc\u0628 \u0628\u0627\u06cc\u062f \u0639\u062f\u062f\u06cc \u0645\u062b\u0644 \u06f1.\u06f8\u06f5 \u0628\u0627\u0634\u0647'); return; } mn[p] = r2(n); }
+  mn._t = m.time; mn._oddsAt = Date.now(); MAN[id] = mn; sv('man', MAN);
+  var ch = false;
+  slip.forEach(function (x) { if (x.id != id) return; var o = getOdd(m, x.pick); if (o && o != x.odd) { x.odd = o; var q = nv(m, x.pick); x.nv = q === null ? null : Math.round(q * 1000) / 1000; ch = true; } });
+  if (ch) { sv(pk('slip'), slip); toast('\u0636\u0631\u06cc\u0628 \u062a\u0648 \u0628\u0644\u06cc\u0637 \u0647\u0645 \u0628\u0631\u0648\u0632 \u0634\u062f'); }
+  rerender();
+}
+/* paste odds from Betwana text (update 23) */
+function pnorm(s) { return String(s).replace(/[\u200c\u200e\u200f\u00a0]/g, ' ').replace(/\u064a/g, '\u06cc').replace(/\u0643/g, '\u06a9').replace(/\s+/g, ' ').trim(); }
+function pkey(s) { return pnorm(s).replace(/ /g, ''); }
+function pnum(s) { var t = pnorm(s); if (!/^[0-9\u06f0-\u06f9]+([.\u066b,][0-9\u06f0-\u06f9]+)?$/.test(t)) return null; var n = num(t); return isNaN(n) ? null : n; }
+var PHDR = {};
+PHDR[pkey('\u0646\u062a\u06cc\u062c\u0647 \u0645\u0633\u0627\u0628\u0642\u0647')] = 'res'; PHDR[pkey('\u062f\u0627\u0628\u0644 \u0634\u0627\u0646\u0633')] = 'dc'; PHDR[pkey('\u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc')] = 'dnb';
+PHDR[pkey('\u0645\u062c\u0645\u0648\u0639 \u06af\u0644\u200c\u0647\u0627')] = 'tot'; PHDR[pkey('\u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0646\u062f')] = 'btts'; PHDR[pkey('\u0647\u0646\u062f\u06cc\u06a9\u067e \u06af\u0644\u200c\u0647\u0627')] = 'hcp';
+function parseOdds(text) {
+  var ls = String(text).split(/\r?\n/).map(pnorm).filter(function (x) { return x; });
+  var R = {}, sec = null, lab = null, H = null, A = null, n = 0;
+  function side(t) { if (H && t.indexOf(H) == 0) return '1'; if (A && t.indexOf(A) == 0) return '2'; return null; }
+  function put(k, v) { if (v >= 1.01 && v < 1000) { R[k] = r2(v); n++; } }
+  ls.forEach(function (x) {
+    var v = pnum(x);
+    if (v === null) { if (lab !== null) sec = PHDR[pkey(lab)] || null; lab = x; return; }
+    var t = lab; lab = null; if (t === null || !sec) return;
+    if (sec == 'res') { if (t == '\u0645\u0633\u0627\u0648\u06cc') put('X', v); else if (!H) { H = t; put('1', v); } else if (!A) { A = t; put('2', v); } return; }
+    if (sec == 'dc') { if (/ \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc$/.test(t)) put('1X', v); else if (/^\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 /.test(t)) put('X2', v); else put('12', v); return; }
+    if (sec == 'btts') { if (t == '\u0628\u0644\u0647') put('BY', v); else if (t == '\u062e\u06cc\u0631') put('BN', v); return; }
+    if (sec == 'tot') { var q = /^(\u0628\u0627\u0644\u0627\u06cc|\u067e\u0627\u06cc\u06cc\u0646) ?([0-9.]+)$/.exec(t); if (!q) return; var w = parseFloat(q[2]); if (TLN.indexOf(w) < 0) return; put(tkey(q[1] == '\u0628\u0627\u0644\u0627\u06cc' ? 'O' : 'U', w), v); return; }
+    if (sec == 'dnb' || sec == 'hcp') {
+      var s = side(t); if (!s) return;
+      var rest = pnorm(t.slice((s == '1' ? H : A).length)), hv = 0;
+      if (rest) { var hm2 = /^([+-]?)([0-9.]+)(-?)$/.exec(rest); if (!hm2) return; hv = parseFloat(hm2[2]) * ((hm2[1] == '-' || hm2[3] == '-') ? -1 : 1); }
+      if (sec == 'dnb' && hv) return;
+      if (HLN.indexOf(hv) < 0) return; put(hkey(s, hv), v);
+    }
+  });
+  return { o: R, n: Object.keys(R).length, h: H, a: A };
+}
+function pasteOdds(id) {
+  var m = MATCHES[id]; if (!m) return;
+  if (started(m)) { toast('\u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0634\u062f\u0647'); return; }
+  var t = '';
+  try { if (window.Android && Android.clip) t = Android.clip(); } catch (e) { t = ''; }
+  if (!t || !parseOdds(t).n) {
+    t = prompt('\ud83d\udccb \u0645\u062a\u0646 \u0635\u0641\u062d\u0647 \u0628\u0627\u0632\u06cc \u0631\u0648 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627 \u06a9\u067e\u06cc \u06a9\u0646 \u0648 \u0627\u06cc\u0646\u062c\u0627 \u0646\u06af\u0647 \u062f\u0627\u0631 \u0648 Paste \u0628\u0632\u0646\n' + m.home + ' - ' + m.away, '');
+    if (!t) return;
+  }
+  var P = parseOdds(t);
+  if (!P.n) { toast('\u062a\u0648 \u0627\u06cc\u0646 \u0645\u062a\u0646 \u0636\u0631\u06cc\u0628\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f'); return; }
+  if (!confirm('\ud83d\udccb ' + fa(P.n) + ' \u0636\u0631\u06cc\u0628 \u067e\u06cc\u062f\u0627 \u0634\u062f\n\u062a\u0648 \u0645\u062a\u0646: ' + (P.h || '?') + ' - ' + (P.a || '?') + '\n\u062a\u0648 \u0627\u067e: ' + m.home + ' - ' + m.away + '\n\n\u062a\u06cc\u0645 \u0627\u0648\u0644 \u0645\u062a\u0646 \u0645\u06cc\u0632\u0628\u0627\u0646 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647. \u062f\u0631\u0633\u062a\u0647\u061f')) return;
+  var mn = MAN[id] || { _t: m.time }, c = 0, extra = false;
+  for (var k in P.o) {
+    if (!m.fx && { '1': 1, 'X': 1, '2': 1, '1X': 1, 'X2': 1, '12': 1 }[k]) continue;
+    mn[k] = P.o[k]; c++;
+    if (k.charAt(0) == 'H' || (/^[OU]\d\d$/.test(k) && { O15: 1, U15: 1, O25: 1, U25: 1, O35: 1, U35: 1 }[k] !== 1)) extra = true;
+  }
+  mn._t = m.time; mn._oddsAt = Date.now(); MAN[id] = mn; sv('man', MAN);
+  slip.forEach(function (x) { if (x.id != id) return; var o = getOdd(m, x.pick); if (o && o != x.odd) { x.odd = o; var q = nv(m, x.pick); x.nv = q === null ? null : Math.round(q * 1000) / 1000; } });
+  sv(pk('slip'), slip);
+  if (extra) HP[id] = true;
+  MEDIT[id] = false;
+  toast('\u2705 ' + fa(c) + ' \u0636\u0631\u06cc\u0628 \u062b\u0628\u062a \u0634\u062f');
+  rerender();
+}
+
+/* today tab tree (update 33): time windows, then country, then league, then the games */
+var DBK = [[30, '\u23f1 \u0646\u06cc\u0645 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [60, '\ud83d\udd50 \u0646\u06cc\u0645 \u0633\u0627\u0639\u062a \u062a\u0627 \u06f1 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [180, '\ud83d\udd52 \u06f1 \u062a\u0627 \u06f3 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [360, '\ud83d\udd55 \u06f3 \u062a\u0627 \u06f6 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [720, '\ud83d\udd5b \u06f6 \u062a\u0627 \u06f1\u06f2 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [1440, '\ud83c\udf19 \u06f1\u06f2 \u062a\u0627 \u06f2\u06f4 \u0633\u0627\u0639\u062a \u0622\u06cc\u0646\u062f\u0647'], [1e9, '\ud83d\udcc6 \u0628\u0639\u062f \u0627\u0632 \u06f2\u06f4 \u0633\u0627\u0639\u062a']];
+var DTO = {}, DTK = [];
+function dCty(m) {
+  if (isAF(m.lg)) {
+    var a = AFLG[m.lg] || { c: 'World' }, c = a.c || 'World', f = afCty(c);
+    if (c == 'World') return { k: '_w', f: f.f, n: '\u0628\u06cc\u0646\u200c\u0627\u0644\u0645\u0644\u0644\u06cc \u0648 \u0642\u0627\u0631\u0647\u200c\u0627\u06cc', o: -1 };
+    return { k: String(c).toLowerCase().replace(/[- ]/g, '_'), f: f.f, n: f.n, o: 0 };
+  }
+  var ci = cinfo(m.lg);
+  if (/uefa|conmebol|fifa|concacaf|caf_|afc_|world_cup|nations|euro|copa_america|club_world|friendl/.test(m.lg) && ci.id == 'x') return { k: '_w', f: '\ud83c\udf0d', n: '\u0628\u06cc\u0646\u200c\u0627\u0644\u0645\u0644\u0644\u06cc \u0648 \u0642\u0627\u0631\u0647\u200c\u0627\u06cc', o: -1 };
+  return { k: ci.id == 'x' ? '_x' : ci.id, f: ci.f, n: ci.id == 'x' ? '\u0633\u0627\u06cc\u0631' : ci.fa, o: ci.id == 'x' ? 1 : 0 };
+}
+function dLgN(k) { if (isAF(k)) { var a = AFLG[k]; return a ? esc(a.n) : '\u26bd'; } var s = lname(k); return s; }
+function dBk(m, now) {
+  if (DAYE) return 'e';
+  if (started(m)) return 'live';
+  var mn = (new Date(m.time).getTime() - now) / 60000;
+  for (var i = 0; i < DBK.length; i++) if (mn <= DBK[i][0]) return 'b' + i;
+  return 'b' + (DBK.length - 1);
+}
+function dKey(k) { var i = DTK.indexOf(k); if (i < 0) { DTK.push(k); i = DTK.length - 1; } return i; }
+function dTg(i) { var k = DTK[i]; if (k === undefined) return; DTO[k] = !dOpen(k); if (CUR) renderMatches(CUR, CURM); }
+function dOpen(k) { return DTO.hasOwnProperty(k) ? DTO[k] : (DTO.hasOwnProperty('d:' + k) ? DTO['d:' + k] : false); }
+function dayTree(ms, now) {
+  var S = {}, order = ['live'];
+  if (DAYE) order = ['e']; else for (var i = 0; i < DBK.length; i++) order.push('b' + i);
+  ms.forEach(function (m) {
+    var b = dBk(m, now), c = dCty(m), s = S[b] = S[b] || { n: 0, c: {} };
+    var cc = s.c[c.k] = s.c[c.k] || { i: c, n: 0, l: {} };
+    var ll = cc.l[m.lg] = cc.l[m.lg] || [];
+    ll.push(m); cc.n++; s.n++;
+  });
+  var h = '', first = true;
+  order.forEach(function (b) {
+    var s = S[b]; if (!s) return;
+    var sk = 's|' + b;
+    if (first && !DTO.hasOwnProperty(sk)) DTO['d:' + sk] = true;
+    first = false;
+    var so = dOpen(sk), cks = Object.keys(s.c);
+    var lbl = b == 'live' ? '\ud83d\udd34 \u062f\u0631 \u062c\u0631\u06cc\u0627\u0646' : (b == 'e' ? '\ud83c\udfc1 \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647\u200c\u0647\u0627\u06cc \u0627\u0645\u0631\u0648\u0632' : DBK[+b.slice(1)][1]);
+    h += '<div class="dsec' + (so ? ' on' : '') + '" onclick="dTg(' + dKey(sk) + ')"><span>' + (so ? '\u25be ' : '\u25b8 ') + lbl + '</span><span class="mut" style="font-weight:normal">' + fa(s.n) + ' \u0628\u0627\u0632\u06cc\u060c ' + fa(cks.length) + ' \u06a9\u0634\u0648\u0631</span></div>';
+    if (!so) return;
+    cks.sort(function (a, b2) { var A = s.c[a], B = s.c[b2]; return (A.i.o - B.i.o) || (B.n - A.n) || (A.i.n < B.i.n ? -1 : 1); });
+    h += '<div class="dwrap">';
+    cks.forEach(function (ck) {
+      var cc = s.c[ck], key = sk + '|' + ck, co = dOpen(key), lks = Object.keys(cc.l);
+      if (!DTO.hasOwnProperty(key) && cks.length == 1) { DTO['d:' + key] = true; co = true; }
+      h += '<div class="dcty" onclick="dTg(' + dKey(key) + ')"><b>' + (co ? '\u25be ' : '\u25b8 ') + cc.i.f + ' ' + esc(cc.i.n) + '</b><span class="mut">' + fa(cc.n) + ' \u0628\u0627\u0632\u06cc' + (lks.length > 1 ? '\u060c ' + fa(lks.length) + ' \u0644\u06cc\u06af' : '') + '</span></div>';
+      if (!co) return;
+      lks.sort(function (a, b2) { var ra = isAF(a) ? 50 : rank(a), rb = isAF(b2) ? 50 : rank(b2); return (ra - rb) || (cc.l[b2].length - cc.l[a].length); });
+      lks.forEach(function (lk) {
+        var ls = cc.l[lk], lkey = key + '|' + lk;
+        if (!DTO.hasOwnProperty(lkey) && lks.length == 1) DTO['d:' + lkey] = true;
+        var lo = dOpen(lkey);
+        h += '<div class="dlg" onclick="dTg(' + dKey(lkey) + ')"><span>' + (lo ? '\u25be ' : '\u25b8 ') + (isAF(lk) ? '\u26bd ' : '') + dLgN(lk) + '</span><span class="mut">' + fa(ls.length) + ' \u0628\u0627\u0632\u06cc' + (lo ? '' : ' | ' + hm(ls[0].time)) + '</span></div>';
+        if (!lo) return;
+        ls.sort(function (a, b2) { return new Date(a.time) - new Date(b2.time); }).forEach(function (m) { h += card(m); });
+      });
+    });
+    h += '</div>';
+  });
+  return h;
+}
+function renderMatches(d, multi) {
+  CUR = d; CURM = !!multi;
+  var now = Date.now(), list = $('list'), remn = ld('remaining', '');
+  OT = {}; d.forEach(function (m) { if (!(m.lg in OT)) { if (isAF(m.lg)) { OT[m.lg] = 0; return; } var c = ld('odds_' + m.lg, null); OT[m.lg] = c ? c.t : 0; } });
+  if (!multi && !(cur in OT)) { var oc = ld('odds_' + cur, null); OT[cur] = oc ? oc.t : 0; }
+  var ms = d.filter(function (m) { var t = new Date(m.time).getTime(); return (RMALL || alive(m, now)) && (reg == 'day' || reg == 'af' || inDF(t)); })
+    .sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
+  var hc = reg == 'af' ? chip('\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)', false, 'renderAF(1)', 'sm') : reg == 'day' ? chip(afKey() ? '\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u06f1 \u062f\u0631\u062e\u0648\u0627\u0633\u062a)' : '\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc (\u0631\u0627\u06cc\u06af\u0627\u0646)', false, 'renderDay(false,1)', 'sm') : ((!multi && isES(cur)) ? '<span class="mut">\u270d\ufe0f \u0636\u0631\u0627\u06cc\u0628 \u0627\u06cc\u0646 \u0644\u06cc\u06af \u062f\u0633\u062a\u06cc\u0647</span>' : '');
+  var h = '<div class="row" style="padding:0 14px"><span class="mut">' + fmt(ms.length) + ' \u0628\u0627\u0632\u06cc' + (multi ? ' \u0627\u0632 ' + fmt(NL) + ' \u0644\u06cc\u06af' : '') +
+    (!multi && OT[cur] ? ' | \u062f\u0631\u06cc\u0627\u0641\u062a: ' + agoTxt(OT[cur]) : '') + (remn && reg != 'day' && reg != 'af' ? ' | \u0627\u0639\u062a\u0628\u0627\u0631: ' + esc(remn) : '') + (reg == 'af' || reg == 'day' ? afNextTxt() : '') + '</span>' +
+    (hc ? hc : chip(multi ? '\ud83d\udcb0 \u0636\u0631\u0627\u06cc\u0628 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627 (' + fmt(ALLK.length * 2) + ' \u0627\u0639\u062a\u0628\u0627\u0631)' : (OT[cur] ? '\ud83d\udd04 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)' : '\ud83d\udcb0 \u062f\u0631\u06cc\u0627\u0641\u062a \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u0644\u06cc\u06af (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631)'), false, multi ? 'loadMany(ALLK.slice())' : 'loadOdds(true)', 'sm')) + '</div>';
+  if (reg == 'day' && !afKey()) h += '<div class="mut" style="padding:0 14px 4px">\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646 ESPN\u060c \u0628\u062f\u0648\u0646 \u06a9\u0644\u06cc\u062f \u0648 \u0628\u062f\u0648\u0646 \u0627\u0639\u062a\u0628\u0627\u0631. \u0647\u0631 \u0644\u06cc\u06af\u06cc \u0636\u0631\u06cc\u0628 \u0646\u062f\u0627\u0634\u062a\u060c \u0631\u0648\u06cc \u270d\ufe0f \u0628\u0632\u0646 \u0648 \u0636\u0631\u06cc\u0628\u0634 \u0631\u0648 \u0627\u0632 1xBet \u0648\u0627\u0631\u062f \u06a9\u0646.</div>';
+  if (!ms.length) { list.innerHTML = h + '<div class="empty">\u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0641\u06cc\u0644\u062a\u0631 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0646\u06cc\u0633\u062a</div>'; return; }
+  if (reg == 'day') { ms.forEach(function (m) { MATCHES[m.id] = m; }); list.innerHTML = h + dayTree(ms, now); if (ms.some(function (m) { return started(m) && !LIVE[m.id]; })) setTimeout(function () { liveTick(false); }, 200); return; }
+  var last = '';
+  ms.forEach(function (m) {
+    MATCHES[m.id] = m;
+    var k = dk(m.time);
+    if (k != last) { last = k; h += '<div class="day">\ud83d\udcc5 ' + dl(m.time) + '</div>'; }
+    h += card(m);
+  });
+  list.innerHTML = h;
+  if (ms.some(function (m) { return started(m) && !LIVE[m.id]; })) setTimeout(function () { liveTick(false); }, 200);
+}
+
+/* ---------- bet slip ---------- */
+function ptOf(p) { return p.length > 1 ? parseInt(p.slice(1), 10) / 10 : 2.5; }
+function pl(x) {
+  var p = x.pick;
+  if (p == '1') return '\u0628\u0631\u062f ' + x.home; if (p == '2') return '\u0628\u0631\u062f ' + x.away; if (p == 'X') return '\u0645\u0633\u0627\u0648\u06cc';
+  if (p == '1X') return '\u0628\u0631\u062f ' + x.home + ' \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc'; if (p == 'X2') return '\u0628\u0631\u062f ' + x.away + ' \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc'; if (p == '12') return '\u06cc\u06a9\u06cc \u0628\u0628\u0631\u0647 (\u0645\u0633\u0627\u0648\u06cc \u0646\u0634\u0647)';
+  var hh = hcp(p); if (hh) return '\u0647\u0646\u062f\u06cc\u06a9\u067e ' + (hh.s == '1' ? x.home : x.away) + ' ' + hsg(hh.v) + (hh.v % 1 == 0 ? ' (\u0645\u0633\u0627\u0648\u06cc \u0647\u0646\u062f\u06cc\u06a9\u067e = \u0628\u0631\u06af\u0634\u062a \u067e\u0648\u0644)' : '');
+  if (p == 'BY') return '\u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0646: \u0628\u0644\u0647'; if (p == 'BN') return '\u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0646: \u062e\u06cc\u0631';
+  return (p.charAt(0) == 'O' ? '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 ' : '\u06a9\u0645\u062a\u0631 \u0627\u0632 ') + fa(ptOf(p)) + ' \u06af\u0644' + (ptOf(p) % 1 == 0 ? ' (\u0628\u0627 \u062f\u0642\u06cc\u0642\u0627\u064b ' + fa(ptOf(p)) + ' \u06af\u0644 \u0628\u0631\u06af\u0634\u062a \u067e\u0648\u0644)' : '');
+}
+function tog(id, p) {
+  var m = MATCHES[id]; if (!m) return;
+  var i = -1;
+  slip.forEach(function (x, j) { if (x.id == id && x.pick == p) i = j; });
+  if (i >= 0) slip.splice(i, 1);
+  else {
+    if (started(m)) { toast('\u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0634\u062f\u0647\u060c \u062f\u06cc\u06af\u0647 \u0646\u0645\u06cc\u0634\u0647 \u0631\u0648\u0634 \u0634\u0631\u0637 \u0628\u0633\u062a'); return; }
+    var odd = getOdd(m, p); if (!odd) return;
+    var ag = against(m, p);
+    if (ag && !confirm('\u26a0\ufe0f \u0627\u06cc\u0646 \u0634\u0631\u0637 \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f ' + pct(ag.q) + ' \u0628\u0627\u0632\u0627\u0631\u0647.\n\u062a\u0648 \u062f\u0641\u062a\u0631\u0686\u0647\u060c \u0634\u0631\u0637 \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u06f5\u06f5\u066a \u0628\u0647 \u0628\u0627\u0644\u0627 \u062a\u0627 \u0627\u0644\u0627\u0646 \u06f0 \u0627\u0632 \u06f4 \u0628\u0648\u062f\u0647.\n\u0628\u0627\u0632\u0645 \u0627\u0636\u0627\u0641\u0647\u200c\u0627\u0634 \u06a9\u0646\u0645\u061f')) return;
+    var q = nv(m, p);
+    var others = slip.filter(function (x) { return x.id != id; }), replaced = others.length < slip.length;
+    if (others.length >= 15) { toast('\u0645\u06cc\u06a9\u0633 \u062d\u062f\u0627\u06a9\u062b\u0631 \u06f1\u06f5 \u067e\u0627\u06cc\u0647 \u062f\u0627\u0631\u0647'); return; }
+    others.push({ id: id, lg: m.lg, home: m.home, away: m.away, time: m.time, pick: p, odd: odd, nv: q === null ? null : Math.round(q * 1000) / 1000, ctr: ag ? 1 : 0, my: mdlMy(id, p), mp: mdlMy(id, p), src: ptHas(id, p) ? 'pt' : '', man: m.fx ? 1 : 0 });
+    slip = others;
+    toast(replaced ? '\u0627\u0632 \u0647\u0631 \u0628\u0627\u0632\u06cc \u0641\u0642\u0637 \u06cc\u0647 \u0627\u0646\u062a\u062e\u0627\u0628\u060c \u062c\u0627\u06cc\u06af\u0632\u06cc\u0646 \u0634\u062f' : (slip.length > 1 ? '\u0627\u0636\u0627\u0641\u0647 \u0634\u062f\u060c \u0645\u06cc\u06a9\u0633 ' + fmt(slip.length) + ' \u062a\u0627\u06cc\u06cc' : '\u0628\u0647 \u0628\u0644\u06cc\u0637 \u0627\u0636\u0627\u0641\u0647 \u0634\u062f'));
+  }
+  sv(pk('slip'), slip); updateCnt(); rerender();
+}
+function totalOdd() { return slip.reduce(function (a, x) { return a * x.odd; }, 1); }
+function rm(i) { slip.splice(i, 1); sv(pk('slip'), slip); updateCnt(); renderSlip(); }
+function clearSlip() { slip = []; sv(pk('slip'), slip); updateCnt(); renderSlip(); }
+function renderSlip() {
+  var el = $('slip');
+  if (!slip.length) { el.innerHTML = '<div class="empty">\u0628\u0644\u06cc\u0637\u062a \u062e\u0627\u0644\u06cc\u0647 \ud83c\udfab<br>\u0627\u0632 \u0628\u062e\u0634 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0648\u06cc \u0636\u0631\u06cc\u0628\u200c\u0647\u0627 \u0628\u0632\u0646.<br>\u0627\u06af\u0647 \u0686\u0646\u062f \u0628\u0627\u0632\u06cc \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0646\u06cc\u060c \u0634\u0631\u0637\u062a \u0645\u06cc\u06a9\u0633 \u0645\u06cc\u0634\u0647.</div>'; return; }
+  var h = '<div class="box"><div class="row"><b>' + (slip.length > 1 ? '\u0645\u06cc\u06a9\u0633 ' + fmt(slip.length) + ' \u062a\u0627\u06cc\u06cc' : '\u0634\u0631\u0637 \u062a\u06a9\u06cc') + '</b><span class="x" onclick="clearSlip()">\u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646 \u0647\u0645\u0647</span></div>' + '<div class="mut" style="margin-top:6px" onclick="showGuide()">\ud83d\udcd6 \u0642\u0628\u0644 \u0627\u0632 \u062b\u0628\u062a\u060c \u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632 \u06f1\u06f0 \u0633\u0624\u0627\u0644\u06cc \u0631\u0648 \u0645\u0631\u0648\u0631 \u06a9\u0646 \u203a</div>';
+  slip.forEach(function (x, i) {
+    h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + '</span><span class="x" onclick="rm(' + i + ')">\u2715</span></div>' +
+      '<div class="row"><span>' + esc(pl(x)) + '</span><b class="gold">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div>' +
+      (x.mp ? '<div class="mut">' + (x.src == 'pt' ? 'PrimaTips: ' : '\ud83e\udd16 \u0645\u062f\u0644 \u0622\u0645\u0627\u0631\u06cc: ') + fa(x.mp) + '\u066a (\u00ab\u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646\u00bb \u0627\u0632 \u0645\u062f\u0644 \u067e\u0631 \u0634\u062f\u060c \u0645\u06cc\u062a\u0648\u0646\u06cc \u0639\u0648\u0636\u0634 \u06a9\u0646\u06cc)</div>' : '') +
+      (x.man ? '<div class="mut">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u062f\u0633\u062a\u06cc (\u0627\u0632 1xBet)</div>' : '') +
+      (MATCHES[x.id] && xLu(MATCHES[x.id]) ? '<div class="mut">\u2705 \u062a\u0631\u06a9\u06cc\u0628 \u0631\u0633\u0645\u06cc \u0627\u0639\u0644\u0627\u0645 \u0634\u062f\u0647</div>' : (new Date(x.time).getTime() - Date.now() > 75 * 60000 ? '<div class="mut">\u23f3 \u062a\u0631\u06a9\u06cc\u0628 \u0647\u0646\u0648\u0632 \u0627\u0639\u0644\u0627\u0645 \u0646\u0634\u062f\u0647. \u0628\u0647\u062a\u0631\u0647 \u06f4\u06f5 \u062a\u0627 \u06f6\u06f0 \u062f\u0642\u06cc\u0642\u0647 \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc \u0628\u0628\u0646\u062f\u06cc</div>' : '')) +
+      (x.nv ? '<div class="mut">\ud83d\udcca \u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0627\u0632\u0627\u0631 (\u0628\u062f\u0648\u0646 \u062d\u0627\u0634\u06cc\u0647 \u0633\u0648\u062f): ' + pct(x.nv) + '</div>' : '') +
+      (x.ctr ? '<div class="warn">\u26a0\ufe0f \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u0628\u0627\u0632\u0627\u0631\u0647. \u0627\u06cc\u0646 \u0646\u0648\u0639 \u0634\u0631\u0637 \u062a\u0627 \u0627\u0644\u0627\u0646 \u06f0 \u0627\u0632 \u06f4 \u0628\u0648\u062f\u0647</div>' : '') +
+      '<input type="number" step="1" inputmode="decimal" placeholder="\ud83c\udfaf \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646 (\u066a)\u060c \u0645\u062b\u0644\u0627\u064b \u06f6\u06f0" value="' + (x.my || '') + '" oninput="setMy(' + i + ',this.value)">' +
+      '<div id="ev' + i + '" class="mut">' + evTxt(x) + '</div></div>';
+  });
+  h += '<div class="row"><span>\u0636\u0631\u06cc\u0628 \u06a9\u0644</span><b class="gold ltr">' + totalOdd().toFixed(2) + '</b></div>';
+  h += '<textarea id="note" placeholder="\ud83d\udcdd \u0686\u0631\u0627 \u0627\u06cc\u0646 \u0634\u0631\u0637 \u0631\u0648 \u0645\u06cc\u200c\u0628\u0646\u062f\u06cc\u061f (\u0627\u062e\u062a\u06cc\u0627\u0631\u06cc\u060c \u0645\u062b\u0644\u0627\u064b: \u0641\u0644\u0627\u0646 \u062a\u06cc\u0645 \u06f3 \u0628\u0627\u0632\u06cc\u0647 \u06af\u0644 \u0646\u0632\u062f\u0647)" oninput="NOTE=this.value">' + esc(NOTE) + '</textarea>';
+  h += '<div id="sugw">' + sugHtml() + '</div>';
+  h += '<input id="stake" type="number" step="0.01" inputmode="decimal" placeholder="\u0645\u0628\u0644\u063a \u0634\u0631\u0637 (\u0633\u06a9\u0647)" oninput="calc()">';
+  h += '<div class="quick"><button onclick="qs(50)">\u06f5\u06f0</button><button onclick="qs(100)">\u06f1\u06f0\u06f0</button><button onclick="qs(500)">\u06f5\u06f0\u06f0</button><button onclick="qs(-1)">\u0647\u0645\u0647</button></div>';
+  h += '<div class="row"><span>\u0628\u0631\u062f \u0627\u062d\u062a\u0645\u0627\u0644\u06cc</span><b id="win" style="color:var(--green)">\u06f0</b></div>';
+  h += '<button class="btn" onclick="place()">\u2705 \u062b\u0628\u062a \u0634\u0631\u0637</button></div>';
+  el.innerHTML = h;
+  if (SLIPSTAKE > 0) {
+    var se = $('stake');
+    if (se) { se.value = SLIPSTAKE; calc(); }
+    SLIPSTAKE = 0;
+  }
+}
+function evTxt(x) {
+  if (!x.my) return '\u0627\u062d\u062a\u0645\u0627\u0644 \u062e\u0648\u062f\u062a \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633 \u062a\u0627 \u0627\u0631\u0632\u0634 (EV) \u062d\u0633\u0627\u0628 \u0628\u0634\u0647 \u0648 \u062a\u0648 \u06a9\u0627\u0644\u06cc\u0628\u0631\u0627\u0633\u06cc\u0648\u0646 \u0628\u06cc\u0627\u062f';
+  var ev = x.my / 100 * x.odd - 1, t = 'EV: <b class="ltr" style="color:' + (ev >= 0.05 ? 'var(--green)' : (ev >= 0 ? 'var(--gold)' : 'var(--red)')) + '">' + (ev >= 0 ? '+' : '') + ev.toFixed(2) + '</b>';
+  if (ev < 0) t += ' \u060c \u0627\u0631\u0632\u0634 \u0646\u062f\u0627\u0631\u0647';
+  else if (ev < 0.05) t += ' \u060c \u0645\u0631\u0632\u06cc\u0647 (\u0632\u06cc\u0631 \u06f0.\u06f0\u06f5+)';
+  if (x.nv && Math.abs(x.my - x.nv * 100) > 10) t += '<div class="warn">\u0641\u0627\u0635\u0644\u0647 \u062a\u0648 \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1\u06f0\u066a\u0647. \u062f\u0648 \u062a\u0627 \u0634\u0627\u062e\u0635 \u0622\u0645\u0627\u0631\u06cc \u0645\u0633\u062a\u0642\u0644 \u062f\u0627\u0631\u06cc\u061f</div>';
+  if (x.my < 50) t += '<div class="mut">\u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0627\u062e\u062a\u0634 \u0628\u06cc\u0634\u062a\u0631\u0647\u060c \u062a\u06a9\u06cc \u0648 \u0628\u0627 \u0645\u0628\u0644\u063a \u06a9\u0645</div>';
+  return t;
+}
+function setMy(i, v) {
+  var x = slip[i]; if (!x) return;
+  v = parseFloat(String(v).replace(/[\u06f0-\u06f9]/g, function (d) { return '\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9'.indexOf(d); }));
+  x.my = (v > 0 && v < 100) ? v : null; sv(pk('slip'), slip);
+  var e = $('ev' + i); if (e) e.innerHTML = evTxt(x); sugUpd();
+}
+function qs(v) { $('stake').value = v < 0 ? r2(W.coins) : v; calc(); }
+function calc() { var s = r2(+$('stake').value || 0); $('win').textContent = fc(s * totalOdd()); }
+function place() {
+  var s = r2(+$('stake').value || 0), now = Date.now();
+  if (s <= 0) { toast('\u0645\u0628\u0644\u063a \u0634\u0631\u0637 \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  if (s > r2(W.coins)) { toast('\u0633\u06a9\u0647 \u06a9\u0627\u0641\u06cc \u0646\u062f\u0627\u0631\u06cc'); return; }
+  for (var i = 0; i < slip.length; i++) if (new Date(slip[i].time).getTime() <= now) { toast('\u0628\u0627\u0632\u06cc ' + slip[i].home + ' \u0634\u0631\u0648\u0639 \u0634\u062f\u0647\u060c \u0627\u0632 \u0628\u0644\u06cc\u0637 \u062d\u0630\u0641\u0634 \u06a9\u0646'); return; }
+  BETS.unshift({
+    id: 'b' + now, t: now, note: String(NOTE || '').trim(), lesson: '', stake: s, odd: Math.round(totalOdd() * 100) / 100, st: 'p', win: 0,
+    sel: slip.map(function (x) { var y = JSON.parse(JSON.stringify(x)); y.res = 'p'; return y; })
+  });
+  W.coins = r2(W.coins - s);
+  slip.forEach(function (x) { if (!REM[x.id]) setRem(x, true, true); });
+  clRem(BETS[0]);
+  slip = []; NOTE = ''; sv(pk('slip'), slip); saveAll(); updateCnt();
+  toast('\u0634\u0631\u0637\u062a \u062b\u0628\u062a \u0634\u062f \u2705'); go('bets');
+}
+
+/* ---------- live scores (ESPN, free) ---------- */
+var STOP = ['fc', 'cf', 'afc', 'sc', 'ac', 'cd', 'ud', 'club', 'de', 'the', 'and', 'fk', 'sk', 'if', 'bk', 'cp', 'sd', 'rc', 'rcd', 'calcio', 'ec', 'se', 'cr', 'ca', 'cs'];
+function nrm(s) {
+  s = String(s || '').toLowerCase();
+  try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  return s.replace(/&/g, ' ').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(function (w) { return w && STOP.indexOf(w) < 0; });
+}
+function sim1(a, b) {
+  var A = nrm(a), B = nrm(b); if (!A.length || !B.length) return 0;
+  if (A.join(' ') == B.join(' ')) return 1;
+  var n = 0;
+  A.forEach(function (w) { if (B.some(function (v) { return v == w || (w.length >= 3 && v.length >= 3 && (v.indexOf(w) == 0 || w.indexOf(v) == 0)); })) n++; });
+  return n / Math.max(A.length, B.length);
+}
+function simT(name, t) {
+  if (!t) return 0;
+  return Math.max(sim1(name, t.displayName), sim1(name, t.shortDisplayName), sim1(name, t.name), sim1(name, t.location));
+}
+function ymd(t) { var d = new Date(t); return d.getUTCFullYear() + ('0' + (d.getUTCMonth() + 1)).slice(-2) + ('0' + d.getUTCDate()).slice(-2); }
+function matchEv(m, evs) {
+  var t = new Date(m.time).getTime(), best = null, bs = 0;
+  evs.forEach(function (e) {
+    var c = e.competitions && e.competitions[0]; if (!c || !c.competitors) return;
+    var dt = Math.abs(new Date(e.date).getTime() - t); if (dt > 6 * 3600000) return;
+    var H = null, A = null; c.competitors.forEach(function (x) { if (x.homeAway == 'home') H = x; else A = x; });
+    if (!H || !A) return;
+    var s1 = simT(m.home, H.team) + simT(m.away, A.team), s2 = simT(m.home, A.team) + simT(m.away, H.team), sc = Math.max(s1, s2);
+    if (dt < 20 * 60000) sc += 0.3;
+    if (sc > bs) { bs = sc; best = { e: e, c: c, H: H, A: A, sw: s2 > s1 }; }
+  });
+  if (!best || bs < 1.2) return null;
+  var st = best.e.status || best.c.status || {}, ty = st.type || {};
+  var hs = parseInt((best.sw ? best.A : best.H).score, 10), as = parseInt((best.sw ? best.H : best.A).score, 10);
+  var state = (ty.completed || ty.state == 'post') ? 'post' : (ty.state == 'in' ? 'in' : 'pre');
+  var pp = /POSTPON|CANCEL|ABANDON/i.test(String(ty.name || '') + ' ' + String(ty.description || '')); if (pp) state = 'x';
+  return { hs: isNaN(hs) ? 0 : hs, as: isNaN(as) ? 0 : as, st: state, pp: pp, clk: ty.shortDetail || st.displayClock || '', t: Date.now(), eid: String(best.e.id || ''), sw: best.sw ? 1 : 0 };
+}
+function pageOn(p) { var e = $('p-' + p); return e && e.classList.contains('on'); }
+function liveTargets() {
+  var now = Date.now(), out = {};
+  if (reg != 'browse') Object.keys(MATCHES).forEach(function (id) { var m = MATCHES[id]; if (reg == 'day' && m.fx) return; if (started(m) && alive(m, now)) out[id] = m; });
+  BETS.forEach(function (b) {
+    if (b.st != 'p') return;
+    b.sel.forEach(function (x) { var k = new Date(x.time).getTime(); if (x.res == 'p' && k <= now && now - k < 84 * 3600000) out[x.id] = x; });
+  });
+  SH.forEach(function (x) { var k = new Date(x.time).getTime(); if (x.res == 'p' && !out[x.mid] && k + 100 * 60000 <= now && now - k < 84 * 3600000) out[x.mid] = { id: x.mid, lg: x.lg, home: x.home, away: x.away, time: x.time }; });
+  return out;
+}
+function liveTick(force, done) {
+  var T = liveTargets(), g = {}, now = Date.now();
+  Object.keys(T).forEach(function (id) {
+    var m = T[id], s = esl(m.lg) || 'all';
+    var L = LIVE[id]; if (L && L.st == 'post') return;
+    var k = new Date(m.time).getTime();
+    if (!force && (!L || L.st != 'in') && now - k > END_MS) { LTRY[id] = (LTRY[id] || 0) + 1; if (LTRY[id] > 3) return; }
+    var o = g[s] = g[s] || { ms: [], d: {} };
+    o.ms.push(m); o.d[ymd(k)] = 1; o.d[ymd(k - 5 * 3600000)] = 1;
+  });
+  var ks = Object.keys(g).filter(function (s) { return force || now - (LT[s] || 0) > 50000; }), left = ks.length;
+  if (!left) { if (done) done(); return; }
+  ks.forEach(function (s) {
+    LT[s] = now; var o = g[s];
+    espnFetch(s, Object.keys(o.d), function (evs, err) {
+      if (evs) {
+        LERR[s] = { n: evs.length };
+        o.ms.forEach(function (m) { var e = matchEv(m, evs); if (e) LIVE[m.id] = e; else LERR['m' + m.id] = evs.length; });
+      } else LERR[s] = err;
+      if (--left == 0) { afterLive(); if (done) done(); }
+    });
+  });
+}
+function espnGet(url, cb) {
+  http(url, function (r) {
+    if (r.status != 200) { cb(null, { e: r.status, b: String(r.body || '').slice(0, 60) }); return; }
+    try { cb(JSON.parse(r.body).events || [], null); } catch (e) { cb(null, { e: 'JSON' }); }
+  });
+}
+function espnFetch(s, ds, cb) {
+  var all = [], seen = {}, left = ds.length, ok = false, lastErr = null;
+  var add = function (evs) { evs.forEach(function (e) { if (!seen[e.id]) { seen[e.id] = 1; all.push(e); } }); };
+  var fin = function () {
+    if (ok) { cb(all, null); return; }
+    espnGet(ESPN_API + s + '/scoreboard', function (evs, err) { if (evs) cb(evs, null); else cb(null, err || lastErr); });
+  };
+  ds.forEach(function (d) {
+    espnGet(ESPN_API + s + '/scoreboard?dates=' + d, function (evs, err) {
+      if (evs) { ok = true; add(evs); } else lastErr = err;
+      if (--left == 0) fin();
+    });
+  });
+}
+function afterLive() {
+  var ch = false;
+  bgImport(); goalCheck();
+  BETS.forEach(function (b) {
+    if (b.st != 'p') return;
+    b.sel.forEach(function (x) {
+      var L = LIVE[x.id];
+      if (x.res == 'p' && L && L.pp) { x.score = '\u0645\u0639\u0648\u0642'; x.res = 'v'; ch = true; toast('\u0628\u0627\u0632\u06cc ' + x.home + ' \u0645\u0639\u0648\u0642 \u0634\u062f\u060c \u0627\u06cc\u0646 \u067e\u0627\u06cc\u0647 \u0628\u0627\u0637\u0644 \u062d\u0633\u0627\u0628 \u0634\u062f'); }
+      else if (x.res == 'p' && L && L.st == 'post') { x.score = L.hs + '-' + L.as; x.res = resX(x.pick, L.hs, L.as); ch = true; }
+    });
+  });
+  if (ch) settle(); else bgSync();
+  shSettle();
+  if (pageOn('bets')) renderBets(); else if (pageOn('matches') && reg != 'browse') rerender();
+}
+function liveBox(m) {
+  if (!started(m)) return '';
+  var L = LIVE[m.id];
+  if (!L) {
+    if (isAF(m.lg)) return '<div class="live na" onclick="afSync(1)">\ud83c\udf10 \u0646\u062a\u06cc\u062c\u0647 \u0627\u0632 API-Football \u0647\u0631 ' + afMin() + ' \u062f\u0642\u06cc\u0642\u0647 \u0628\u0631\u0648\u0632 \u0645\u06cc\u0634\u0647 (\u0628\u0632\u0646 \u062a\u0627 \u0627\u0644\u0627\u0646 \u0628\u06af\u06cc\u0631\u0647)</div>';
+    var s = esl(m.lg), er = s ? LERR[s] : null, t;
+    if (!s) t = '\u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0644\u06cc\u06af \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a';
+    else if (er && er.e !== undefined) t = '\u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u0634\u062f (\u062e\u0637\u0627 <span class="ltr">' + esc(er.e) + (er.b ? ' ' + esc(er.b) : '') + '</span>). \u0628\u0632\u0646 \u062a\u0627 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646\u0647';
+    else if (LERR['m' + m.id] !== undefined) t = '\u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u062a\u0648 ESPN \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f (' + fa(LERR['m' + m.id]) + ' \u0628\u0627\u0632\u06cc \u062f\u0631\u06cc\u0627\u0641\u062a \u0634\u062f). \u0628\u0632\u0646 \u062a\u0627 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646\u0647';
+    else t = '\u062f\u0631 \u062d\u0627\u0644 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647...';
+    return '<div class="live na" onclick="liveTick(true)">' + t + '</div>';
+  }
+  return '';
+}
+/* manual final score (update 35): when no source gives the result, Saeed types it once and every bet on that game settles */
+function manRes(bid, j) {
+  var b = null; BETS.forEach(function (x) { if (x.id == bid) b = x; }); if (!b || !b.sel[j]) return;
+  var x = b.sel[j], L = LIVE[x.id];
+  var v = prompt('\u0646\u062a\u06cc\u062c\u0647 \u0646\u0647\u0627\u06cc\u06cc \u06f9\u06f0 \u062f\u0642\u06cc\u0642\u0647 \u0631\u0648 \u0628\u0646\u0648\u06cc\u0633 (\u0645\u06cc\u0632\u0628\u0627\u0646-\u0645\u0647\u0645\u0627\u0646)\u060c \u0645\u062b\u0644\u0627\u064b 1-1\n' + x.home + ' - ' + x.away, L ? L.hs + '-' + L.as : '');
+  if (v === null) return;
+  v = String(v).replace(/[\u06f0-\u06f9]/g, function (d) { return '\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9'.indexOf(d); }).replace(/[\u0660-\u0669]/g, function (d) { return '\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669'.indexOf(d); });
+  var mm = /^\s*(\d{1,2})\s*[-:\u2013\s]\s*(\d{1,2})\s*$/.exec(v);
+  if (!mm) { toast('\u0627\u06cc\u0646\u200c\u062c\u0648\u0631\u06cc \u0628\u0646\u0648\u06cc\u0633: 1-1'); return; }
+  var hs = +mm[1], as = +mm[2];
+  if (!confirm('\u0646\u062a\u06cc\u062c\u0647 \u0646\u0647\u0627\u06cc\u06cc ' + x.home + ' ' + hs + ' - ' + as + ' ' + x.away + ' \u062b\u0628\u062a \u0628\u0634\u0647\u061f\n\u0647\u0645\u0647 \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u0631\u0648\u06cc \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0628\u0627 \u0647\u0645\u06cc\u0646 \u0646\u062a\u06cc\u062c\u0647 \u0628\u0633\u062a\u0647 \u0645\u06cc\u0634\u0646.')) return;
+  LIVE[x.id] = { hs: hs, as: as, st: 'post', clk: 'FT', t: Date.now(), mr: 1 };
+  afterLive(); renderBets(); toast('\u2705 \u0646\u062a\u06cc\u062c\u0647 \u062b\u0628\u062a \u0634\u062f');
+}
+function liveTxt(x) {
+  var L = LIVE[x.id]; if (!L || x.res != 'p') return '';
+  var ag = L.st != 'post' && L.t && Date.now() - L.t > 10 * 60000 ? ' \u00b7 ' + agoTxt(L.t) : '';
+  return ' ' + (L.st == 'post' ? '\ud83c\udfc1' : '\ud83d\udd34') + ' (' + L.hs + '-' + L.as + (L.clk && L.st != 'post' ? ' ' + esc(L.clk) : '') + ag + ')';
+}
+/* handicap + full totals (update 18): pick 'H1:-1.5' = home -1.5, 'H2:+1' = away +1, 'H1:0'; totals O05..O55 and whole O10..O50 (push = refund) */
+function hcp(p) { var m = /^H([12]):([+-]?\d+(?:\.\d)?)$/.exec(p); return m ? { s: m[1], v: parseFloat(m[2]) } : null; }
+function resX(p, hs, as) {
+  var h = hcp(p);
+  if (h) { var d = (h.s == '1' ? hs - as : as - hs) + h.v; return d > 0 ? 'w' : (d < 0 ? 'l' : 'v'); }
+  if (/^[OU]\d\d$/.test(p) && (hs + as) == ptOf(p)) return 'v';
+  return resOf(p, hs, as) ? 'w' : 'l';
+}
+function resOf(p, hs, as) {
+  var g = hs + as;
+  if (p == '1') return hs > as; if (p == '2') return as > hs; if (p == 'X') return hs == as;
+  if (p == '1X') return hs >= as; if (p == 'X2') return as >= hs; if (p == '12') return hs != as;
+  if (p == 'BY') return hs > 0 && as > 0; if (p == 'BN') return !(hs > 0 && as > 0);
+  if (p.charAt(0) == 'O') return g > ptOf(p); return g < ptOf(p);
+}
+
+/* ---------- results ---------- */
+function needCheck(b, now) {
+  return b.st == 'p' && b.sel.some(function (x) { return x.res == 'p' && new Date(x.time).getTime() + 105 * 60000 < now; });
+}
+function checkResults(betId) {
+  if (!BETS.some(function (b) { return b.st == 'p' && (!betId || b.id == betId); })) { toast('\u0634\u0631\u0637 \u0628\u0627\u0632 \u0646\u062f\u0627\u0631\u06cc'); return; }
+  toast('\u062f\u0631 \u062d\u0627\u0644 \u06af\u0631\u0641\u062a\u0646 \u0646\u062a\u0627\u06cc\u062c \u0631\u0627\u06cc\u06af\u0627\u0646...');
+  afSync(true, function () { liveTick(true, function () {
+    settle(); renderBets();
+    var now = Date.now(), left = 0, stuck = 0;
+    BETS.forEach(function (b) { if (b.st == 'p' && (!betId || b.id == betId)) b.sel.forEach(function (x) { if (x.res == 'p' && new Date(x.time).getTime() + 150 * 60000 < now) stuck++; }); });
+    if (AFSE) toast('\u26a0\ufe0f API-Football \u062c\u0648\u0627\u0628 \u0646\u062f\u0627\u062f: ' + AFSE);
+    else if (stuck) toast('\u23f3 \u0647\u0646\u0648\u0632 \u0646\u062a\u06cc\u062c\u0647 \u0646\u0647\u0627\u06cc\u06cc \u0646\u06cc\u0648\u0645\u062f\u0647. \u0627\u06af\u0647 \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645 \u0634\u062f\u0647\u060c \u00ab\u270d\ufe0f \u062b\u0628\u062a \u0646\u062a\u06cc\u062c\u0647 \u062f\u0633\u062a\u06cc\u00bb \u0631\u0648 \u0628\u0632\u0646');
+    BETS.forEach(function (b) { if (b.st == 'p' && (!betId || b.id == betId)) b.sel.forEach(function (x) { if (x.res == 'p' && !x.man && !isES(x.lg) && new Date(x.time).getTime() + 105 * 60000 < now) left++; }); });
+    if (!left) { if (!AFSE && !stuck) toast('\u0646\u062a\u0627\u06cc\u062c \u0628\u0631\u0648\u0632 \u0634\u062f \u2705 (\u0628\u062f\u0648\u0646 \u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631)'); return; }
+    if (key() && confirm(fa(left) + ' \u0628\u0627\u0632\u06cc \u062a\u0645\u0648\u0645\u200c\u0634\u062f\u0647 \u062a\u0648 \u0646\u062a\u0627\u06cc\u062c \u0631\u0627\u06cc\u06af\u0627\u0646 \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f. \u0628\u0627 \u0627\u0639\u062a\u0628\u0627\u0631 API \u0686\u06a9 \u0628\u0634\u0647\u061f (\u06f2 \u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0644\u06cc\u06af)')) paidCheck(betId);
+  }); });
+}
+function paidCheck(betId) {
+  var now = Date.now(), lgs = {};
+  if (!key()) { toast('\u0627\u0648\u0644 \u06a9\u0644\u06cc\u062f API \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  var pend = BETS.filter(function (b) { return b.st == 'p' && (!betId || b.id == betId); });
+  if (!pend.length) { toast('\u0634\u0631\u0637 \u0628\u0627\u0632 \u0646\u062f\u0627\u0631\u06cc'); return; }
+  pend.forEach(function (b) {
+    b.sel.forEach(function (x) {
+      if (x.res == 'p' && !x.man && !isES(x.lg) && new Date(x.time).getTime() + 105 * 60000 < now) { (lgs[x.lg] = lgs[x.lg] || {})[x.id] = 1; }
+    });
+  });
+  var ks = Object.keys(lgs);
+  if (!ks.length) { settle(); renderBets(); toast('\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u062a\u0645\u0648\u0645 \u0646\u0634\u062f\u0647\u060c \u0627\u0639\u062a\u0628\u0627\u0631\u06cc \u0645\u0635\u0631\u0641 \u0646\u0634\u062f'); return; }
+  toast('\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc ' + fa(Object.keys(lgs).reduce(function (a, k) { return a + Object.keys(lgs[k]).length; }, 0)) + ' \u0628\u0627\u0632\u06cc...');
+  var left = ks.length, ok = 0;
+  ks.forEach(function (lg) {
+    http(API + lg + '/scores/?apiKey=' + encodeURIComponent(key()) + '&daysFrom=3&eventIds=' + Object.keys(lgs[lg]).join(','), function (r) {
+      rem(r);
+      if (r.status == 200) { ok++; try { applyScores(JSON.parse(r.body)); } catch (e) {} }
+      if (--left == 0) {
+        settle(); renderBets();
+        if (!ok) toast('\u062e\u0637\u0627 \u062f\u0631 \u062f\u0631\u06cc\u0627\u0641\u062a \u0646\u062a\u0627\u06cc\u062c (' + r.status + ')');
+        else if (BETS.some(function (b) { return needCheck(b, Date.now()) && (!betId || b.id == betId); })) toast('\u0628\u0639\u0636\u06cc \u0646\u062a\u06cc\u062c\u0647\u200c\u0647\u0627 \u0647\u0646\u0648\u0632 \u062b\u0628\u062a \u0646\u0634\u062f\u0646\u060c \u06a9\u0645\u06cc \u0628\u0639\u062f \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646');
+        else toast('\u0646\u062a\u0627\u06cc\u062c \u0628\u0631\u0648\u0632 \u0634\u062f');
+      }
+    });
+  });
+}
+function applyScores(arr) {
+  var map = {};
+  arr.forEach(function (e) { map[e.id] = e; });
+  BETS.forEach(function (b) {
+    if (b.st != 'p') return;
+    b.sel.forEach(function (x) {
+      if (x.res != 'p') return;
+      var e = map[x.id];
+      if (!e || !e.completed || !e.scores) return;
+      var hs = null, as = null;
+      e.scores.forEach(function (s) { if (s.name == e.home_team) hs = parseInt(s.score, 10); else if (s.name == e.away_team) as = parseInt(s.score, 10); });
+      if (hs === null || as === null || isNaN(hs) || isNaN(as)) return;
+      x.score = hs + '-' + as;
+      x.res = resX(x.pick, hs, as);
+    });
+  });
+}
+function settle() {
+  var now = Date.now();
+  BETS.forEach(function (b) {
+    if (b.st != 'p') return;
+    b.sel.forEach(function (x) { if (x.res == 'p' && now - new Date(x.time).getTime() > 84 * 3600000) x.res = 'v'; });
+    if (b.sel.some(function (x) { return x.res == 'l'; })) { b.st = 'l'; betNote(b); return; }
+    if (b.sel.every(function (x) { return x.res != 'p'; })) {
+      var o = b.sel.reduce(function (a, x) { return a * (x.res == 'w' ? x.odd : 1); }, 1);
+      b.win = r2(b.stake * o);
+      b.st = b.sel.every(function (x) { return x.res == 'v'; }) ? 'v' : 'w';
+      W.coins = r2(W.coins + b.win); betNote(b);
+      if (b.st == 'v') toast('\u21a9\ufe0f \u0634\u0631\u0637 \u0628\u0627\u0637\u0644 \u0634\u062f \u0648 ' + fc(b.win) + ' \u0633\u06a9\u0647 \u0628\u0631\u06af\u0634\u062a');
+      if (b.st == 'w') toast('\ud83c\udf89 \u0628\u0631\u062f\u06cc! ' + fc(b.win) + ' \u0633\u06a9\u0647');
+    }
+  });
+  saveAll(); bgSync();
+}
+function stats() {
+  var s = { n: 0, w: 0, l: 0, p: 0, v: 0, stk: 0, ret: 0, big: 0, bigOdd: 0, sn: 0, sw: 0, mn: 0, mw: 0 };
+  BETS.forEach(function (b) {
+    s.n++; s[b.st]++;
+    if (b.st == 'p' || b.st == 'v') return;
+    s.stk += b.stake; s.ret += b.win;
+    if (b.st == 'w') { if (b.win > s.big) s.big = b.win; if (b.odd > s.bigOdd) s.bigOdd = b.odd; }
+    if (b.sel.length > 1) { s.mn++; if (b.st == 'w') s.mw++; } else { s.sn++; if (b.st == 'w') s.sw++; }
+  });
+  return s;
+}
+var MK = [['1', '\u0628\u0631\u062f \u0645\u06cc\u0632\u0628\u0627\u0646'], ['X', '\u0645\u0633\u0627\u0648\u06cc'], ['2', '\u0628\u0631\u062f \u0645\u0647\u0645\u0627\u0646'], ['1X', '\u06f1 \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc'], ['X2', '\u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2'], ['12', '\u06f1 \u06cc\u0627 \u06f2'],
+  ['O15', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1.\u06f5'], ['U15', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f1.\u06f5'], ['O25', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f2.\u06f5'], ['U25', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5'], ['O35', '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f3.\u06f5'], ['U35', '\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f3.\u06f5'],
+  ['BY', '\u06af\u0644 \u0647\u0631 \u062f\u0648: \u0628\u0644\u0647'], ['BN', '\u06af\u0644 \u0647\u0631 \u062f\u0648: \u062e\u06cc\u0631']];
+function mkLbl(k) {
+  var h = hcp(k); if (h) return '\u0647\u0646\u062f\u06cc\u06a9\u067e ' + (h.s == '1' ? '\u0645\u06cc\u0632\u0628\u0627\u0646' : '\u0645\u0647\u0645\u0627\u0646') + ' ' + hsg(h.v);
+  if (/^[OU]\d\d$/.test(k)) return (k.charAt(0) == 'O' ? '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 ' : '\u06a9\u0645\u062a\u0631 \u0627\u0632 ') + fa(ptOf(k));
+  return k;
+}
+function marketTable() {
+  var g = {};
+  BETS.forEach(function (b) {
+    b.sel.forEach(function (x) {
+      if (x.res != 'w' && x.res != 'l') return;
+      var k = x.pick == 'O' ? 'O25' : (x.pick == 'U' ? 'U25' : x.pick);
+      var o = g[k] = g[k] || { w: 0, l: 0, so: 0, pnl: 0 };
+      o[x.res]++; o.so += x.odd; o.pnl += x.res == 'w' ? (x.odd - 1) : -1;
+    });
+  });
+  var mkn = {}; MK.forEach(function (m) { mkn[m[0]] = 1; });
+  var mk2 = MK.slice(); Object.keys(g).forEach(function (k) { if (!mkn[k]) mk2.push([k, mkLbl(k)]); });
+  var rows = mk2.filter(function (m) { return g[m[0]]; }).map(function (m) {
+    var o = g[m[0]], n = o.w + o.l;
+    return { k: m[0], t: m[1], w: o.w, l: o.l, n: n, r: Math.round(o.w * 100 / n), ao: o.so / n, pnl: o.pnl, roi: o.pnl / n * 100 };
+  }).sort(function (a, b) { return (b.r - a.r) || (b.n - a.n); });
+  var h = '<div class="box"><b>\ud83c\udfc5 \u06a9\u062f\u0648\u0645 \u0628\u0627\u0632\u0627\u0631 \u0628\u06cc\u0634\u062a\u0631 \u0628\u0631\u0627\u062a \u0628\u0631\u062f\u0647\u061f</b>';
+  if (!rows.length) return h + '<div class="mut" style="margin-top:8px">\u0647\u0646\u0648\u0632 \u0646\u062a\u06cc\u062c\u0647\u200c\u0627\u06cc \u062b\u0628\u062a \u0646\u0634\u062f\u0647. \u0628\u0639\u062f \u0627\u0632 \u0686\u06a9 \u0646\u062a\u0627\u06cc\u062c\u060c \u0627\u06cc\u0646\u062c\u0627 \u067e\u0631 \u0645\u06cc\u0634\u0647.</div></div>';
+  var best = null; rows.forEach(function (r) { if (!best && r.n >= 3) best = r; });
+  h += '<table class="tbl"><tr><th>\u0628\u0627\u0632\u0627\u0631</th><th>\u2705</th><th>\u274c</th><th>\u062f\u0631\u0635\u062f \u0628\u0631\u062f</th><th>\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0636\u0631\u06cc\u0628</th><th>\u0633\u0648\u062f \u0648\u0632\u0646\u06cc</th></tr>';
+  rows.forEach(function (r) {
+    h += '<tr' + (best && r.k == best.k ? ' class="best"' : '') + '><td>' + (best && r.k == best.k ? '\ud83c\udfc6 ' : '') + cauL(r.k, r.t) + '</td><td style="color:var(--green)">' + fa(r.w) + '</td><td style="color:var(--red)">' + fa(r.l) + '</td>' +
+      '<td><b style="color:' + (r.r >= 50 ? 'var(--green)' : 'var(--red)') + '">' + fa(r.r) + '\u066a</b></td><td class="ltr">' + r.ao.toFixed(2) + '</td><td class="ltr" style="color:' + (r.pnl >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (r.pnl >= 0 ? '+' : '') + r.pnl.toFixed(2) + '</td></tr>';
+  });
+  h += '</table><div class="mut" style="margin-top:8px;line-height:1.8">\ud83e\uddca = \u0628\u0627\u0632\u0627\u0631 \u0645\u062d\u062a\u0627\u0637: \u0645\u062f\u0644 \u0641\u0642\u0637 \u0628\u0627 \u0646\u0635\u0641 \u0648\u0632\u0646 \u0645\u0639\u0645\u0648\u0644 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u062c\u0627\u0628\u0647\u200c\u062c\u0627 \u0645\u06cc\u200c\u06a9\u0646\u0647 \u0648 \u0628\u0631\u0627\u06cc \ud83d\udc8e \u062d\u062f\u0627\u0642\u0644 EV +0.06 \u0648 \u06f8 \u062a\u0627 \u06f1\u06f5\u066a \u0641\u0627\u0635\u0644\u0647 \u0645\u062f\u0644 \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0644\u0627\u0632\u0645\u0647 (\u0628\u0631\u062f \u0645\u0647\u0645\u0627\u0646\u060c \u0645\u0633\u0627\u0648\u06cc \u06cc\u0627 \u06f2\u060c \u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f2.\u06f5\u060c \u0648 \u0647\u0631 \u0628\u0627\u0632\u0627\u0631\u06cc \u0628\u0627 \u06f1\u06f0 \u0646\u062a\u06cc\u062c\u0647 \u0648 \u0633\u0648\u062f \u0648\u0632\u0646\u06cc \u0632\u06cc\u0631 \u06f1-). \u0647\u0631 \u0627\u0646\u062a\u062e\u0627\u0628 \u062c\u062f\u0627 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647\u060c \u0686\u0647 \u062a\u06a9\u06cc \u0686\u0647 \u062f\u0627\u062e\u0644 \u0645\u06cc\u06a9\u0633. \ud83c\udfc6 = \u0628\u0647\u062a\u0631\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0628\u0627 \u062d\u062f\u0627\u0642\u0644 \u06f3 \u0646\u062a\u06cc\u062c\u0647. \u0627\u06af\u0647 \u062f\u0631\u0635\u062f \u0628\u0631\u062f \u0627\u0632 ' + '\u00ab\u06f1\u06f0\u06f0 \u062a\u0642\u0633\u06cc\u0645 \u0628\u0631 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0636\u0631\u06cc\u0628\u00bb \u0628\u06cc\u0634\u062a\u0631 \u0628\u0627\u0634\u0647\u060c \u062a\u0648 \u0627\u0648\u0646 \u0628\u0627\u0632\u0627\u0631 \u0627\u0632 \u0628\u0646\u06af\u0627\u0647 \u062c\u0644\u0648\u062a\u0631\u06cc.</div></div>';
+  return h;
+}
+function calib() {
+  var B = [[0, 40], [40, 50], [50, 60], [60, 70], [70, 80], [80, 101]];
+  var g = B.map(function () { return { n: 0, w: 0, sm: 0, sq: 0, qn: 0 }; }), cl = { n: 0, s: 0, pos: 0 }, ct = { n: 0, w: 0 };
+  BETS.forEach(function (b) {
+    b.sel.forEach(function (x) {
+      if (x.cl && x.odd) { cl.n++; var v = x.odd / x.cl - 1; cl.s += v; if (v > 0) cl.pos++; }
+      if (x.res != 'w' && x.res != 'l') return;
+      if (x.ctr) { ct.n++; if (x.res == 'w') ct.w++; }
+      if (!x.my) return;
+      for (var i = 0; i < B.length; i++) if (x.my >= B[i][0] && x.my < B[i][1]) {
+        var o = g[i]; o.n++; o.sm += x.my; if (x.res == 'w') o.w++; if (x.nv) { o.sq += x.nv * 100; o.qn++; } break;
+      }
+    });
+  });
+  var h = '<div class="box"><b>\ud83c\udfaf \u06a9\u0627\u0644\u06cc\u0628\u0631\u0627\u0633\u06cc\u0648\u0646: \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646 \u062f\u0631 \u0628\u0631\u0627\u0628\u0631 \u0648\u0627\u0642\u0639\u06cc\u062a</b>', any = false;
+  var t = '<table class="tbl"><tr><th>\u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646</th><th>\u062a\u0639\u062f\u0627\u062f</th><th>\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0645\u0646</th><th>\u0628\u0627\u0632\u0627\u0631</th><th>\u0648\u0627\u0642\u0639\u06cc</th></tr>';
+  g.forEach(function (o, i) {
+    if (!o.n) return; any = true;
+    var me = o.sm / o.n, re = o.w * 100 / o.n, ok = Math.abs(re - me) <= 10;
+    t += '<tr><td class="ltr">' + fa(B[i][0]) + '-' + fa(Math.min(B[i][1], 100)) + '\u066a</td><td>' + fa(o.n) + '</td><td>' + fa(Math.round(me)) + '\u066a</td><td>' + (o.qn ? fa(Math.round(o.sq / o.qn)) + '\u066a' : '-') + '</td>' +
+      '<td><b style="color:' + (ok ? 'var(--green)' : 'var(--red)') + '">' + fa(Math.round(re)) + '\u066a</b></td></tr>';
+  });
+  h += any ? t + '</table>' : '<div class="mut" style="margin-top:8px">\u0628\u0631\u0627\u06cc \u067e\u0631 \u0634\u062f\u0646 \u0627\u06cc\u0646 \u062c\u062f\u0648\u0644\u060c \u0645\u0648\u0642\u0639 \u062b\u0628\u062a \u0634\u0631\u0637 \u00ab\u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646\u00bb \u0631\u0648 \u0648\u0627\u0631\u062f \u06a9\u0646.</div>';
+  if (cl.n) {
+    var av = cl.s / cl.n * 100;
+    h += '<div style="margin-top:8px">\ud83d\udcc8 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 CLV: <b class="ltr" style="color:' + (av >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (av >= 0 ? '+' : '') + av.toFixed(1) + '\u066a</b> <span class="mut">(' + fa(cl.n) + ' \u0627\u0646\u062a\u062e\u0627\u0628\u060c ' + fa(cl.pos) + ' \u062a\u0627\u0634 \u0627\u0632 \u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u0628\u0647\u062a\u0631)</span></div>';
+  }
+  if (ct.n) h += '<div style="margin-top:6px">\u26a0\ufe0f \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f: <b style="color:' + (ct.w * 2 >= ct.n ? 'var(--green)' : 'var(--red)') + '">' + fa(ct.w) + ' \u0627\u0632 ' + fa(ct.n) + '</b></div>';
+  h += '<div class="mut" style="margin-top:8px;line-height:1.8">\u0627\u06af\u0647 \u0628\u0627\u0632\u0647\u200c\u0627\u06cc \u06a9\u0647 \u0645\u062b\u0644\u0627\u064b \u06f7\u06f0\u066a \u062f\u06cc\u062f\u06cc \u0648\u0627\u0642\u0639\u0627\u064b \u062d\u062f\u0648\u062f \u06f7\u06f0\u066a \u0628\u0631\u062f\u0647 \u0628\u0627\u0634\u0647 (\u0633\u0628\u0632)\u060c \u0628\u0631\u0622\u0648\u0631\u062f\u0647\u0627\u062a \u062f\u0631\u0633\u062a\u0647. CLV \u0645\u062b\u0628\u062a \u06cc\u0639\u0646\u06cc \u0636\u0631\u06cc\u0628\u062a \u0627\u0632 \u0636\u0631\u06cc\u0628 \u0644\u062d\u0638\u0647 \u0634\u0631\u0648\u0639 \u0628\u0647\u062a\u0631 \u0628\u0648\u062f\u0647\u060c \u06a9\u0647 \u0628\u0627 \u0646\u0645\u0648\u0646\u0647 \u06a9\u0648\u0686\u06cc\u06a9 \u0647\u0645 \u0645\u0639\u06cc\u0627\u0631 \u0642\u0627\u0628\u0644 \u0627\u0639\u062a\u0645\u0627\u062f\u06cc\u0647. \u0632\u06cc\u0631 \u06f1\u06f0 \u0646\u062a\u06cc\u062c\u0647 \u062a\u0648 \u0647\u0631 \u0628\u0627\u0632\u0647\u060c \u0639\u062f\u062f\u0647\u0627 \u0631\u0648 \u062c\u062f\u06cc \u0646\u06af\u06cc\u0631.</div></div>';
+  return h;
+}
+function delBet(id) {
+  var b = findBet(id); if (!b) return;
+  if (!confirm('\ud83d\uddd1 \u0627\u06cc\u0646 \u0634\u0631\u0637 \u0648 \u0631\u06a9\u0648\u0631\u062f\u0634 \u0627\u0632 \u0622\u0645\u0627\u0631 \u0648 \u062c\u062f\u0648\u0644 \u0628\u0627\u0632\u0627\u0631\u0647\u0627 \u067e\u0627\u06a9 \u0634\u0648\u062f\u061f')) return;
+  b.sel.forEach(function (x) { delete SMN[x.id]; delete SRES[x.id]; delete SOPEN[x.id]; });
+  BETS = BETS.filter(function (x) { return x.id != id; });
+  W.coins = r2(W.coins + (b.st == 'p' ? b.stake : 0));
+  sv('sman', SMN); saveAll(); renderBets(); toast('\u2705 \u0634\u0631\u0637 \u0648 \u0631\u06a9\u0648\u0631\u062f \u0622\u0645\u0627\u0631\u06cc\u200c\u0627\u0634 \u067e\u0627\u06a9 \u0634\u062f');
+}
+function editNote(id, f) {
+  var b = null; BETS.forEach(function (x) { if (x.id == id) b = x; }); if (!b) return;
+  var v = prompt(f == 'note' ? '\ud83d\udcdd \u0686\u0631\u0627 \u0627\u06cc\u0646 \u0634\u0631\u0637 \u0631\u0648 \u0628\u0633\u062a\u06cc\u061f' : '\ud83d\udcda \u0628\u0639\u062f \u0627\u0632 \u0628\u0627\u0632\u06cc \u0686\u06cc \u06cc\u0627\u062f \u06af\u0631\u0641\u062a\u06cc\u061f \u06a9\u062f\u0648\u0645 \u0627\u0633\u062a\u062f\u0644\u0627\u0644\u062a \u062f\u0631\u0633\u062a \u0628\u0648\u062f \u0648 \u06a9\u062f\u0648\u0645 \u063a\u0644\u0637\u061f', b[f] || '');
+  if (v === null) return;
+  b[f] = String(v).trim(); sv(pk('bets'), BETS); renderBets(); toast('\u0630\u062e\u06cc\u0631\u0647 \u0634\u062f \u2705');
+}
+function cell(t, v, col) { return '<div class="cell"><span class="mut">' + t + '</span><b' + (col ? ' style="color:' + col + '"' : '') + '>' + v + '</b></div>'; }
+function pickBF(f) { BF = f; renderBets(); }
+/* ---------- loss review (update 38): one AI prompt per lost pick, paste the answer, and a combined prompt every 20 reviews ---------- */
+var RVO = false, RVB = ld('rvb', 0);
+function lgPlain(k) { if (isAF(k)) { var a = AFLG[k]; return a ? a.n + ' (' + a.c + ')' : ''; } var t = String(lname(k) || '').replace(/<[^>]+>/g, ''); return t.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"'); }
+function rvList() {
+  var out = [];
+  BETS.forEach(function (b) { b.sel.forEach(function (x, j) { if (x.res == 'l') out.push({ b: b, x: x, j: j }); }); });
+  out.sort(function (a, c) { return new Date(c.x.time) - new Date(a.x.time); });
+  return out;
+}
+function rvQ(b, x) {
+  var oth = b.sel.length > 1 ? '\u0645\u06cc\u06a9\u0633 ' + b.sel.length + ' \u067e\u0627\u06cc\u0647' : '\u062a\u06a9\u06cc';
+  var t = '\u062a\u0648 \u06cc\u0647 \u062a\u062d\u0644\u06cc\u0644\u06af\u0631 \u062d\u0631\u0641\u0647\u200c\u0627\u06cc \u0641\u0648\u062a\u0628\u0627\u0644 \u0648 \u0634\u0631\u0637\u200c\u0628\u0646\u062f\u06cc \u0622\u0645\u0627\u0631\u06cc \u0647\u0633\u062a\u06cc. \u0627\u06cc\u0646 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc \u0645\u0646 \u0628\u0627\u062e\u062a. \u0627\u06af\u0647 \u0628\u0647 \u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u062f\u0633\u062a\u0631\u0633\u06cc \u062f\u0627\u0631\u06cc\u060c \u06af\u0632\u0627\u0631\u0634 \u0648 \u0622\u0645\u0627\u0631 \u0647\u0645\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0631\u0648 \u0686\u06a9 \u06a9\u0646. \u06a9\u0648\u062a\u0627\u0647\u060c \u062f\u0642\u06cc\u0642 \u0648 \u0628\u062f\u0648\u0646 \u062d\u0627\u0634\u06cc\u0647 \u062c\u0648\u0627\u0628 \u0628\u062f\u0647.\n\n';
+  t += '\u0628\u0627\u0632\u06cc: ' + x.home + ' - ' + x.away + (lgPlain(x.lg) ? ' | ' + lgPlain(x.lg) : '') + ' | ' + new Date(x.time).toISOString().slice(0, 10) + '\n';
+  t += '\u0634\u0631\u0637 \u0645\u0646: ' + pl(x) + ' (\u06a9\u062f ' + x.pick + ') \u0628\u0627 \u0636\u0631\u06cc\u0628 ' + x.odd.toFixed(2) + ' | ' + oth + ' | \u0645\u0628\u0644\u063a ' + nfmt(b.stake) + ' \u0633\u06a9\u0647\n';
+  t += '\u0646\u062a\u06cc\u062c\u0647 \u0646\u0647\u0627\u06cc\u06cc (\u06f9\u06f0 \u062f\u0642\u06cc\u0642\u0647): ' + (x.score || '?') + '\n';
+  t += '\u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646: ' + (x.my ? x.my + '%' : '\u062b\u0628\u062a \u0646\u0634\u062f\u0647') + ' | \u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0627\u0632\u0627\u0631 \u0628\u062f\u0648\u0646 \u062d\u0627\u0634\u06cc\u0647: ' + (x.nv ? Math.round(x.nv * 100) + '%' : '\u0646\u0627\u0645\u0639\u0644\u0648\u0645') + ' | \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u062f\u0644 \u0627\u067e: ' + (x.mp ? x.mp + '%' + (x.src == 'pt' ? ' (PrimaTips + \u0645\u062f\u0644 \u062e\u0648\u062f\u0645)' : ' (\u0645\u062f\u0644 \u0622\u0645\u0627\u0631\u06cc)') : '\u0646\u062f\u0627\u0634\u062a') + '\n';
+  if (x.cl) t += '\u0636\u0631\u06cc\u0628 \u0644\u062d\u0638\u0647 \u0634\u0631\u0648\u0639: ' + x.cl.toFixed(2) + ' (CLV ' + ((x.odd / x.cl - 1) * 100).toFixed(1) + '%)\n';
+  if (x.ctr) t += '\u0627\u06cc\u0646 \u0634\u0631\u0637 \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u0628\u0627\u0632\u0627\u0631 \u0628\u0648\u062f.\n';
+  if (b.note) t += '\u062f\u0644\u06cc\u0644 \u0645\u0646 \u0645\u0648\u0642\u0639 \u0628\u0633\u062a\u0646: ' + b.note + '\n';
+  t += '\n\u0633\u0624\u0627\u0644\u200c\u0647\u0627:\n1. \u0686\u0647 \u0627\u062a\u0641\u0627\u0642\u200c\u0647\u0627\u06cc \u06a9\u0644\u06cc\u062f\u06cc \u0628\u0627\u0639\u062b \u0627\u06cc\u0646 \u0646\u062a\u06cc\u062c\u0647 \u0634\u062f\u061f (\u06af\u0644\u200c\u0647\u0627 \u0648 \u062f\u0642\u06cc\u0642\u0647\u200c\u0634\u0648\u0646\u060c \u06a9\u0627\u0631\u062a \u0642\u0631\u0645\u0632\u060c \u067e\u0646\u0627\u0644\u062a\u06cc\u060c \u0645\u0635\u062f\u0648\u0645\u06cc\u062a\u060c \u062a\u0639\u0648\u06cc\u0636\u060c VAR)\n2. \u0628\u0627 \u0627\u0637\u0644\u0627\u0639\u0627\u062a\u06cc \u06a9\u0647 \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0628\u0648\u062f (\u0641\u0631\u0645\u060c \u063a\u0627\u06cc\u0628\u200c\u0647\u0627\u060c \u062a\u0631\u06a9\u06cc\u0628\u060c \u0627\u0646\u06af\u06cc\u0632\u0647\u060c \u062c\u062f\u0648\u0644\u060c \u0622\u0645\u0627\u0631 \u06af\u0644) \u0627\u06cc\u0646 \u0646\u062a\u06cc\u062c\u0647 \u0686\u0642\u062f\u0631 \u0642\u0627\u0628\u0644 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc \u0628\u0648\u062f\u061f\n3. \u0627\u06cc\u0631\u0627\u062f \u0627\u0632 \u0645\u062f\u0644 \u0648 \u062a\u062d\u0644\u06cc\u0644 \u0628\u0648\u062f \u06cc\u0627 \u0628\u0627\u0632\u06cc \u0648\u0627\u0642\u0639\u0627\u064b \u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc \u0628\u0648\u062f\u061f\n4. \u0627\u06af\u0647 \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 \u0628\u0648\u062f\u060c \u06a9\u062f\u0648\u0645 \u0639\u0627\u0645\u0644 \u0631\u0648 \u0645\u062f\u0644 \u06a9\u0645 \u06cc\u0627 \u0632\u06cc\u0627\u062f \u0648\u0632\u0646 \u062f\u0627\u062f\u0647\u061f\n\n';
+  t += '\u062c\u0648\u0627\u0628 \u0631\u0648 \u062f\u0642\u06cc\u0642\u0627\u064b \u0628\u0627 \u0647\u0645\u06cc\u0646 \u0642\u0627\u0644\u0628 \u0648 \u062d\u062f\u0627\u06a9\u062b\u0631 \u06f8 \u062e\u0637 \u0628\u062f\u0647:\n\u062d\u06a9\u0645: \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 / \u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc / \u062a\u0631\u06a9\u06cc\u0628\u06cc\n\u0627\u0637\u0645\u06cc\u0646\u0627\u0646: ..%\n\u0639\u0644\u062a \u0627\u0635\u0644\u06cc: ...\n\u0627\u062a\u0641\u0627\u0642 \u06a9\u0644\u06cc\u062f\u06cc \u0628\u0627\u0632\u06cc: ...\n\u0639\u0627\u0645\u0644\u06cc \u06a9\u0647 \u0645\u062f\u0644 \u0628\u0627\u06cc\u062f \u0627\u0636\u0627\u0641\u0647 \u06cc\u0627 \u0627\u0635\u0644\u0627\u062d \u06a9\u0646\u0647: ...\n\u0628\u0627\u0632\u0627\u0631 \u0628\u0647\u062a\u0631 \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc: ...\n\u062f\u0631\u0633 \u0628\u0631\u0627\u06cc \u062f\u0641\u0639\u0647 \u0628\u0639\u062f: ...';
+  return t;
+}
+function rvKey(o) { return o.b.id + '_' + o.j; }
+function rvVd(a) { a = String(a || ''); if (!a) return ''; var m = /\u062d\u06a9\u0645\s*[:\uff1a]?\s*([^\n]+)/.exec(a), t = m ? m[1] : a; if (/\u062a\u0631\u06a9\u06cc\u0628\u06cc|mixed/i.test(t)) return '\u2696\ufe0f'; if (/\u0627\u06cc\u0631\u0627\u062f\s*(\u0627\u0632\s*)?\u0645\u062f\u0644|model/i.test(t)) return '\ud83d\udee0'; if (/\u063a\u06cc\u0631\s*\u0642\u0627\u0628\u0644|\u0628\u062f\u0634\u0627\u0646\u0633\u06cc|unpredict/i.test(t)) return '\ud83c\udfb2'; return '\ud83d\udcdd'; }
+function rvCopy(bid, j) { var o = null; rvList().forEach(function (z) { if (z.b.id == bid && z.j == j) o = z; }); if (!o) return; try { Android.setClip(rvQ(o.b, o.x)); toast('\ud83d\udccb \u0633\u0624\u0627\u0644 \u06a9\u067e\u06cc \u0634\u062f\u060c \u0628\u062f\u0647 \u0628\u0647 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc'); } catch (e) { prompt('\u06a9\u067e\u06cc \u06a9\u0646:', rvQ(o.b, o.x)); } }
+function rvSet(bid, j, v) {
+  BETS.forEach(function (b) { if (b.id != bid || !b.sel[j]) return; var x = b.sel[j]; v = String(v || '').trim(); if (v) { x.rv = { a: v.slice(0, 3000), t: Date.now(), bt: x.rv && x.rv.bt ? x.rv.bt : 0 }; } else delete x.rv; });
+  sv(pk('bets'), BETS);
+}
+function rvPaste(bid, j) {
+  var t = ''; try { t = Android.clip(); } catch (e) { t = ''; }
+  if (!t) { t = prompt('\u062c\u0648\u0627\u0628 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc \u0631\u0648 \u0627\u06cc\u0646\u062c\u0627 Paste \u06a9\u0646:', ''); if (!t) return; }
+  rvSet(bid, j, t); renderBets(); toast('\u2705 \u062c\u0648\u0627\u0628 \u0630\u062e\u06cc\u0631\u0647 \u0634\u062f');
+}
+function rvEdit(bid, j) {
+  var cur = ''; BETS.forEach(function (b) { if (b.id == bid && b.sel[j] && b.sel[j].rv) cur = b.sel[j].rv.a; });
+  var t = prompt('\u062c\u0648\u0627\u0628 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc (\u0648\u06cc\u0631\u0627\u06cc\u0634 \u06cc\u0627 \u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646):', cur); if (t === null) return; rvSet(bid, j, t); renderBets();
+}
+function rvDone() { return rvList().filter(function (o) { return o.x.rv && o.x.rv.a && !o.x.rv.bt; }); }
+function rvAll() {
+  var L = rvDone().slice(0, 20); if (!L.length) return '';
+  var c = { m: 0, u: 0, x: 0 };
+  var t = '\u062a\u0648 \u06cc\u0647 \u062a\u062d\u0644\u06cc\u0644\u06af\u0631 \u0627\u0631\u0634\u062f \u0645\u062f\u0644\u200c\u0647\u0627\u06cc \u0622\u0645\u0627\u0631\u06cc \u0634\u0631\u0637\u200c\u0628\u0646\u062f\u06cc \u0641\u0648\u062a\u0628\u0627\u0644 \u0647\u0633\u062a\u06cc. \u067e\u0627\u06cc\u06cc\u0646 ' + L.length + ' \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc \u0628\u0627\u062e\u062a\u0647 \u0645\u0646 \u0647\u0633\u062a\u060c \u0647\u0631 \u06a9\u062f\u0648\u0645 \u0628\u0627 \u0627\u0637\u0644\u0627\u0639\u0627\u062a \u0634\u0631\u0637 \u0648 \u062a\u062d\u0644\u06cc\u0644\u06cc \u06a9\u0647 \u0642\u0628\u0644\u0627\u064b \u06cc\u0647 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc \u062f\u0631\u0628\u0627\u0631\u0647 \u0639\u0644\u062a \u0628\u0627\u062e\u062a\u0634 \u062f\u0627\u062f\u0647. \u0627\u067e \u0645\u0646 \u0628\u0627 \u0645\u062f\u0644 \u067e\u0648\u0627\u0633\u0648\u0646 Dixon-Coles \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647 (\u0641\u0631\u0645 \u06f1\u06f0 \u062a\u0627 \u06f1\u06f2 \u0628\u0627\u0632\u06cc \u0628\u0627 \u0648\u0632\u0646 \u06a9\u0627\u0647\u0634\u06cc\u060c \u0642\u062f\u0631\u062a \u062d\u0631\u06cc\u0641 \u0627\u0632 \u062c\u062f\u0648\u0644\u060c \u0622\u0645\u0627\u0631 \u062e\u0648\u0646\u0647 \u0648 \u0628\u06cc\u0631\u0648\u0646\u060c \u0631\u0648\u062f\u0631\u0631\u0648\u060c \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644 \u0644\u06cc\u06af\u060c \u06f7\u06f5\u066a \u0645\u062f\u0644 \u062e\u0648\u062f\u0645 + \u06f2\u06f5\u066a \u062f\u0631\u0635\u062f\u0647\u0627\u06cc PrimaTips\u060c \u0648 \u0628\u0631\u0627\u06cc \u0628\u0639\u0636\u06cc \u0628\u0627\u0632\u0627\u0631\u0647\u0627 \u06a9\u0634\u0634 \u06f5\u06f0\u066a \u0628\u0647 \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631).\n\n';
+  L.forEach(function (o, i) {
+    var x = o.x, v = rvVd(x.rv.a); if (v == '\ud83d\udee0') c.m++; else if (v == '\ud83c\udfb2') c.u++; else if (v == '\u2696\ufe0f') c.x++;
+    t += '--- ' + (i + 1) + ') ' + x.home + ' - ' + x.away + (lgPlain(x.lg) ? ' | ' + lgPlain(x.lg) : '') + '\n';
+    t += '\u0634\u0631\u0637: ' + x.pick + ' @' + x.odd.toFixed(2) + ' | ' + (o.b.sel.length > 1 ? '\u0645\u06cc\u06a9\u0633' : '\u062a\u06a9\u06cc') + ' | \u0646\u062a\u06cc\u062c\u0647 ' + (x.score || '?') + ' | \u0645\u0646 ' + (x.my ? x.my + '%' : '-') + ' | \u0628\u0627\u0632\u0627\u0631 ' + (x.nv ? Math.round(x.nv * 100) + '%' : '-') + ' | \u0645\u062f\u0644 ' + (x.mp ? x.mp + '%' : '-') + '\n';
+    t += '\u062a\u062d\u0644\u06cc\u0644: ' + String(x.rv.a).replace(/\s*\n\s*/g, ' | ').slice(0, 600) + '\n';
+  });
+  t += '\n\u062e\u0644\u0627\u0635\u0647 \u062d\u06a9\u0645\u200c\u0647\u0627: \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 ' + c.m + '\u060c \u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc ' + c.u + '\u060c \u062a\u0631\u06a9\u06cc\u0628\u06cc ' + c.x + '.\n\n';
+  t += '\u06a9\u0627\u0631\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0645\u06cc\u200c\u062e\u0648\u0627\u0645:\n1. \u0627\u0644\u06af\u0648\u0647\u0627\u06cc \u062a\u06a9\u0631\u0627\u0631\u06cc \u0631\u0648 \u067e\u06cc\u062f\u0627 \u06a9\u0646: \u06a9\u062f\u0648\u0645 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u060c \u0644\u06cc\u06af\u200c\u0647\u0627\u060c \u0628\u0627\u0632\u0647 \u0636\u0631\u06cc\u0628 \u0648 \u0628\u0627\u0632\u0647 \u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u06cc\u0634\u062a\u0631\u06cc\u0646 \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 \u0631\u0648 \u062f\u0627\u0634\u062a\u0646\u061f\n2. \u062c\u062f\u0627 \u06a9\u0646 \u0686\u0646\u062f \u062a\u0627 \u0648\u0627\u0642\u0639\u0627\u064b \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 \u0628\u0648\u062f\u0647 \u0648 \u0686\u0646\u062f \u062a\u0627 \u0628\u062f\u0634\u0627\u0646\u0633\u06cc \u0637\u0628\u06cc\u0639\u06cc (\u0628\u0627 \u062a\u0648\u062c\u0647 \u0628\u0647 \u0627\u062d\u062a\u0645\u0627\u0644\u200c\u0647\u0627\u060c \u0628\u0627\u062e\u062a\u0646 \u06cc\u0647 \u0634\u0631\u0637 \u06f6\u06f0\u066a \u0639\u0627\u062f\u06cc\u0647).\n3. \u0627\u062d\u062a\u0645\u0627\u0644\u200c\u0647\u0627\u06cc \u0645\u0646 \u0648 \u0645\u062f\u0644 \u0646\u0633\u0628\u062a \u0628\u0647 \u0628\u0627\u0632\u0627\u0631 \u0628\u06cc\u0634\u200c\u0627\u0632\u062d\u062f \u062e\u0648\u0634\u200c\u0628\u06cc\u0646 \u0628\u0648\u062f\u0646 \u06cc\u0627 \u0646\u0647\u061f \u0628\u0627 \u0639\u062f\u062f \u0628\u06af\u0648.\n4. \u067e\u06cc\u0634\u0646\u0647\u0627\u062f \u0639\u062f\u062f\u06cc \u0628\u0631\u0627\u06cc \u062a\u0646\u0638\u06cc\u0645 \u0645\u062f\u0644 \u0628\u062f\u0647: \u0648\u0632\u0646 \u0645\u0632\u06cc\u062a \u062e\u0648\u0646\u0647\u060c \u0645\u06cc\u0632\u0627\u0646 \u06a9\u0634\u0634 \u0628\u0647 \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0628\u0627\u0632\u0627\u0631\u060c \u0633\u0642\u0641 \u0627\u062d\u062a\u0645\u0627\u0644\u060c \u062d\u062f\u0627\u0642\u0644 EV \u0648 \u062d\u062f\u0627\u0642\u0644 \u0641\u0627\u0635\u0644\u0647 \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0628\u0627\u0632\u0627\u0631\u060c \u0648 \u0647\u0631 \u0639\u0627\u0645\u0644 \u062c\u062f\u06cc\u062f\u06cc \u06a9\u0647 \u0628\u0627\u06cc\u062f \u0627\u0636\u0627\u0641\u0647 \u0628\u0634\u0647.\n5. \u062d\u062f\u0627\u06a9\u062b\u0631 \u06f5 \u0642\u0627\u0646\u0648\u0646 \u0645\u0634\u062e\u0635 \u0648 \u0642\u0627\u0628\u0644 \u0627\u062c\u0631\u0627 \u0628\u0631\u0627\u06cc \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u0628\u0639\u062f\u06cc \u0628\u0646\u0648\u06cc\u0633.\n\u062c\u0648\u0627\u0628 \u0631\u0648 \u0645\u0631\u062a\u0628\u060c \u0628\u0627 \u062a\u06cc\u062a\u0631 \u0648 \u06a9\u0648\u062a\u0627\u0647 \u0628\u062f\u0647.';
+  return t;
+}
+function rvAllCopy() { var t = rvAll(); if (!t) return; try { Android.setClip(t); toast('\ud83d\udccb \u0622\u0646\u0627\u0644\u06cc\u0632 \u06a9\u0644\u06cc \u06a9\u067e\u06cc \u0634\u062f'); } catch (e) { prompt('\u06a9\u067e\u06cc \u06a9\u0646:', t); } }
+function rvArch() {
+  var L = rvDone().slice(0, 20); if (!L.length) return;
+  if (!confirm('\u0627\u06cc\u0646 ' + L.length + ' \u0628\u0631\u0631\u0633\u06cc \u0628\u0627\u06cc\u06af\u0627\u0646\u06cc \u0628\u0634\u0646 \u062a\u0627 \u062f\u0633\u062a\u0647 \u0628\u0639\u062f\u06cc \u0627\u0632 \u0635\u0641\u0631 \u0634\u0631\u0648\u0639 \u0628\u0634\u0647\u061f (\u067e\u0627\u06a9 \u0646\u0645\u06cc\u0634\u0646)')) return;
+  RVB++; sv('rvb', RVB); L.forEach(function (o) { o.x.rv.bt = RVB; }); sv(pk('bets'), BETS); renderBets();
+}
+function rvTog() { RVO = !RVO; renderBets(); }
+function rvBox() {
+  var L = rvList(), done = rvDone(), todo = L.filter(function (o) { return !o.x.rv || !o.x.rv.a; });
+  if (!L.length) return '';
+  var h = '<div class="box"><div class="row" onclick="rvTog()"><b>' + (RVO ? '\u25be ' : '\u25b8 ') + '\ud83d\udd0d \u0628\u0631\u0631\u0633\u06cc \u0628\u0627\u062e\u062a\u200c\u0647\u0627</b><span class="mut">' + fa(done.length) + ' \u0627\u0632 \u06f2\u06f0 \u062a\u062d\u0644\u06cc\u0644\u200c\u0634\u062f\u0647 | ' + fa(todo.length) + ' \u0645\u0646\u062a\u0638\u0631</span></div>';
+  if (done.length >= 20) h += '<div class="note" style="white-space:normal">\ud83c\udfaf \u0628\u0647 \u06f2\u06f0 \u0628\u0631\u0631\u0633\u06cc \u0631\u0633\u06cc\u062f\u06cc! \u0622\u0646\u0627\u0644\u06cc\u0632 \u06a9\u0644\u06cc \u0631\u0648 \u06a9\u067e\u06cc \u06a9\u0646 \u0648 \u0628\u062f\u0647 \u0628\u0647 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc \u062a\u0627 \u0628\u06af\u0647 \u0627\u06cc\u0631\u0627\u062f \u0627\u0632 \u06a9\u062c\u0627\u06cc \u0645\u062f\u0644\u0647.<div class="quick" style="margin-top:6px"><button onclick="rvAllCopy()">\ud83d\udce6 \u06a9\u067e\u06cc \u0622\u0646\u0627\u0644\u06cc\u0632 \u06a9\u0644\u06cc \u06f2\u06f0 \u0628\u0627\u0632\u06cc</button><button onclick="rvArch()">\ud83d\uddc2 \u0628\u0627\u06cc\u06af\u0627\u0646\u06cc \u0648 \u0634\u0631\u0648\u0639 \u062f\u0633\u062a\u0647 \u0628\u0639\u062f</button></div></div>';
+  if (!RVO) return h + '</div>';
+  h += '<div class="mut" style="line-height:1.9;margin-top:6px">\u0628\u0631\u0627\u06cc \u0647\u0631 \u0628\u0627\u062e\u062a: \u00ab\ud83d\udccb \u06a9\u067e\u06cc \u0633\u0624\u0627\u0644\u00bb \u0631\u0648 \u0628\u0632\u0646\u060c \u062a\u0648 \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc Paste \u06a9\u0646\u060c \u062c\u0648\u0627\u0628\u0634 \u0631\u0648 \u06a9\u067e\u06cc \u06a9\u0646 \u0648 \u00ab\ud83d\udce5 \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u062c\u0648\u0627\u0628\u00bb \u0631\u0648 \u0628\u0632\u0646. \ud83d\udee0 \u0627\u06cc\u0631\u0627\u062f \u0645\u062f\u0644 | \ud83c\udfb2 \u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc | \u2696\ufe0f \u062a\u0631\u06a9\u06cc\u0628\u06cc</div>';
+  if (done.length && done.length < 20) h += '<div class="quick" style="margin-top:6px"><button onclick="rvAllCopy()">\ud83d\udce6 \u06a9\u067e\u06cc \u0622\u0646\u0627\u0644\u06cc\u0632 \u06a9\u0644\u06cc \u0647\u0645\u06cc\u0646 ' + fa(done.length) + ' \u062a\u0627 (\u0632\u0648\u062f\u062a\u0631 \u0627\u0632 \u06f2\u06f0)</button></div>';
+  L.slice(0, 40).forEach(function (o) {
+    var x = o.x, a = x.rv && x.rv.a, vd = rvVd(a), arch = x.rv && x.rv.bt;
+    h += '<div class="sl"><div class="row"><span class="ltr">' + esc(x.home) + ' - ' + esc(x.away) + ' (' + esc(x.score || '?') + ')</span><span>' + (arch ? '\ud83d\uddc2' : (vd || '\u23f3')) + '</span></div>' +
+      '<div class="row"><span>\u274c ' + esc(pl(x)) + '</span><b class="ltr">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + (x.my ? ' | \u0645\u0646 ' + fa(x.my) + '\u066a' : '') + (x.nv ? ' | \u0628\u0627\u0632\u0627\u0631 ' + pct(x.nv) : '') + '</div>';
+    if (a) h += '<div class="note" style="white-space:pre-wrap;max-height:160px;overflow:auto">' + esc(a) + '</div>';
+    h += '<div class="quick" style="margin-top:4px"><button onclick="rvCopy(\'' + o.b.id + '\',' + o.j + ')">\ud83d\udccb \u06a9\u067e\u06cc \u0633\u0624\u0627\u0644</button><button onclick="rvPaste(\'' + o.b.id + '\',' + o.j + ')">\ud83d\udce5 \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u062c\u0648\u0627\u0628</button>' + (a ? '<button onclick="rvEdit(\'' + o.b.id + '\',' + o.j + ')">\u270f\ufe0f</button>' : '') + '</div></div>';
+  });
+  return h + '</div>';
+}
+function renderBets() {
+  var el = $('bets');
+  if (!BETS.length) { el.innerHTML = '<div class="empty">\u0647\u0646\u0648\u0632 \u0634\u0631\u0637\u06cc \u062a\u0648 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + esc(pn()) + '\u00bb \u0646\u0628\u0633\u062a\u06cc</div>'; return; }
+  var s = stats(), pr = r2(s.ret - s.stk), rate = (s.w + s.l) ? Math.round(s.w * 100 / (s.w + s.l)) : 0;
+  var h = '<div class="box"><b>\ud83d\udcca \u0622\u0645\u0627\u0631 ' + esc(pn()) + '</b><div class="grid" style="margin-top:8px">' +
+    cell('\u06a9\u0644 \u0634\u0631\u0637\u200c\u0647\u0627', fa(s.n)) + cell('\u062f\u0631\u0635\u062f \u0628\u0631\u062f', fa(rate) + '\u066a', rate >= 50 ? 'var(--green)' : 'var(--red)') +
+    cell('\u0628\u0631\u062f\u0647', fa(s.w), 'var(--green)') + cell('\u0628\u0627\u062e\u062a\u0647', fa(s.l), 'var(--red)') +
+    cell('\u062f\u0631 \u0627\u0646\u062a\u0638\u0627\u0631', fa(s.p), 'var(--gold)') + cell('\u0644\u063a\u0648 \u0634\u062f\u0647', fa(s.v)) +
+    cell('\u0645\u062c\u0645\u0648\u0639 \u0634\u0631\u0637', fc(s.stk)) + cell('\u0645\u062c\u0645\u0648\u0639 \u0628\u0631\u062f', fc(s.ret)) +
+    cell('\u0633\u0648\u062f / \u0632\u06cc\u0627\u0646', (pr > 0 ? '+' : '') + fc(pr), pr >= 0 ? 'var(--green)' : 'var(--red)') + cell('\u0628\u0627\u0632\u062f\u0647 \u0633\u0631\u0645\u0627\u06cc\u0647', s.stk ? ((pr >= 0 ? '+' : '') + Math.round(pr * 100 / s.stk) + '\u066a') : '-') + cell('\u0628\u06cc\u0634\u062a\u0631\u06cc\u0646 \u0628\u0631\u062f', fc(s.big)) +
+    cell('\u0628\u0627\u0644\u0627\u062a\u0631\u06cc\u0646 \u0636\u0631\u06cc\u0628 \u0628\u0631\u062f\u0647', s.bigOdd ? s.bigOdd.toFixed(2) : '-') + cell('\u062a\u06a9\u06cc / \u0645\u06cc\u06a9\u0633 \u0628\u0631\u062f\u0647', fa(s.sw) + ' \u0627\u0632 ' + fa(s.sn) + ' / ' + fa(s.mw) + ' \u0627\u0632 ' + fa(s.mn)) +
+    '</div></div>';
+  h += marketTable();
+  h += rvBox();
+  h += shCard();
+  h += calib();
+  h += mdlCard();
+  h += '<div class="leagues">' + chip('\u0647\u0645\u0647', BF == 'all', "pickBF('all')", 'sm') + chip('\u23f3 \u062f\u0631 \u0627\u0646\u062a\u0638\u0627\u0631', BF == 'p', "pickBF('p')", 'sm') +
+    chip('\u2705 \u0628\u0631\u062f\u0647', BF == 'w', "pickBF('w')", 'sm') + chip('\u274c \u0628\u0627\u062e\u062a\u0647', BF == 'l', "pickBF('l')", 'sm') + '</div>';
+  var list = BETS.filter(function (b) { return BF == 'all' || b.st == BF; });
+  if (!list.length) h += '<div class="empty">\u0634\u0631\u0637\u06cc \u0628\u0627 \u0627\u06cc\u0646 \u0648\u0636\u0639\u06cc\u062a \u0646\u062f\u0627\u0631\u06cc</div>';
+  list.forEach(function (b) {
+    var st = { p: ['p', '\u062f\u0631 \u0627\u0646\u062a\u0638\u0627\u0631'], w: ['w', '\u0628\u0631\u0646\u062f\u0647 \ud83c\udf89'], l: ['l', '\u0628\u0627\u0632\u0646\u062f\u0647'], v: ['p', '\u0644\u063a\u0648 \u0634\u062f'] }[b.st];
+    h += '<div class="box"><div class="row"><b>' + (b.sel.length > 1 ? '\u0645\u06cc\u06a9\u0633 ' + fmt(b.sel.length) + ' \u062a\u0627\u06cc\u06cc' : '\u062a\u06a9\u06cc') + '</b><span class="st ' + st[0] + '">' + st[1] + '</span></div>';
+    b.sel.forEach(function (x, j) {
+      var ic = { p: '\u23f3', w: '\u2705', l: '\u274c', v: '\u21a9\ufe0f' }[x.res];
+      var clv = x.cl ? (x.odd / x.cl - 1) * 100 : null, nst = new Date(x.time).getTime() > Date.now();
+      var inf = (x.man ? '\u270d\ufe0f \u062f\u0633\u062a\u06cc | ' : '') + (x.my ? '\u0645\u0646 ' + fa(x.my) + '\u066a | ' : '') + (x.nv ? '\u0628\u0627\u0632\u0627\u0631 ' + pct(x.nv) + ' | ' : '') +
+        (x.cl ? '\u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc <span class="ltr">' + x.cl.toFixed(2) + '</span> (CLV <b class="ltr" style="color:' + (clv >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (clv >= 0 ? '+' : '') + clv.toFixed(1) + '\u066a</b>)' : '\u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u062b\u0628\u062a \u0646\u0634\u062f\u0647');
+      h += '<div class="sl"><div class="row"><span class="ltr mut">' + esc(x.home) + ' - ' + esc(x.away) + (x.score ? ' (' + esc(x.score) + ')' : liveTxt(x)) + '</span><span>' + ic + '</span></div>' +
+        '<div class="row"><span>' + esc(pl(x)) + '</span><b class="ltr">' + x.odd.toFixed(2) + '</b></div><div class="mut">' + tm(x.time) + '</div>' +
+        '<div class="mut">' + inf + '</div>' + (x.ctr ? '<div class="warn">\u26a0\ufe0f \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u0628\u0627\u0632\u0627\u0631 \u0628\u0633\u062a\u0647 \u0634\u062f</div>' : '') +
+        '<div>' + (x.res == 'p' && nst && !x.man ? '<span class="lnk" onclick="fetchCL(\'' + b.id + '\',' + j + ')">\ud83d\udcc8 \u0636\u0631\u06cc\u0628 \u0627\u0644\u0627\u0646 (\u06f1 \u0627\u0639\u062a\u0628\u0627\u0631)</span>' : '') +
+        (x.res == 'p' && new Date(x.time).getTime() + 150 * 60000 < Date.now() ? '<span class="lnk" onclick="manRes(\'' + b.id + '\',' + j + ')">\u270d\ufe0f \u062b\u0628\u062a \u0646\u062a\u06cc\u062c\u0647 \u062f\u0633\u062a\u06cc</span> ' : '') +
+        '<span class="lnk" onclick="setCL(\'' + b.id + '\',' + j + ')">\u270d\ufe0f \u0636\u0631\u06cc\u0628 \u0646\u0647\u0627\u06cc\u06cc \u062f\u0633\u062a\u06cc</span></div></div>';
+    });
+    var amt = b.st == 'l' ? '\u06f0' : (b.st == 'p' ? fc(b.stake * b.odd) : '+' + fc(b.win));
+    h += '<div class="row"><span class="mut">\u0645\u0628\u0644\u063a ' + fc(b.stake) + ' | \u0636\u0631\u06cc\u0628 ' + b.odd.toFixed(2) + '</span><b style="color:' + (b.st == 'l' ? 'var(--red)' : 'var(--green)') + '">' + amt + '</b></div>';
+    if (b.note) h += '<div class="note">\ud83d\udcdd <b>\u0686\u0631\u0627 \u0628\u0633\u062a\u0645:</b> ' + esc(b.note) + '</div>';
+    if (b.lesson) h += '<div class="note" style="border-right:3px solid var(--gold)">\ud83d\udcda <b>\u062f\u0631\u0633 \u0628\u0639\u062f \u0628\u0627\u0632\u06cc:</b> ' + esc(b.lesson) + '</div>';
+    h += '<div class="row" style="justify-content:space-around"><span class="more" onclick="editNote(\'' + b.id + '\',\'note\')">\u270f\ufe0f \u06cc\u0627\u062f\u062f\u0627\u0634\u062a</span>' +
+      ((b.st == 'w' || b.st == 'l') ? '<span class="more" onclick="editNote(\'' + b.id + '\',\'lesson\')">\ud83d\udcda \u062f\u0631\u0633 \u0628\u0639\u062f \u0628\u0627\u0632\u06cc</span>' : '') + '<button class="delbtn" onclick="delBet(\'' + b.id + '\')">\ud83d\uddd1\ufe0f \u062d\u0630\u0641 \u0634\u0631\u0637</button></div>';
+    if (needCheck(b, Date.now())) h += '<div class="more" onclick="checkResults(\'' + b.id + '\')">\ud83d\udd04 \u0686\u06a9 \u0646\u062a\u06cc\u062c\u0647 \u0647\u0645\u06cc\u0646 \u0634\u0631\u0637</div>';
+    h += '</div>';
+  });
+  el.innerHTML = h;
+}
+
+/* ---------- percent calculator (update 19) ---------- */
+var C = ld('calc', null) || {};
+(function () { var d = { tl: 2.5, ts: 'O', tv: '', ht: 1, hl: 0, hv: '', md: 'p', vk: 'T:O:2.5', vo: '', bs: 'Y', bt: 1, bv: '' }; for (var k in d) if (C[k] === undefined) C[k] = d[k]; })();
+var CT = null, CD = null;
+function cSet(k, v) { C[k] = v; if (k == 'ts' || k == 'tl') C.vk = 'T:' + C.ts + ':' + C.tl; else if (k == 'ht' || k == 'hl') C.vk = 'H:' + C.ht + ':' + C.hl; else if (k == 'bs') C.vk = v == 'X' ? 'X:0' : 'B:' + v; sv('calc', C); renderCalc(); }
+function cIn(k, el) { C[k] = el.value; sv('calc', C); calcRes(); }
+function pois(l, k) { var p = Math.exp(-l); for (var i = 1; i <= k; i++) p *= l / i; return p; }
+function pv(l) { var a = [], i; for (i = 0; i <= 20; i++) a.push(pois(l, i)); return a; }
+function tri(w, pu) { return [w, pu, Math.max(0, 1 - w - pu)]; }
+function ctot(T, L, s) { var a = pv(T), w = 0, pu = 0; for (var k = 0; k < a.length; k++) { var r = s == 'O' ? k - L : L - k; if (r > 1e-9) w += a[k]; else if (r > -1e-9) pu += a[k]; } return tri(w, pu); }
+function chcp(lh, la, t, L) { var a = pv(lh), b = pv(la), w = 0, pu = 0; for (var i = 0; i < a.length; i++) for (var j = 0; j < b.length; j++) { var r = (t == 1 ? i - j : j - i) + L, p = a[i] * b[j]; if (r > 1e-9) w += p; else if (r > -1e-9) pu += p; } return tri(w, pu); }
+function ceq(r) { return r[0] + r[2] > 0 ? r[0] / (r[0] + r[2]) : 0; }
+function cfo(r) { return r[0] > 0 ? 1 + r[2] / r[0] : 0; }
+function bis(f, q, lo, hi) { var a = lo, b = hi; for (var i = 0; i < 70; i++) { var m = (a + b) / 2; if (f(m) < q) a = m; else b = m; } var x = (a + b) / 2; return Math.abs(f(x) - q) < 0.003 ? x : null; }
+function cP(v) { var x = num(String(v || '').replace(/[%\u066a\s]/g, '')); if (!(x > 0)) return null; if (C.md == 'o') return x > 1 ? 1 / x : null; return x < 100 ? x / 100 : null; }
+function pc(q) { return fa(Math.round(q * 1000) / 10) + '\u066a'; }
+function fo2(o) { return o > 0 && o < 100 ? fc(o) : '-'; }
+function lnm(L) { return '\u200e' + fa(L) + '\u200e'; }
+function cSplit(T) { return CD === null ? [T / 2, T / 2] : [(T + CD) / 2, (T - CD) / 2]; }
+function cMk(k) {
+  var p = k.split(':'), T = CT || 2.6, s = cSplit(T);
+  if (p[0] == 'T') return ctot(T, +p[2], p[1]);
+  if (p[0] == 'H') return chcp(s[0], s[1], +p[1], +p[2]);
+  if (p[0] == 'B') { var y = (1 - Math.exp(-s[0])) * (1 - Math.exp(-s[1])); return p[1] == 'Y' ? [y, 0, 1 - y] : [1 - y, 0, y]; }
+  if (p[0] == 'X') { var d = chcp(s[0], s[1], 1, 0); return [d[1], 0, 1 - d[1]]; }
+  if (p[0] == 'D') { var h = chcp(s[0], s[1], 1, 0); var w = p[1] == '1X' ? h[0] + h[1] : (p[1] == 'X2' ? h[2] + h[1] : h[0] + h[2]); return [w, 0, 1 - w]; }
+  return [0, 0, 1];
+}
+function cOpts() {
+  var o = [], i;
+  for (i = 0; i < TLN.length; i++) { o.push(['T:O:' + TLN[i], '\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 ' + lnm(TLN[i]) + ' \u06af\u0644']); o.push(['T:U:' + TLN[i], '\u06a9\u0645\u062a\u0631 \u0627\u0632 ' + lnm(TLN[i]) + ' \u06af\u0644']); }
+  for (i = 0; i < HLN.length; i++) o.push(['H:1:' + HLN[i], '\u0645\u06cc\u0632\u0628\u0627\u0646 ' + hsg(HLN[i])]);
+  for (i = 0; i < HLN.length; i++) o.push(['H:2:' + HLN[i], '\u0645\u0647\u0645\u0627\u0646 ' + hsg(HLN[i])]);
+  o.push(['X:0', '\u0645\u0633\u0627\u0648\u06cc (X)'], ['D:1X', '\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 1X'], ['D:X2', '\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 X2'], ['D:12', '\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 12'], ['B:Y', '\u06af\u0644 \u0632\u062f\u0646 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645: \u0628\u0644\u0647'], ['B:N', '\u06af\u0644 \u0632\u062f\u0646 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645: \u062e\u06cc\u0631']);
+  return o;
+}
+function renderCalc() {
+  var md = C.md == 'o', u = md ? '\u0636\u0631\u06cc\u0628 (\u0645\u062b\u0644\u0627\u064b \u06f1.\u06f4\u06f5)' : '\u062f\u0631\u0635\u062f (\u0645\u062b\u0644\u0627\u064b \u06f8\u06f6)';
+  var h = '<div class="box"><b>\ud83e\uddee \u0645\u0627\u0634\u06cc\u0646\u200c\u062d\u0633\u0627\u0628 \u062f\u0631\u0635\u062f</b><div class="mut" style="line-height:1.9;margin-top:4px">\u062f\u0631\u0635\u062f \u06cc\u0627 \u0636\u0631\u06cc\u0628 \u06cc\u0647 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u0628\u062f\u0647\u060c \u0628\u0642\u06cc\u0647 \u062e\u0637\u200c\u0647\u0627 \u0631\u0648 \u062d\u0633\u0627\u0628 \u0645\u06cc\u200c\u06a9\u0646\u0647 (\u0645\u062f\u0644 \u067e\u0648\u0627\u0633\u0648\u0646). \u0628\u0631\u0627\u06cc \u062e\u0637 \u06a9\u0627\u0645\u0644 (\u06f0\u060c \u06f1\u060c \u06f2) \u062f\u0631\u0635\u062f \u06cc\u0639\u0646\u06cc \u0628\u062f\u0648\u0646 \u062d\u0627\u0644\u062a \u0628\u0631\u06af\u0634\u062a\u060c \u0647\u0645\u0648\u0646 \u06f1 \u062a\u0642\u0633\u06cc\u0645 \u0628\u0631 \u0636\u0631\u06cc\u0628.</div>';
+  h += '<div class="lbl">\u0648\u0631\u0648\u062f\u06cc \u0628\u0647 \u0634\u06a9\u0644</div>' + chip('\u062f\u0631\u0635\u062f \u066a', !md, "cSet('md','p')", 'sm') + ' ' + chip('\u0636\u0631\u06cc\u0628', md, "cSet('md','o')", 'sm') + '</div>';
+  h += '<div class="box"><b>\u26bd \u0645\u062c\u0645\u0648\u0639 \u06af\u0644</b><div class="lbl">\u0637\u0631\u0641</div>' + chip('Over (\u0628\u06cc\u0634\u062a\u0631)', C.ts == 'O', "cSet('ts','O')", 'sm') + ' ' + chip('Under (\u06a9\u0645\u062a\u0631)', C.ts == 'U', "cSet('ts','U')", 'sm');
+  h += '<div class="lbl">\u062e\u0637</div><div class="leagues" style="padding:0">';
+  for (var i = 0; i < TLN.length; i++) h += chip(lnm(TLN[i]), C.tl == TLN[i], "cSet('tl'," + TLN[i] + ")", 'sm');
+  h += '</div><input inputmode="decimal" placeholder="' + u + '" value="' + esc(C.tv) + '" oninput="cIn(\'tv\',this)"></div>';
+  h += '<div class="box"><b>\ud83c\udfc1 \u0647\u0646\u062f\u06cc\u06a9\u067e / \u0628\u0631\u062f (\u0627\u062e\u062a\u06cc\u0627\u0631\u06cc)</b><div class="mut" style="line-height:1.9">\u0628\u0631\u062f \u0633\u0627\u062f\u0647 = \u0647\u0646\u062f\u06cc\u06a9\u067e \u06f0.\u06f5-\u060c \u0628\u0631\u062f \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc = \u0647\u0646\u062f\u06cc\u06a9\u067e \u06f0</div><div class="lbl">\u062a\u06cc\u0645</div>' + chip('\u0645\u06cc\u0632\u0628\u0627\u0646', C.ht == 1, "cSet('ht',1)", 'sm') + ' ' + chip('\u0645\u0647\u0645\u0627\u0646', C.ht == 2, "cSet('ht',2)", 'sm');
+  h += '<div class="lbl">\u062e\u0637 \u0647\u0646\u062f\u06cc\u06a9\u067e</div><div class="leagues" style="padding:0">';
+  for (i = 0; i < HLN.length; i++) h += chip(hsg(HLN[i]), C.hl == HLN[i], "cSet('hl'," + HLN[i] + ")", 'sm');
+  h += '</div><input inputmode="decimal" placeholder="' + u + '" value="' + esc(C.hv) + '" oninput="cIn(\'hv\',this)"></div>';
+  h += '<div class="box"><b>\ud83e\udd1d \u06af\u0644 \u0632\u062f\u0646 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 / \u0645\u0633\u0627\u0648\u06cc (\u0627\u062e\u062a\u06cc\u0627\u0631\u06cc)</b><div class="mut" style="line-height:1.9">\u0627\u06af\u0647 \u062f\u0631\u0635\u062f \u0647\u0646\u062f\u06cc\u06a9\u067e \u0646\u062f\u0627\u0631\u06cc\u060c \u0628\u0627 \u06cc\u06a9\u06cc \u0627\u0632 \u0627\u06cc\u0646\u0627 \u0627\u062e\u062a\u0644\u0627\u0641 \u0642\u062f\u0631\u062a \u062f\u0648 \u062a\u06cc\u0645 \u062d\u0633\u0627\u0628 \u0645\u06cc\u0634\u0647.</div><div class="lbl">\u0628\u0627\u0632\u0627\u0631</div>' +
+    chip('BTTS \u0628\u0644\u0647', C.bs == 'Y', "cSet('bs','Y')", 'sm') + ' ' + chip('BTTS \u062e\u06cc\u0631', C.bs == 'N', "cSet('bs','N')", 'sm') + ' ' + chip('\u0645\u0633\u0627\u0648\u06cc (X)', C.bs == 'X', "cSet('bs','X')", 'sm');
+  h += '<div class="lbl">\u062a\u06cc\u0645 \u0642\u0648\u06cc\u200c\u062a\u0631</div>' + chip('\u0645\u06cc\u0632\u0628\u0627\u0646', C.bt == 1, "cSet('bt',1)", 'sm') + ' ' + chip('\u0645\u0647\u0645\u0627\u0646', C.bt == 2, "cSet('bt',2)", 'sm');
+  h += '<input inputmode="decimal" placeholder="' + u + '" value="' + esc(C.bv) + '" oninput="cIn(\'bv\',this)"></div>';
+  h += '<div id="cres"></div>';
+  h += '<div class="box"><b>\ud83d\udcb0 \u0627\u0631\u0632\u0634 \u062f\u0627\u0631\u0647\u061f</b><div class="lbl">\u0628\u0627\u0632\u0627\u0631</div><select onchange="cIn(\'vk\',this)">';
+  var o = cOpts();
+  for (i = 0; i < o.length; i++) h += '<option value="' + o[i][0] + '"' + (C.vk == o[i][0] ? ' selected' : '') + '>' + o[i][1] + '</option>';
+  h += '</select><input inputmode="decimal" placeholder="\u0636\u0631\u06cc\u0628 \u0633\u0627\u06cc\u062a (\u0645\u062b\u0644\u0627\u064b 1xBet)" value="' + esc(C.vo) + '" oninput="cIn(\'vo\',this)"><div id="cval"></div></div>';
+  h += '<div class="box mut" style="line-height:1.9">\u0645\u062f\u0644 \u067e\u0648\u0627\u0633\u0648\u0646 \u062a\u0642\u0631\u06cc\u0628\u06cc\u0647: \u0645\u0633\u0627\u0648\u06cc \u06f0-\u06f0 \u0648 \u06f1-\u06f1 \u0631\u0648 \u06a9\u0645\u06cc \u06a9\u0645\u062a\u0631 \u0627\u0632 \u0648\u0627\u0642\u0639\u06cc\u062a \u0646\u0634\u0648\u0646 \u0645\u06cc\u062f\u0647. \u0628\u0647\u062a\u0631\u06cc\u0646 \u0648\u0631\u0648\u062f\u06cc\u060c \u062f\u0631\u0635\u062f \u0628\u062f\u0648\u0646 \u062d\u0627\u0634\u06cc\u0647 \u0633\u0648\u062f\u06cc\u0647 \u06a9\u0647 \u0627\u067e \u0632\u06cc\u0631 \u0647\u0631 \u0636\u0631\u06cc\u0628 \u0646\u0634\u0648\u0646 \u0645\u06cc\u062f\u0647.</div>';
+  $('calc').innerHTML = '<div class="box">' + sPanel('calc') + '</div>' + h;
+  calcRes();
+}
+function calcRes() {
+  var h = '', q = cP(C.tv), qh = cP(C.hv), w = '';
+  CT = null; CD = null;
+  if (q !== null) {
+    var tq = C.ts == 'O' ? q : 1 - q;
+    CT = bis(function (T) { return ceq(ctot(T, C.tl, 'O')); }, tq, 0.05, 9);
+    if (CT === null) w += '<div class="warn">\u0627\u06cc\u0646 \u062f\u0631\u0635\u062f \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u062e\u0637 \u06af\u0644 \u0645\u0645\u06a9\u0646 \u0646\u06cc\u0633\u062a. \u0639\u062f\u062f \u0631\u0648 \u0686\u06a9 \u06a9\u0646.</div>';
+  }
+  if (qh !== null) {
+    var T = CT || 2.6, hl = C.ht == 1 ? C.hl : -C.hl, hq = C.ht == 1 ? qh : 1 - qh;
+    CD = bis(function (d) { return ceq(chcp((T + d) / 2, (T - d) / 2, 1, hl)); }, hq, -T + 0.02, T - 0.02);
+    if (CD === null) w += '<div class="warn">\u0627\u06cc\u0646 \u062f\u0631\u0635\u062f \u0647\u0646\u062f\u06cc\u06a9\u067e \u0628\u0627 \u0627\u06cc\u0646 \u062a\u0639\u062f\u0627\u062f \u06af\u0644 \u062c\u0648\u0631 \u062f\u0631 \u0646\u0645\u06cc\u0627\u062f. \u0627\u0648\u0644 \u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u0631\u0648 \u062f\u0631\u0633\u062a \u0628\u062f\u0647.</div>';
+    if (!CT) w += '<div class="mut" style="margin-top:6px">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u0646\u062f\u0627\u062f\u06cc\u060c \u0628\u0631\u0627\u06cc \u0647\u0646\u062f\u06cc\u06a9\u067e \u0628\u0627 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06f2.\u06f6 \u06af\u0644 \u062d\u0633\u0627\u0628 \u0634\u062f.</div>';
+  }
+  var qb = cP(C.bv);
+  if (qb !== null) {
+    if (CD !== null) w += '<div class="mut" style="margin-top:6px">\u0647\u0646\u062f\u06cc\u06a9\u067e \u0631\u0648 \u0647\u0645 \u062f\u0627\u062f\u06cc\u060c \u0627\u062e\u062a\u0644\u0627\u0641 \u0642\u062f\u0631\u062a \u0627\u0632 \u0647\u0646\u062f\u06cc\u06a9\u067e \u062d\u0633\u0627\u0628 \u0634\u062f \u0648 \u062f\u0631\u0635\u062f BTTS/\u0645\u0633\u0627\u0648\u06cc \u0646\u0627\u062f\u06cc\u062f\u0647 \u06af\u0631\u0641\u062a\u0647 \u0634\u062f.</div>';
+    else {
+      var Tb = CT || 2.6, inc = C.bs == 'N';
+      var fb = function (d) { var a = (Tb + d) / 2, b = (Tb - d) / 2; if (C.bs == 'X') return chcp(a, b, 1, 0)[1]; var y = (1 - Math.exp(-a)) * (1 - Math.exp(-b)); return C.bs == 'Y' ? y : 1 - y; };
+      var dd = bis(inc ? fb : function (d) { return -fb(d); }, inc ? qb : -qb, 0, Tb - 0.02);
+      if (dd === null) w += '<div class="warn">\u0627\u06cc\u0646 \u062f\u0631\u0635\u062f BTTS/\u0645\u0633\u0627\u0648\u06cc \u0628\u0627 \u0627\u06cc\u0646 \u062a\u0639\u062f\u0627\u062f \u06af\u0644 \u062c\u0648\u0631 \u062f\u0631 \u0646\u0645\u06cc\u0627\u062f. \u0628\u0627 \u0627\u06cc\u0646 \u062a\u0639\u062f\u0627\u062f \u06af\u0644 \u0628\u06cc\u0634\u062a\u0631\u06cc\u0646 \u0639\u062f\u062f \u0645\u0645\u06a9\u0646: ' + pc(inc ? fb(Tb - 0.02) : fb(0)) + (C.bs == 'X' ? ' (\u0645\u062f\u0644 \u067e\u0648\u0627\u0633\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc \u0631\u0648 \u06a9\u0645\u06cc \u06a9\u0645\u062a\u0631 \u0627\u0632 \u0648\u0627\u0642\u0639\u06cc\u062a \u0646\u0634\u0648\u0646 \u0645\u06cc\u062f\u0647)' : '') + '.</div>';
+      else { CD = C.bt == 1 ? dd : -dd; if (!CT) w += '<div class="mut" style="margin-top:6px">\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u0646\u062f\u0627\u062f\u06cc\u060c \u0628\u0627 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06f2.\u06f6 \u06af\u0644 \u062d\u0633\u0627\u0628 \u0634\u062f.</div>'; }
+    }
+  }
+  if (CT === null && CD === null) {
+    h = '<div class="box empty" style="padding:20px">' + (w || '\u06cc\u0647 \u062f\u0631\u0635\u062f \u06cc\u0627 \u0636\u0631\u06cc\u0628 \u0628\u062f\u0647 \u062a\u0627 \u0646\u062a\u06cc\u062c\u0647 \u0631\u0648 \u0628\u0628\u06cc\u0646\u06cc') + '</div>';
+  } else {
+    var Tg = CT || 2.6, s = cSplit(Tg), i, r, r2_;
+    h += '<div class="box"><div class="grid"><div class="cell">\u0627\u0646\u062a\u0638\u0627\u0631 \u06af\u0644 \u06a9\u0644<b class="gold">' + fc(Tg) + '</b></div>';
+    if (CD !== null) h += '<div class="cell">\u0645\u06cc\u0632\u0628\u0627\u0646 / \u0645\u0647\u0645\u0627\u0646<b class="gold ltr">' + fc(s[0]) + ' - ' + fc(s[1]) + '</b></div>';
+    h += '</div>' + w + '</div>';
+    if (CT !== null) {
+      h += '<div class="box"><b>\u26bd \u0645\u062c\u0645\u0648\u0639 \u06af\u0644</b><table class="tbl"><tr><th>\u062e\u0637</th><th>Over</th><th>\u0628\u0631\u06af\u0634\u062a</th><th>Under</th><th>\u0636\u0631\u06cc\u0628 O</th><th>\u0636\u0631\u06cc\u0628 U</th></tr>';
+      for (i = 0; i < TLN.length; i++) {
+        r = ctot(CT, TLN[i], 'O'); r2_ = ctot(CT, TLN[i], 'U');
+        h += '<tr' + (TLN[i] == C.tl ? ' class="best"' : '') + '><td>' + lnm(TLN[i]) + '</td><td>' + pc(r[0]) + '</td><td>' + (r[1] > 0.0005 ? pc(r[1]) : '-') + '</td><td>' + pc(r[2]) + '</td><td class="gold">' + fo2(cfo(r)) + '</td><td class="gold">' + fo2(cfo(r2_)) + '</td></tr>';
+      }
+      h += '</table></div>';
+    }
+    if (CD !== null) {
+      var x1 = chcp(s[0], s[1], 1, 0), by = (1 - Math.exp(-s[0])) * (1 - Math.exp(-s[1]));
+      h += '<div class="box"><b>\ud83c\udfc6 \u0646\u062a\u06cc\u062c\u0647</b><div class="grid" style="grid-template-columns:repeat(3,1fr);margin-top:8px">';
+      var c3 = [['1', x1[0]], ['X', x1[1]], ['2', x1[2]], ['1X', x1[0] + x1[1]], ['X2', x1[2] + x1[1]], ['12', x1[0] + x1[2]]];
+      for (i = 0; i < c3.length; i++) h += '<div class="cell">' + c3[i][0] + '<b>' + pc(c3[i][1]) + '</b><span class="gold">' + fo2(1 / c3[i][1]) + '</span></div>';
+      h += '<div class="cell">BTTS \u0628\u0644\u0647<b>' + pc(by) + '</b><span class="gold">' + fo2(1 / by) + '</span></div><div class="cell">BTTS \u062e\u06cc\u0631<b>' + pc(1 - by) + '</b><span class="gold">' + fo2(1 / (1 - by)) + '</span></div></div></div>';
+      h += '<div class="box"><b>\ud83c\udfc1 \u0647\u0646\u062f\u06cc\u06a9\u067e (\u062e\u0637 \u0645\u06cc\u0632\u0628\u0627\u0646)</b><table class="tbl"><tr><th>\u062e\u0637</th><th>\u0645\u06cc\u0632\u0628\u0627\u0646</th><th>\u0628\u0631\u06af\u0634\u062a</th><th>\u0645\u0647\u0645\u0627\u0646</th><th>\u0636\u0631\u06cc\u0628 \u06f1</th><th>\u0636\u0631\u06cc\u0628 \u06f2</th></tr>';
+      for (i = 0; i < HLN.length; i++) {
+        r = chcp(s[0], s[1], 1, HLN[i]); r2_ = chcp(s[0], s[1], 2, -HLN[i]);
+        var on = (C.ht == 1 ? C.hl : -C.hl) == HLN[i];
+        h += '<tr' + (on ? ' class="best"' : '') + '><td>' + hsg(HLN[i]) + '</td><td>' + pc(r[0]) + '</td><td>' + (r[1] > 0.0005 ? pc(r[1]) : '-') + '</td><td>' + pc(r[2]) + '</td><td class="gold">' + fo2(cfo(r)) + '</td><td class="gold">' + fo2(cfo(r2_)) + '</td></tr>';
+      }
+      h += '</table><div class="mut" style="margin-top:6px">\u062e\u0637 \u0645\u0647\u0645\u0627\u0646 \u0628\u0631\u0639\u06a9\u0633 \u062e\u0637 \u0645\u06cc\u0632\u0628\u0627\u0646\u0647 (\u0645\u06cc\u0632\u0628\u0627\u0646 \u06f1- \u06cc\u0639\u0646\u06cc \u0645\u0647\u0645\u0627\u0646 \u06f1+)</div></div>';
+    }
+  }
+  $('cres').innerHTML = h;
+  cVal();
+}
+function cVal() {
+  var e = $('cval'); if (!e) return;
+  if (CT === null && CD === null) { e.innerHTML = ''; return; }
+  var k = C.vk, r = cMk(k), o = num(C.vo), h = '';
+  if ((k.charAt(0) != 'T') && CD === null) { e.innerHTML = '<div class="mut" style="margin-top:6px">\u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0628\u0627\u06cc\u062f \u062f\u0631\u0635\u062f \u0647\u0646\u062f\u06cc\u06a9\u067e/\u0628\u0631\u062f \u06cc\u0627 BTTS/\u0645\u0633\u0627\u0648\u06cc \u0631\u0648 \u0647\u0645 \u0628\u062f\u06cc.</div>'; return; }
+  if (k.charAt(0) == 'T' && CT === null) { e.innerHTML = '<div class="mut" style="margin-top:6px">\u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0628\u0627\u06cc\u062f \u062f\u0631\u0635\u062f \u0645\u062c\u0645\u0648\u0639 \u06af\u0644 \u0631\u0648 \u0628\u062f\u06cc.</div>'; return; }
+  var eq = ceq(r), mn = eq > 0 ? 1 + (1 - eq + 0.05) / eq : 0;
+  h += '<div class="grid" style="grid-template-columns:repeat(2,1fr);margin-top:8px"><div class="cell">\u0628\u0631\u062f<b>' + pc(eq) + '</b></div><div class="cell">\u0628\u0627\u062e\u062a<b>' + pc(1 - eq) + '</b></div></div>';
+  if (r[1] > 0.0005) h += '<div class="mut" style="margin-top:6px;line-height:1.8">\u21a9 \u0628\u0631\u06af\u0634\u062a \u067e\u0648\u0644 \u0628\u0627 \u0641\u0631\u0645\u0648\u0644 \u0628\u0631\u062f \u00f7 (\u0628\u0631\u062f + \u0628\u0627\u062e\u062a) \u062a\u0648 \u062f\u0631\u0635\u062f \u0628\u0631\u062f \u0627\u062f\u063a\u0627\u0645 \u0634\u062f. \u0647\u0645\u06cc\u0646 \u0639\u062f\u062f \u0631\u0648 \u062a\u0648 \u00ab\ud83c\udfaf \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646\u00bb \u0628\u0646\u0648\u06cc\u0633.</div>';
+  h += '<div class="row"><span>\u0636\u0631\u06cc\u0628 \u0645\u0646\u0635\u0641\u0627\u0646\u0647</span><b class="gold">' + fo2(eq > 0 ? 1 / eq : 0) + '</b></div><div class="row"><span>\u062d\u062f\u0627\u0642\u0644 \u0636\u0631\u06cc\u0628 \u0628\u0631\u0627\u06cc EV \u06f0.\u06f0\u06f5+</span><b class="gold">' + fo2(mn) + '</b></div>';
+  if (o > 1) {
+    var ev = eq * (o - 1) - (1 - eq), c = ev >= 0.05 ? 'w' : (ev >= 0 ? 'p' : 'l');
+    var t = ev >= 0.05 ? '\u2705 \u0627\u0631\u0632\u0634 \u062f\u0627\u0631\u0647' : (ev >= 0 ? '\ud83d\udfe1 \u0645\u0631\u0632\u06cc\u060c \u0627\u0631\u0632\u0634\u0634 \u06a9\u0645\u0647' : '\u274c \u0627\u0631\u0632\u0634 \u0646\u062f\u0627\u0631\u0647');
+    h += '<div class="row"><span>EV \u0628\u0627 \u0636\u0631\u06cc\u0628 ' + fc(o) + '</span><span class="st ' + c + ' ltr">' + (ev >= 0 ? '+' : '') + fa(Math.round(ev * 100) / 100) + '</span></div><div class="row"><b>' + t + '</b><span class="mut">\u0647\u0631 \u06f1\u06f0\u06f0 \u0633\u06a9\u0647: ' + (ev >= 0 ? '+' : '') + fa(Math.round(ev * 100)) + '</span></div>';
+  }
+  e.innerHTML = h;
+}
+/* ---------- stat model like PrimaTips (update 22) ---------- */
+/* inputs (all free from ESPN): table position + ppg, last 10 games (home/away weighted x2), head to head; Dixon-Coles Poisson; params learn after each result */
+var ESPN_V2 = 'https://site.api.espn.com/apis/v2/sports/soccer/';
+var MP = ld('mdlP', null) || {};
+(function () { var d = { ha: 1.12, gs: 1, rho: -0.08, bs: 0.12, bh: 0.08, n: 0 }; for (var k in d) if (MP[k] === undefined) MP[k] = d[k]; })();
+var MLOG = ld('mdlLog', []), MDLC = ld('mdlc', {}), MDLO = {}, MDLB = {}, MDLE = {}, MCT = 0;
+(function () { var n = Date.now(), ch = false; for (var k in MDLC) { if (!MDLC[k] || !MDLC[k].t || n - MDLC[k].t > 2 * 86400000) { delete MDLC[k]; ch = true; } } if (ch) sv('mdlc', MDLC); })();
+function clp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+function scV(x) { if (!x) return NaN; var s = x.score; if (s && typeof s == 'object') s = s.value !== undefined && s.value !== null ? s.value : s.displayValue; return parseFloat(s); }
+function mGet(url, ck, ttl, cb) {
+  var c = ck ? ld(ck, null) : null;
+  if (c && Date.now() - c.t < ttl) { cb(c.d, null); return; }
+  http(url, function (r) {
+    if (r.status != 200) { cb(c ? c.d : null, r.status); return; }
+    var j = null; try { j = JSON.parse(r.body); } catch (e) { cb(c ? c.d : null, 'JSON'); return; }
+    cb(j, null, function (d) { if (ck) sv(ck, { t: Date.now(), d: d }); });
+  });
+}
+function mStand(s, cb) {
+  mGet(ESPN_V2 + s + '/standings', 'mst_' + s, 6 * 3600000, function (j, er, save) {
+    if (!j) { cb(null); return; }
+    if (!save) { cb(j); return; }
+    var out = { tm: {}, gp: 0, gf: 0 }, grp = [];
+    var walk = function (o) { if (!o) return; if (o.standings && o.standings.entries) grp.push(o.standings.entries); (o.children || []).forEach(walk); };
+    walk(j);
+    grp.forEach(function (en) {
+      en.forEach(function (e) {
+        if (!e.team) return; var st = {};
+        (e.stats || []).forEach(function (x) { st[x.name || x.type] = x.value; });
+        var gp = +st.gamesPlayed || 0, pts = +st.points || 0;
+        out.tm[e.team.id] = { n: e.team.displayName || e.team.name || '', r: +st.rank || 0, gp: gp, pts: pts, gf: +st.pointsFor || 0, ga: +st.pointsAgainst || 0 };
+        out.gp += gp; out.gf += +st.pointsFor || 0;
+      });
+    });
+    if (!out.gp) out = null;
+    save(out); cb(out);
+  });
+}
+function mSched(s, id, yr, cb) {
+  var u = ESPN_API + s + '/teams/' + id + '/schedule' + (yr ? '?season=' + yr : '');
+  mGet(u, 'msc_' + s + '_' + id + '_' + (yr || 'c'), yr ? 5 * 86400000 : 4 * 3600000, function (j, er, save) {
+    if (!j) { cb(null); return; }
+    if (!save) { cb(j); return; }
+    var out = { y: (j.season && j.season.year) || (j.requestedSeason && j.requestedSeason.year) || 0, g: [] };
+    (j.events || []).forEach(function (e) {
+      var c = e.competitions && e.competitions[0]; if (!c || !c.competitors) return;
+      var ty = ((c.status || e.status || {}).type) || {}; if (!ty.completed) return;
+      var me = null, op = null; c.competitors.forEach(function (x) { if (x.team && String(x.team.id) == String(id)) me = x; else op = x; });
+      if (!me || !op) return;
+      var gf = scV(me), ga = scV(op); if (isNaN(gf) || isNaN(ga)) return;
+      out.g.push({ e: e.id, t: new Date(e.date).getTime(), h: me.homeAway == 'home' ? 1 : 0, f: gf, a: ga, o: String(op.team.id), on: op.team.displayName || op.team.name || '?' });
+    });
+    save(out); cb(out);
+  });
+}
+function mFind(m, evs) {
+  var t = new Date(m.time).getTime(), best = null, bs = 0;
+  (evs || []).forEach(function (e) {
+    var c = e.competitions && e.competitions[0]; if (!c || !c.competitors) return;
+    if (m.id.charAt(0) == 'e' && 'e' + e.id == m.id) { bs = 99; best = e; return; }
+    if (Math.abs(new Date(e.date).getTime() - t) > 6 * 3600000) return;
+    var H = null, A = null; c.competitors.forEach(function (x) { if (x.homeAway == 'home') H = x; else A = x; });
+    if (!H || !A) return;
+    var sc = simT(m.home, H.team) + simT(m.away, A.team);
+    if (sc > bs) { bs = sc; best = e; }
+  });
+  if (!best || bs < 1.2) return null;
+  var c = best.competitions[0], H = null, A = null; c.competitors.forEach(function (x) { if (x.homeAway == 'home') H = x; else A = x; });
+  return { ev: String(best.id), hid: String(H.team.id), aid: String(A.team.id), hn: H.team.displayName, an: A.team.displayName };
+}
+function mStr(gs, id, ven, mu) {
+  /* Last 50 completed games, newest first. Separate same-venue form from all-venue form.
+     Upcoming home team (ven=1): home games are the venue-specific sample.
+     Upcoming away team (ven=0): away games are the venue-specific sample.
+     Recent games weigh more; venue-specific evidence is blended with overall form and shrunk toward league average. */
+  var allF = 0, allA = 0, allW = 0, venF = 0, venA = 0, venW = 0;
+  var K = 4, used = 0;
+  (gs || []).slice(0, 50).forEach(function (g, i) {
+    if (!g || !isFinite(+g.f) || !isFinite(+g.a) || (g.h !== 0 && g.h !== 1)) return;
+    var rec = Math.pow(0.97, i), adj = g.h ? MP.ha : 1 / MP.ha;
+    var gf = (+g.f) / adj, ga = (+g.a) * adj;
+    allF += rec * gf; allA += rec * ga; allW += rec;
+    if (g.h === ven) { var vw = rec * 1.5; venF += vw * gf; venA += vw * ga; venW += vw; }
+    used++;
+  });
+  var af = allW ? allF / allW : mu, aa = allW ? allA / allW : mu;
+  var vf = venW ? venF / venW : af, va = venW ? venA / venW : aa;
+  /* venue-specific form gets 65% when at least 5 venue games exist; otherwise confidence scales down */
+  var conf = Math.min(1, venW / 5), vwgt = 0.65 * conf;
+  var f = (1 - vwgt) * af + vwgt * vf, a = (1 - vwgt) * aa + vwgt * va;
+  return { at: (f * allW + K * mu) / (allW + K) / mu,
+           df: (a * allW + K * mu) / (allW + K) / mu,
+           n: used, venueN: Math.round(venW / 1.5) };
+}
+function mMat(lh, la, rho) {
+  var M = [], i, j, s = 0, a = pv(lh), b = pv(la);
+  for (i = 0; i <= 10; i++) { M.push([]); for (j = 0; j <= 10; j++) {
+    var p = a[i] * b[j], tau = 1;
+    if (i == 0 && j == 0) tau = 1 - lh * la * rho; else if (i == 0 && j == 1) tau = 1 + lh * rho; else if (i == 1 && j == 0) tau = 1 + la * rho; else if (i == 1 && j == 1) tau = 1 - rho;
+    p = Math.max(0, p * tau); M[i].push(p); s += p; } }
+  for (i = 0; i <= 10; i++) for (j = 0; j <= 10; j++) M[i][j] /= s;
+  return M;
+}
+function mPr(R, p) {
+  /* Win probability of pick p, push excluded. For BTTS, combine the Dixon-Coles
+     base probability with the two teams' last-10 BTTS evidence. */
+  if (!R) return null;
+  if (!R.M) R.M = mMat(R.lh, R.la, R.rho);
+  if ((p == 'BY' || p == 'BN') && R.bttsHist !== null && R.bttsHist !== undefined) {
+    var base=0,i,j;
+    for(i=0;i<=10;i++) for(j=0;j<=10;j++) if(i>0&&j>0) base+=R.M[i][j];
+    var clampP=function(x){return Math.max(.001,Math.min(.999,x));};
+    var lg=function(x){x=clampP(x);return Math.log(x/(1-x));};
+    var blend=1/(1+Math.exp(-(0.70*lg(base)+0.30*lg(R.bttsHist))));
+    return p=='BY'?blend:1-blend;
+  }
+  var w = 0, l = 0, i, j;
+  for (i = 0; i <= 10; i++) for (j = 0; j <= 10; j++) { var r = resX(p, i, j); if (r == 'w') w += R.M[i][j]; else if (r == 'l') l += R.M[i][j]; }
+  return w + l > 0 ? w / (w + l) : null;
+}
+function mdlMy(id, p) { var r = mdlMy0(id, p); if (r === null) return null; var mm = MATCHES[id], q = mm ? nv(mm, p) : null; return Math.round(anc(p, r / 100, q) * 100); }
+function mdlMy0(id, p) { var pq = ptP(id, p); if (pq !== null) return Math.round(pq * 100); if (!SRES[id] && SMN[id] && MATCHES[id]) { var sc = sCalc(id); if (!sc.err) SRES[id] = sc; } var R = SRES[id] || MDLC[id]; if (!R) return null; var q = mPr(R, p); return q === null ? null : Math.round(q * 100); }
+function mForm(gs) { return gs.slice(0, 10).map(function (g) { return g.f > g.a ? 'W' : (g.f < g.a ? 'L' : 'D'); }).join(' '); }
+function mRun(m, force) {
+  var s = esl(m.lg);
+  if (!s) { MDLE[m.id] = '\u0627\u06cc\u0646 \u0644\u06cc\u06af \u062a\u0648 ESPN \u0646\u06cc\u0633\u062a\u060c \u0622\u0645\u0627\u0631\u0634 \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a'; rerender(); return; }
+  if (MDLB[m.id]) return; MDLB[m.id] = 1; delete MDLE[m.id];
+  var fail = function (t) { delete MDLB[m.id]; MDLE[m.id] = t; rerender(); };
+  var t = new Date(m.time).getTime();
+  espnFetch(s, [ymd(t), ymd(t - 5 * 3600000)], function (evs) {
+    var F = mFind(m, evs);
+    mStand(s, function (ST) {
+      if (!F && ST) {
+        var bh = null, ba = null, sh = 0, sa = 0;
+        for (var k in ST.tm) { var a = sim1(m.home, ST.tm[k].n), b = sim1(m.away, ST.tm[k].n); if (a > sh) { sh = a; bh = k; } if (b > sa) { sa = b; ba = k; } }
+        if (sh >= 0.5 && sa >= 0.5 && bh != ba) F = { ev: null, hid: bh, aid: ba, hn: ST.tm[bh].n, an: ST.tm[ba].n };
+      }
+      if (!F) { fail('\u062a\u06cc\u0645\u200c\u0647\u0627\u06cc \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u062a\u0648 ESPN \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f\u0646'); return; }
+      var S = {}, left = 2;
+      var got = function () {
+        if (--left > 0) return;
+        if (!S.h || !S.a) { fail('\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u062a\u06cc\u0645\u200c\u0647\u0627 \u0627\u0632 ESPN \u0646\u06cc\u0648\u0645\u062f. \u0627\u06cc\u0646\u062a\u0631\u0646\u062a \u0631\u0648 \u0686\u06a9 \u06a9\u0646'); return; }
+        delete MDLB[m.id];
+        MDLC[m.id] = mCalc(m, s, F, ST, S.h, S.a); sv('mdlc', MDLC);
+        mLog(m, MDLC[m.id]); rerender();
+      };
+      var both = function (id, key) {
+        mSched(s, id, 0, function (cur) {
+          var y = (cur && cur.y) ? cur.y - 1 : new Date().getUTCFullYear() - 1;
+          mSched(s, id, y, function (prv) {
+            var g = [].concat(cur ? cur.g : [], prv ? prv.g : []), seen = {};
+            g = g.filter(function (x) { if (seen[x.e] || x.t >= t - 3600000) return false; seen[x.e] = 1; return true; }).sort(function (a, b) { return b.t - a.t; });
+            S[key] = (cur || prv) ? { g: g, cn: cur ? cur.g.length : 0 } : null; got();
+          });
+        });
+      };
+      both(F.hid, 'h'); both(F.aid, 'a');
+    });
+  });
+}
+function mCalc(m, s, F, ST, SH, SA) {
+  var mu = 1.35, w = [];
+  if (ST && ST.gp > 20) mu = clp(ST.gf / ST.gp, 0.9, 2);
+  else { var tg = 0, tn = 0; SH.g.concat(SA.g).slice(0, 40).forEach(function (g) { tg += g.f + g.a; tn += 2; }); if (tn >= 10) mu = clp(tg / tn, 0.9, 2); }
+  var H = mStr(SH.g, F.hid, 1, mu), A = mStr(SA.g, F.aid, 0, mu);
+  var lh = mu * MP.ha * H.at * A.df, la = mu / MP.ha * A.at * H.df;
+  var th = ST ? ST.tm[F.hid] : null, ta = ST ? ST.tm[F.aid] : null, dp = 0;
+  if (th && ta && th.gp >= 3 && ta.gp >= 3) { dp = clp(th.pts / th.gp - ta.pts / ta.gp, -2.5, 2.5); var f = Math.exp(MP.bs * dp / 2); lh *= f; la /= f; }
+  else w.push(ST ? '\u0647\u0646\u0648\u0632 \u0628\u0627\u0632\u06cc \u06a9\u0627\u0641\u06cc \u062a\u0648 \u062c\u062f\u0648\u0644 \u0646\u06cc\u0633\u062a (\u0627\u0648\u0644 \u0641\u0635\u0644)' : '\u0627\u06cc\u0646 \u0631\u0642\u0627\u0628\u062a \u062c\u062f\u0648\u0644 \u0646\u062f\u0627\u0631\u0647 (\u062c\u0627\u0645 \u06cc\u0627 \u062f\u0648\u0633\u062a\u0627\u0646\u0647). \u0645\u062f\u0644 \u0641\u0642\u0637 \u0627\u0632 \u0641\u0631\u0645 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u06a9\u0631\u062f\u0647');
+  var hh = SH.g.filter(function (g) { return g.o == F.aid; }).slice(0, 6), dh = 0;
+  if (hh.length) { hh.forEach(function (g) { dh += g.f - g.a; }); dh = clp(dh / hh.length, -2, 2) * Math.min(hh.length, 5) / 5; var f2 = Math.exp(MP.bh * dh / 2); lh *= f2; la /= f2; }
+  lh = clp(lh * MP.gs, 0.15, 4.5); la = clp(la * MP.gs, 0.15, 4.5);
+  if (SH.g.length < 6 || SA.g.length < 6) w.push('\u06cc\u06a9\u06cc \u0627\u0632 \u062a\u06cc\u0645\u200c\u0647\u0627 \u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f6 \u0628\u0627\u0632\u06cc \u062b\u0628\u062a\u200c\u0634\u062f\u0647 \u062f\u0627\u0631\u0647\u060c \u0645\u062f\u0644 \u0636\u0639\u06cc\u0641\u0647');
+  if (SH.cn < 5 || SA.cn < 5) w.push('\u0627\u0648\u0644 \u0641\u0635\u0644\u0647\u060c \u0628\u062e\u0634\u06cc \u0627\u0632 \u0641\u0631\u0645 \u0627\u0632 \u0641\u0635\u0644 \u0642\u0628\u0644 \u0627\u0648\u0645\u062f\u0647');
+  var ven = function (gs, v) { var x = gs.filter(function (g) { return g.h == v; }).slice(0, 5), f = 0, a = 0; x.forEach(function (g) { f += g.f; a += g.a; }); return x.length ? [x.length, f / x.length, a / x.length] : null; };
+  var av = function (gs) { var x = gs.slice(0, 10), f = 0, a = 0; x.forEach(function (g) { f += g.f; a += g.a; }); return x.length ? [x.length, f / x.length, a / x.length] : null; };
+  return {
+    t: Date.now(), s: s, ev: F.ev, hid: F.hid, aid: F.aid, lh: Math.round(lh * 1000) / 1000, la: Math.round(la * 1000) / 1000, rho: MP.rho, mu: mu, dp: dp, dh: dh, w: w,
+    i: { th: th, ta: ta, fh: mForm(SH.g), fa: mForm(SA.g), vh: ven(SH.g, 1), va: ven(SA.g, 0), oh: av(SH.g), oa: av(SA.g),
+      h2: hh.map(function (g) { return { t: g.t, h: g.h, f: g.f, a: g.a }; }) }
+  };
+}
+var MDK = [['1', '\u06f1'], ['X', 'X'], ['2', '\u06f2'], ['1X', '1X'], ['X2', 'X2'], ['12', '12'], ['O15', 'O \u06f1.\u06f5'], ['U15', 'U \u06f1.\u06f5'], ['O25', 'O \u06f2.\u06f5'], ['U25', 'U \u06f2.\u06f5'], ['O35', 'O \u06f3.\u06f5'], ['U35', 'U \u06f3.\u06f5'], ['BY', 'BTTS \u0628\u0644\u0647'], ['BN', 'BTTS \u062e\u06cc\u0631']];
+function mVal(m, R) {
+  var out = [];
+  MDK.forEach(function (k) {
+    var o = getOdd(m, k[0]), q = o ? nv(m, k[0]) : null, pr = mPr(R, k[0]), p = anc(k[0], pr, q);
+    var ev = (o && p !== null) ? Math.min(p, 0.8) * o - 1 : null, v = p !== null ? valOK(k[0], pr, ev, q, o, against(m, k[0])) : 0;
+    if (v) shAdd(m, k[0], o, pr, p, q, 'mdl');
+    out.push({ k: k[0], l: cauL(k[0], k[1]), pr: pr, p: p, o: o, q: q, ev: ev, v: v });
+  });
+  return out;
+}
+function mLog(m, R) {
+  var V = mVal(m, R), P = {}, Q = {}, vv = [];
+  V.forEach(function (x) { if (/^(1|X|2|O25|BY)$/.test(x.k)) { P[x.k] = Math.round(x.p * 1000) / 1000; if (x.q !== null) Q[x.k] = Math.round(x.q * 1000) / 1000; } if (x.v) vv.push({ k: x.k, o: x.o, p: Math.round(x.p * 1000) / 1000 }); });
+  var e = null; MLOG.forEach(function (x) { if (x.id == m.id) e = x; });
+  if (e && e.r) return;
+  if (!e) { e = { id: m.id }; MLOG.unshift(e); }
+  e.ev = R.ev; e.s = R.s; e.t = new Date(m.time).getTime(); e.h = m.home; e.a = m.away; e.lh = R.lh; e.la = R.la; e.dp = R.dp; e.dh = R.dh; e.p = P; e.q = Q; e.v = vv; e.r = null;
+  if (MLOG.length > 400) MLOG = MLOG.slice(0, 400);
+  sv('mdlLog', MLOG);
+}
+function mLearn(e, hs, as) {
+  e.r = [hs, as];
+  var lt = e.lh + e.la, gd = (hs - as) - (e.lh - e.la), pD = e.p.X || 0.25, dr = hs == as ? 1 : 0;
+  MP.gs = clp(MP.gs * (1 + 0.02 * ((hs + as) - lt) / lt), 0.8, 1.25);
+  MP.ha = clp(MP.ha * (1 + 0.006 * gd), 1, 1.35);
+  MP.rho = clp(MP.rho - 0.02 * (dr - pD), -0.2, 0.05);
+  if (e.dp) MP.bs = clp(MP.bs + 0.004 * gd * e.dp, 0, 0.35);
+  if (e.dh) MP.bh = clp(MP.bh + 0.004 * gd * e.dh, 0, 0.3);
+  MP.n++;
+}
+function mCheck(force) {
+  if (!force && Date.now() - MCT < 20 * 60000) return; MCT = Date.now();
+  var now = Date.now(), G = {}, n = 0, ch = false;
+  MLOG.forEach(function (e) {
+    if (e.r || e.t + 2.5 * 3600000 > now) return;
+    if (now - e.t > 10 * 86400000) { e.r = 'x'; ch = true; return; }
+    var L = LIVE[e.id] || (e.ev ? LIVE['e' + e.ev] : null);
+    if (L && L.st == 'post' && !L.pp) { mLearn(e, L.hs, L.as); ch = true; return; }
+    if (!e.ev || !e.s) return;
+    var k = e.s + '|' + ymd(e.t); if (!G[k]) { G[k] = []; n++; } G[k].push(e);
+  });
+  var fin = function () { if (ch) { sv('mdlLog', MLOG); sv('mdlP', MP); if (pageOn('bets')) renderBets(); } };
+  var ks = Object.keys(G).slice(0, 8), left = ks.length;
+  if (!left) { fin(); return; }
+  ks.forEach(function (k) {
+    var p = k.split('|');
+    espnGet(ESPN_API + p[0] + '/scoreboard?dates=' + p[1], function (evs) {
+      (evs || []).forEach(function (ev) {
+        G[k].forEach(function (e) {
+          if (e.r || String(ev.id) != String(e.ev)) return;
+          var c = ev.competitions && ev.competitions[0], ty = ((ev.status || (c && c.status) || {}).type) || {};
+          if (/POSTPON|CANCEL|ABANDON/i.test(String(ty.name || ''))) { e.r = 'x'; ch = true; return; }
+          if (!ty.completed || !c) return;
+          var H = null, A = null; c.competitors.forEach(function (x) { if (x.homeAway == 'home') H = x; else A = x; });
+          var hs = scV(H), as = scV(A); if (isNaN(hs) || isNaN(as)) return;
+          mLearn(e, hs, as); ch = true;
+        });
+      });
+      if (--left == 0) fin();
+    });
+  });
+}
+function mTog(id) { MDLO[id] = !MDLO[id]; var m = MATCHES[id]; if (MDLO[id] && m && !MDLC[id]) mRun(m, false); rerender(); }
+function mRef(id) { var m = MATCHES[id]; if (!m) return; delete MDLC[id]; sv('mdlc', MDLC); mRun(m, true); rerender(); }
+function mAdd(id, p) { var m = MATCHES[id]; if (!m || !getOdd(m, p)) { toast('\u0627\u0648\u0644 \u0636\u0631\u06cc\u0628 \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u0628\u06af\u06cc\u0631 \u06cc\u0627 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647'); return; } tog(id, p); }
+function f1(x) { return fa(Math.round(x * 10) / 10); }
+function mTeam(n, t, f, v, o, vl) {
+  var h = '<div class="note"><b>' + esc(n) + '</b>';
+  if (t) h += '<br>\u0631\u062a\u0628\u0647 ' + fa(t.r) + ' | ' + fa(t.pts) + ' \u0627\u0645\u062a\u06cc\u0627\u0632 \u0627\u0632 ' + fa(t.gp) + ' \u0628\u0627\u0632\u06cc (' + f1(t.gp ? t.pts / t.gp : 0) + ' \u062f\u0631 \u0647\u0631 \u0628\u0627\u0632\u06cc)';
+  if (f) h += '<br>\u0641\u0631\u0645 \u06f1\u06f0 \u0628\u0627\u0632\u06cc \u0622\u062e\u0631 (\u062c\u062f\u06cc\u062f\u062a\u0631\u06cc\u0646 \u0627\u0648\u0644): <span class="ltr">' + f + '</span>';
+  if (o) h += '<br>\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06a9\u0644: \u0632\u062f\u0647 ' + f1(o[1]) + ' | \u062e\u0648\u0631\u062f\u0647 ' + f1(o[2]);
+  if (v) h += '<br>' + vl + ' (' + fa(v[0]) + ' \u0628\u0627\u0632\u06cc): \u0632\u062f\u0647 ' + f1(v[1]) + ' | \u062e\u0648\u0631\u062f\u0647 ' + f1(v[2]);
+  return h + '</div>';
+}
+function mdlPanel(m) {
+  if (started(m) || isAF(m.lg)) return '';
+  if (!MDLO[m.id]) return '<div class="more" onclick="mTog(\'' + m.id + '\')">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 \u0622\u0645\u0627\u0631\u06cc \u0645\u062f\u0644 (\u0631\u0627\u06cc\u06af\u0627\u0646)' + (MDLC[m.id] ? ' \u2705' : '') + '</div>';
+  var R = MDLC[m.id], h = '<div class="hpp"><div class="lbl">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 \u0622\u0645\u0627\u0631\u06cc (\u062c\u062f\u0648\u0644\u060c \u06f1\u06f0 \u0628\u0627\u0632\u06cc \u0622\u062e\u0631\u060c \u062e\u0648\u0646\u0647/\u0628\u06cc\u0631\u0648\u0646\u060c \u0631\u0648\u062f\u0631\u0648)</div>';
+  if (!R) {
+    if (MDLE[m.id]) h += '<div class="warn">' + MDLE[m.id] + '</div><div class="more" onclick="mRef(\'' + m.id + '\')">\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062a\u062d\u0627\u0646 \u06a9\u0646</div>';
+    else { if (!MDLB[m.id]) mRun(m, false); h += '<div class="spin" style="padding:10px">\u062f\u0627\u0631\u0645 \u0622\u0645\u0627\u0631 \u0631\u0648 \u0627\u0632 ESPN \u0645\u06cc\u06af\u06cc\u0631\u0645...</div>'; }
+    return h + '<div class="more" onclick="mTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646</div></div>';
+  }
+  var V = mVal(m, R), I = R.i || {};
+  h += '<div class="grid"><div class="cell">\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631 \u0645\u06cc\u0632\u0628\u0627\u0646<b class="gold">' + fc(R.lh) + '</b></div><div class="cell">\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631 \u0645\u0647\u0645\u0627\u0646<b class="gold">' + fc(R.la) + '</b></div></div>';
+  (R.w || []).forEach(function (t) { h += '<div class="warn">\u26a0\ufe0f ' + t + '</div>'; });
+  h += '<table class="tbl"><tr><th>\u0628\u0627\u0632\u0627\u0631</th><th>\u0645\u062f\u0644</th><th>\u0628\u0627\u0632\u0627\u0631</th><th>\u0636\u0631\u06cc\u0628 \u0645\u0646\u0635\u0641\u0627\u0646\u0647</th><th>\u0636\u0631\u06cc\u0628</th><th>EV</th></tr>';
+  V.forEach(function (x) {
+    var ec = x.ev === null ? '' : '<b class="ltr" style="color:' + (x.ev >= 0.05 ? 'var(--green)' : (x.ev >= 0 ? 'var(--gold)' : 'var(--red)')) + '">' + (x.ev >= 0 ? '+' : '') + x.ev.toFixed(2) + '</b>';
+    h += '<tr' + (x.v ? ' class="best"' : '') + ' onclick="mAdd(\'' + m.id + '\',\'' + x.k + '\')"><td>' + (x.v ? '\ud83d\udc8e ' : '') + '<span class="ltr">' + x.l + '</span></td><td>' + pct(x.p) + '</td><td>' + (x.q === null ? '-' : pct(x.q)) + '</td><td class="gold">' + fo2(1 / x.p) + '</td><td>' + (x.o ? x.o.toFixed(2) : '-') + '</td><td>' + (ec || '-') + '</td></tr>';
+  });
+  h += '</table><div class="mut" style="line-height:1.8;margin-top:4px">\ud83d\udc8e \u06cc\u0639\u0646\u06cc \u0645\u062f\u0644 \u062d\u062f\u0627\u0642\u0644 \u06f5\u066a \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u0628\u0627\u0632\u0627\u0631 \u0645\u06cc\u062f\u0647 \u0648 EV \u0627\u0632 \u06f0.\u06f0\u06f5+ \u0628\u0627\u0644\u0627\u062a\u0631\u0647. \u0631\u0648\u06cc \u0647\u0631 \u0633\u0637\u0631 \u0628\u0632\u0646 \u062a\u0627 \u0628\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637 (\u00ab\u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646\u00bb \u062e\u0648\u062f\u06a9\u0627\u0631 \u0627\u0632 \u0645\u062f\u0644 \u067e\u0631 \u0645\u06cc\u0634\u0647). \u0627\u06af\u0647 \u0636\u0631\u06cc\u0628 \u0646\u062f\u0627\u0631\u06cc\u060c \u0627\u0632 \u270d\ufe0f \u0628\u062f\u0647.</div>';
+  h += '<details class="gdd" style="margin-top:6px"><summary class="mut">\ud83d\udd0e \u0648\u0631\u0648\u062f\u06cc\u200c\u0647\u0627\u06cc \u0645\u062f\u0644 (\u062c\u062f\u0648\u0644\u060c \u0641\u0631\u0645\u060c \u0631\u0648\u062f\u0631\u0648)</summary>';
+  h += mTeam(m.home, I.th, I.fh, I.vh, I.oh, '\u062a\u0648 \u062e\u0648\u0646\u0647') + mTeam(m.away, I.ta, I.fa, I.va, I.oa, '\u0628\u06cc\u0631\u0648\u0646 \u062e\u0648\u0646\u0647');
+  if (I.h2 && I.h2.length) {
+    h += '<div class="note"><b>\u0631\u0648\u062f\u0631\u0648 (\u0627\u0632 \u062f\u06cc\u062f \u0645\u06cc\u0632\u0628\u0627\u0646)</b>';
+    I.h2.forEach(function (g) { h += '<br><span class="ltr">' + g.f + '-' + g.a + '</span> ' + (g.h ? '\u062e\u0648\u0646\u0647' : '\u0628\u06cc\u0631\u0648\u0646') + ' | ' + dl(g.t); });
+    h += '</div>';
+  } else h += '<div class="note">\u0631\u0648\u062f\u0631\u0648\u06cc \u0627\u062e\u06cc\u0631\u06cc \u062a\u0648 \u0627\u06cc\u0646 \u0644\u06cc\u06af \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f</div>';
+  h += '<div class="mut" style="line-height:1.8">\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644 \u0644\u06cc\u06af: ' + fc(R.mu) + ' \u0628\u0631\u0627\u06cc \u0647\u0631 \u062a\u06cc\u0645 | \u0645\u062d\u0627\u0633\u0628\u0647: ' + agoTxt(R.t) + '</div></details>';
+  h += '<div class="quick" style="margin-top:6px"><button onclick="mRef(\'' + m.id + '\')">\ud83d\udd04 \u062f\u0648\u0628\u0627\u0631\u0647 \u062d\u0633\u0627\u0628 \u06a9\u0646</button><button onclick="mTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646</button></div>';
+  h += '<div class="mut" style="line-height:1.8;margin-top:4px">\u0645\u062f\u0644 \u0641\u06cc\u0644\u062a\u0631\u0647\u060c \u0646\u0647 \u067e\u06cc\u0634\u06af\u0648. \u0645\u0635\u062f\u0648\u0645\u06cc\u062a\u060c \u062a\u0631\u06a9\u06cc\u0628 \u0648 \u0627\u0646\u06af\u06cc\u0632\u0647 \u0631\u0648 \u0646\u0645\u06cc\u200c\u0628\u06cc\u0646\u0647. \u0627\u0648\u0644 \u0641\u0635\u0644 \u0648 \u062a\u0648 \u062c\u0627\u0645\u200c\u0647\u0627 \u0636\u0639\u06cc\u0641\u0647.</div>';
+  return h + '</div>';
+}
+function mdlCard() {
+  mCheck(false);
+  var R = MLOG.filter(function (e) { return e.r && e.r != 'x'; });
+  var h = '<div class="box"><b>\ud83e\udd16 \u06a9\u0627\u0631\u0646\u0627\u0645\u0647 \u0645\u062f\u0644 \u0622\u0645\u0627\u0631\u06cc</b>';
+  var pend = MLOG.filter(function (e) { return !e.r; }).length;
+  if (!R.length) return h + '<div class="mut" style="margin-top:8px;line-height:1.8">\u0647\u0646\u0648\u0632 \u0646\u062a\u06cc\u062c\u0647\u200c\u0627\u06cc \u0646\u062f\u0627\u0631\u0647. \u0647\u0631 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0631\u0648 \u06a9\u0647 \u0628\u0627 \u00ab\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 \u0622\u0645\u0627\u0631\u06cc\u00bb \u0628\u0627\u0632 \u06a9\u0646\u06cc\u060c \u0645\u062f\u0644 \u0628\u0639\u062f \u0627\u0632 \u0628\u0627\u0632\u06cc \u0631\u0627\u06cc\u06af\u0627\u0646 \u0686\u06a9 \u0645\u06cc\u06a9\u0646\u0647 \u0648 \u0627\u0632\u0634 \u06cc\u0627\u062f \u0645\u06cc\u06af\u06cc\u0631\u0647. \u062f\u0631 \u0627\u0646\u062a\u0638\u0627\u0631 \u0646\u062a\u06cc\u062c\u0647: ' + fa(pend) + '</div><div class="more" onclick="mCheck(true)">\ud83d\udd04 \u0686\u06a9 \u0646\u062a\u0627\u06cc\u062c (\u0631\u0627\u06cc\u06af\u0627\u0646)</div></div>';
+  var hit = 0, bm = 0, bq = 0, nq = 0, g = 0, gp = 0, o25 = 0, o25n = 0, vn = 0, vp = 0, vw = 0;
+  R.forEach(function (e) {
+    var hs = e.r[0], as = e.r[1], res = hs > as ? '1' : (hs < as ? '2' : 'X'), P = e.p || {}, Q = e.q || {};
+    var top = '1'; ['X', '2'].forEach(function (k) { if ((P[k] || 0) > (P[top] || 0)) top = k; }); if (top == res) hit++;
+    var br = function (S) { var s = 0; ['1', 'X', '2'].forEach(function (k) { var y = k == res ? 1 : 0; s += Math.pow((S[k] || 0) - y, 2); }); return s; };
+    if (Q['1'] !== undefined && Q['2'] !== undefined) { bm += br(P); bq += br(Q); nq++; }
+    g += hs + as; gp += e.lh + e.la;
+    if (P.O25 !== undefined && (P.O25 >= 0.6 || P.O25 <= 0.4)) { o25n++; if ((P.O25 >= 0.6) == (hs + as > 2.5)) o25++; }
+    (e.v || []).forEach(function (v) { var r = resX(v.k, hs, as); vn++; if (r == 'w') { vw++; vp += v.o - 1; } else if (r == 'l') vp -= 1; });
+  });
+  var n = R.length;
+  h += '<div class="grid" style="margin-top:8px">' + cell('\u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0686\u06a9\u200c\u0634\u062f\u0647', fa(n)) + cell('\u062f\u0631\u0633\u062a\u06cc \u0646\u062a\u06cc\u062c\u0647 (1X2)', fa(Math.round(hit * 100 / n)) + '\u066a') +
+    cell('\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644: \u0645\u062f\u0644 / \u0648\u0627\u0642\u0639\u06cc', '<span class="ltr">' + f1(gp / n) + ' / ' + f1(g / n) + '</span>') +
+    cell('Over/Under 2.5 \u0645\u0637\u0645\u0626\u0646', o25n ? fa(o25) + ' \u0627\u0632 ' + fa(o25n) : '-');
+  if (nq) { var wb = bm <= bq; h += cell('\u062e\u0637\u0627\u06cc \u0645\u062f\u0644 / \u0628\u0627\u0632\u0627\u0631 (Brier)', '<span class="ltr">' + (bm / nq).toFixed(3) + ' / ' + (bq / nq).toFixed(3) + '</span>', wb ? 'var(--green)' : 'var(--red)'); }
+  if (vn) h += cell('\ud83d\udc8e \u0627\u0631\u0632\u0634\u200c\u0647\u0627 (\u0633\u0648\u062f \u0647\u0631 \u06f1 \u0633\u06a9\u0647)', '<span class="ltr">' + (vp >= 0 ? '+' : '') + (vp / vn).toFixed(2) + '</span> (' + fa(vw) + '/' + fa(vn) + ')', vp >= 0 ? 'var(--green)' : 'var(--red)');
+  h += '</div>';
+  h += '<div class="mut" style="margin-top:8px;line-height:1.8">Brier \u06a9\u0645\u062a\u0631 \u0628\u0647\u062a\u0631\u0647. \u0627\u06af\u0647 \u0639\u062f\u062f \u0645\u062f\u0644 \u0627\u0632 \u0628\u0627\u0632\u0627\u0631 \u0628\u06cc\u0634\u062a\u0631\u0647\u060c \u0628\u0627\u0632\u0627\u0631 \u062f\u0642\u06cc\u0642\u200c\u062a\u0631\u0647 \u0648 \ud83d\udc8e\u0647\u0627 \u0631\u0648 \u0628\u0627 \u0627\u062d\u062a\u06cc\u0627\u0637 \u0628\u0628\u06cc\u0646. \u062f\u0631 \u0627\u0646\u062a\u0638\u0627\u0631 \u0646\u062a\u06cc\u062c\u0647: ' + fa(pend) + '<br>\u0648\u0632\u0646\u200c\u0647\u0627\u06cc \u06cc\u0627\u062f\u06af\u0631\u0641\u062a\u0647 (\u0628\u0639\u062f \u0627\u0632 ' + fa(MP.n) + ' \u0628\u0627\u0632\u06cc): \u0645\u0632\u06cc\u062a \u062e\u0648\u0646\u0647 <span class="ltr">' + MP.ha.toFixed(2) + '</span> | \u0636\u0631\u06cc\u0628 \u06af\u0644 <span class="ltr">' + MP.gs.toFixed(2) + '</span> | \u062c\u062f\u0648\u0644 <span class="ltr">' + MP.bs.toFixed(2) + '</span> | \u0631\u0648\u062f\u0631\u0648 <span class="ltr">' + MP.bh.toFixed(2) + '</span> | \u0645\u0633\u0627\u0648\u06cc <span class="ltr">' + MP.rho.toFixed(2) + '</span></div>';
+  h += '<div class="more" onclick="mCheck(true)">\ud83d\udd04 \u0686\u06a9 \u0646\u062a\u0627\u06cc\u062c (\u0631\u0627\u06cc\u06af\u0627\u0646)</div></div>';
+  return h;
+}
+setTimeout(function () { mCheck(false); }, 9000);
+setTimeout(function () { afSync(false); }, 6000);
+setInterval(function () { afSync(false); afAuto(); }, 60000);
+/* ---------- manual stats model (update 29) ---------- */
+/* user gives W/D/L counts, goals for/against, optional shots and streaks for each team; same Dixon-Coles matrix as update 22 */
+var SMN = ld('sman', {}), SRES = {}, SOPEN = {}, RRP = 0;
+(function () { var n = Date.now(), ch = false; for (var k in SMN) { if (k != 'calc' && (!SMN[k] || !SMN[k]._t || n - new Date(SMN[k]._t).getTime() > 3 * 86400000)) { delete SMN[k]; ch = true; } } if (ch) sv('sman', SMN); })();
+function sTyping() { var a = document.activeElement; return !!(a && a.className && /\bsin\b/.test(a.className)); }
+function sBlur() { if (RRP) { RRP = 0; setTimeout(function () { if (!sTyping()) rerender(); }, 60); } }
+function sD(ctx) {
+  var D = SMN[ctx];
+  if (!D) { D = { h:{}, a:{}, bl:0, o:{}, mt:'league', weather:'clear', temp:'', refY:'', refR:'', formH:'', formA:'', btts10H:'', btts10A:'', histH:'', histA:'' }; SMN[ctx]=D; }
+  if(!D.h)D.h={}; if(!D.a)D.a={}; if(!D.o)D.o={}; if(D.bl===undefined)D.bl=0; if(!D.mt)D.mt='league';
+  if(!D.weather)D.weather='clear'; if(D.temp===undefined)D.temp=''; if(D.refY===undefined)D.refY=''; if(D.refR===undefined)D.refR='';
+  if(D.formH===undefined)D.formH=''; if(D.formA===undefined)D.formA=''; if(D.btts10H===undefined)D.btts10H=''; if(D.btts10A===undefined)D.btts10A='';
+  if(D.histH===undefined)D.histH=''; if(D.histA===undefined)D.histA='';
+  return D;
+}
+function sM(ctx) { return ctx == 'calc' ? null : (MATCHES[ctx] || null); }
+function sNames(ctx) { var m = sM(ctx), D = SMN[ctx] || {}; if (m) return [m.home, m.away]; return [D.hn || '\u0645\u06cc\u0632\u0628\u0627\u0646', D.an || '\u0645\u0647\u0645\u0627\u0646']; }
+function sNum(v) { var t = String(v === undefined || v === null ? '' : v).trim(); if (!t) return null; var n = num(t); return isNaN(n) ? null : n; }
+function sAvg(v) { var p = String(v === undefined || v === null ? '' : v).split(/[\s,\u060c;\/\-]+/), s = 0, c = 0; p.forEach(function (x) { if (!x) return; var n = num(x); if (!isNaN(n) && n >= 0) { s += n; c++; } }); return c ? s / c : null; }
+function sGet(ctx) {
+  var m = sM(ctx), D = sD(ctx);
+  return function (p) {
+    if (m) return getOdd(m, p);
+    if (D.o[p]) return D.o[p];
+    if (p == '1X' || p == 'X2' || p == '12') { var a = D.o[p == 'X2' ? 'X' : '1'], b = D.o[p == '1X' ? 'X' : '2']; return a && b ? Math.max(1.01, r2(1 / (1 / a + 1 / b))) : null; }
+    return null;
+  };
+}
+function sNv(g, p) {
+  if (/^(1|X|2|1X|X2|12)$/.test(p)) {
+    var a = g('1'), d = g('X'), b = g('2'); if (!a || !b || !d) return null;
+    var qa = 1 / a, qd = 1 / d, qb = 1 / b, s = qa + qd + qb, P = { '1': qa / s, 'X': qd / s, '2': qb / s };
+    return p.length == 1 ? P[p] : P[p.charAt(0)] + P[p.charAt(1)];
+  }
+  var o = oppP(p); if (!o) return null;
+  var x = g(p), y = g(o); if (!x || !y) return null;
+  return (1 / x) / (1 / x + 1 / y);
+}
+function r3(x) { return Math.round(x * 1000) / 1000; }
+
+/* ---------- tactical formation engine ----------
+   The formation is treated as a starting structure, not a fixed picture.
+   The engine models: width, midfield numbers, wing-back exposure, attacking lines,
+   defensive line height, central overloads and transition risk. Effects are deliberately
+   small and regularized so formation cannot overpower stronger empirical team data. */
+var FORM = {
+  '4-3-3':     {d:4,m:3,a:3,w:3,p:0,dm:1,ten:0,wb:0,hi:2,co:2},
+  '4-2-3-1':   {d:4,m:3,a:1,w:3,p:1,dm:2,ten:1,wb:0,hi:2,co:3},
+  '4-4-2':     {d:4,m:2,a:2,w:2,p:0,dm:0,ten:0,wb:0,hi:2,co:3},
+  '4-4-1-1':   {d:4,m:2,a:1,w:2,p:1,dm:0,ten:1,wb:0,hi:2,co:3},
+  '4-5-1':     {d:4,m:3,a:1,w:2,p:0,dm:1,ten:0,wb:0,hi:1,co:4},
+  '4-1-4-1':   {d:4,m:4,a:1,w:3,p:0,dm:1,ten:0,wb:0,hi:2,co:4},
+  '4-2-2-2':   {d:4,m:2,a:2,w:1,p:0,dm:2,ten:2,wb:0,hi:2,co:3},
+  '4-3-1-2':   {d:4,m:3,a:2,w:1,p:1,dm:1,ten:1,wb:0,hi:2,co:3},
+  '4-3-2-1':   {d:4,m:3,a:1,w:1,p:2,dm:1,ten:2,wb:0,hi:2,co:3},
+  '4-2-1-3':   {d:4,m:3,a:3,w:3,p:1,dm:2,ten:1,wb:0,hi:2,co:2},
+  '3-4-3':     {d:3,m:2,a:3,w:3,p:0,dm:0,ten:0,wb:2,hi:2,co:2},
+  '3-4-2-1':   {d:3,m:2,a:1,w:2,p:2,dm:0,ten:2,wb:2,hi:2,co:2},
+  '3-5-2':     {d:3,m:3,a:2,w:2,p:0,dm:1,ten:0,wb:2,hi:1,co:3},
+  '3-4-1-2':   {d:3,m:2,a:2,w:2,p:1,dm:0,ten:1,wb:2,hi:2,co:2},
+  '3-3-3-1':   {d:3,m:3,a:1,w:2,p:3,dm:1,ten:3,wb:0,hi:2,co:2},
+  '5-3-2':     {d:5,m:3,a:2,w:2,p:0,dm:1,ten:0,wb:2,hi:1,co:4},
+  '5-4-1':     {d:5,m:4,a:1,w:2,p:0,dm:1,ten:0,wb:2,hi:1,co:5},
+  '5-2-3':     {d:5,m:2,a:3,w:3,p:0,dm:2,ten:0,wb:2,hi:2,co:3},
+  '4-2-4':     {d:4,m:2,a:4,w:3,p:0,dm:2,ten:0,wb:0,hi:3,co:2},
+  '4-1-2-1-2': {d:4,m:4,a:2,w:1,p:1,dm:1,ten:1,wb:0,hi:2,co:4},
+  '4-1-3-2':   {d:4,m:4,a:2,w:2,p:1,dm:1,ten:1,wb:0,hi:2,co:3},
+  '5-2-1-2':   {d:5,m:3,a:2,w:2,p:1,dm:2,ten:1,wb:2,hi:1,co:4},
+  '3-2-4-1':   {d:3,m:2,a:1,w:3,p:4,dm:2,ten:2,wb:0,hi:3,co:2},
+  '3-2-2-3':   {d:3,m:2,a:3,w:3,p:2,dm:2,ten:2,wb:0,hi:3,co:2}
+};
+var FORM_LIST = Object.keys(FORM);
+function formInfo(k){ return k && FORM[k] ? FORM[k] : null; }
+function formEffect(att, def) {
+  var A=formInfo(att), B=formInfo(def), x=1, y=1, notes=[];
+  if(!A || !B) return {att:1,def:1,notes:[]};
+  /* Width vs narrowness / back-three wing spaces. */
+  x += 0.012*(A.w-B.w);
+  x += 0.010*((A.w>=3?1:0)-(B.w<=1?1:0));
+  /* Central numerical superiority and the No.10 pocket. */
+  x += 0.012*(A.m-B.m);
+  x += 0.010*(A.ten>0 && B.dm<=1 ? 1 : 0);
+  /* Front-three pressure against 4/5-man build-up, and two-striker box occupation. */
+  x += 0.009*(A.a-B.dm);
+  x += 0.008*(A.p>=2 && B.d>=4 ? 1 : 0);
+  /* Wing-backs can pin wide players but leave transition channels if lost. */
+  x += 0.010*(A.wb-B.wb);
+  /* Back three/five can reduce central penetration but may concede width. */
+  x -= 0.008*(B.d>=5 && A.w<3 ? 1 : 0);
+  x += 0.010*(A.w>=3 && B.d==3 ? 1 : 0);
+  /* High line vs direct/front-heavy opponent. */
+  x += 0.008*(A.a>=3 && B.hi>=2 ? 1 : 0);
+  y = 1 + 0.006*(B.w-A.w) + 0.009*(B.a-A.dm) + 0.008*(B.ten>0 && A.dm<=1 ? 1 : 0);
+  /* Transition risk: aggressive structure can raise both sides' chance creation. */
+  if(A.a>=3 && B.a>=2) { x+=0.008; y+=0.008; notes.push('\u062f\u0648 \u062a\u06cc\u0645 \u0633\u0627\u062e\u062a\u0627\u0631 \u062a\u0647\u0627\u062c\u0645\u06cc \u062f\u0627\u0631\u0646\u062f\u061b \u0631\u06cc\u0633\u06a9 \u0627\u0646\u062a\u0642\u0627\u0644 \u0648 \u0645\u0648\u0642\u0639\u06cc\u062a\u200c\u0633\u0627\u0632\u06cc \u0647\u0631 \u062f\u0648 \u0637\u0631\u0641 \u0628\u06cc\u0634\u062a\u0631 \u0627\u0633\u062a'); }
+  if(A.w>=3 && B.d==3) notes.push('\u0639\u0631\u0636 \u0645\u06cc\u0632\u0628\u0627\u0646 \u062f\u0631 \u0628\u0631\u0627\u0628\u0631 \u062f\u0641\u0627\u0639 \u0633\u0647\u200c\u0646\u0641\u0631\u0647 \u0645\u06cc\u200c\u062a\u0648\u0627\u0646\u062f \u0641\u0636\u0627 \u062f\u0631 \u06a9\u0627\u0646\u0627\u0644\u200c\u0647\u0627\u06cc \u06a9\u0646\u0627\u0631\u06cc \u0627\u06cc\u062c\u0627\u062f \u06a9\u0646\u062f');
+  if(A.m>B.m) notes.push('\u0628\u0631\u062a\u0631\u06cc \u0639\u062f\u062f\u06cc \u0645\u06cc\u0627\u0646\u0647 \u0632\u0645\u06cc\u0646 \u0628\u0647 \u0646\u0641\u0639 \u0633\u0627\u062e\u062a\u0627\u0631 \u0645\u0647\u0627\u062c\u0645 \u0627\u0633\u062a');
+  if(B.ten>0 && A.dm<=1) notes.push('\u0634\u0645\u0627\u0631\u0647 \u06f1\u06f0 \u0645\u0647\u0645\u0627\u0646 \u0645\u06cc\u200c\u062a\u0648\u0627\u0646\u062f \u067e\u0634\u062a \u0647\u0627\u0641\u0628\u06a9 \u062f\u0641\u0627\u0639\u06cc \u0645\u06cc\u0632\u0628\u0627\u0646 \u0641\u0636\u0627 \u067e\u06cc\u062f\u0627 \u06a9\u0646\u062f');
+  if(B.w>=3 && A.d==3) notes.push('\u0639\u0631\u0636 \u0645\u0647\u0645\u0627\u0646 \u0645\u06cc\u200c\u062a\u0648\u0627\u0646\u062f \u062f\u0641\u0627\u0639 \u0633\u0647\u200c\u0646\u0641\u0631\u0647 \u0645\u06cc\u0632\u0628\u0627\u0646 \u0631\u0627 \u0628\u0647 \u06a9\u0646\u0627\u0631\u0647\u200c\u0647\u0627 \u0628\u06a9\u0634\u062f');
+  return {att:clp(x,.92,1.08),def:clp(y,.92,1.08),notes:notes};
+}
+function formMatch(home, away) {
+  var ha=formEffect(home,away), ah=formEffect(away,home);
+  return {home:ha.att*ah.def,away:ah.att*ha.def,notes:(ha.notes||[]).concat(ah.notes||[])};
+}
+
+/* Match history: score is always from the named team's perspective, newest first. */
+function sHistNum(x) { return num(String(x).replace(/[\u0660-\u0669]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0x0660 + 48); })); }
+function sHistParse(raw, defaultVenue) {
+  var text = sHistDigits(String(raw || '')).replace(/\r/g, ''), lines = text.split(/[\n,;]+/), games = [], entries = 0, invalid = 0, valid = 0;
+  lines.forEach(function (line, i) {
+    line = line.trim(); if (!line) return; entries++;
+    var r = line.match(/^(خانه|داخل\s*خانه|خارج|بیرون\s*از\s*خانه|نامشخص|نامعلوم|unknown|H|A)\s*\|\s*([^|]*)\s*\|\s*([^|]*)\s*\|\s*(\d{1,2})\s*[-–—:]\s*(\d{1,2})$/i);
+    var f, a, venue = null, date = '', opponent = '';
+    if (r) {
+      var v = r[1].toLowerCase(); venue = /^(?:نامشخص|نامعلوم|unknown)$/.test(v) ? null : (/^(?:خانه|داخل\s*خانه|h)$/.test(v) ? 'H' : 'A');
+      date = r[2].trim(); opponent = r[3].trim(); f = +r[4]; a = +r[5];
+      if (date === '-') date = ''; if (opponent === '-') opponent = '';
+    } else {
+      var m = line.match(/^(\d{1,2})\s*[-–—:]\s*(\d{1,2})$/);
+      if (!m) { invalid++; return; }
+      f = +m[1]; a = +m[2]; venue = defaultVenue || null;
+    }
+    if (!isFinite(f) || !isFinite(a) || f < 0 || a < 0 || f > 20 || a > 20) { invalid++; return; }
+    valid++; if (games.length < 50) games.push({ f:f, a:a, venue:venue, date:date, opponent:opponent, index:i });
+  });
+  return { games:games, entries:entries, invalid:invalid, valid:valid, used:games.length, hasText:!!text.trim() };
+}
+function sHistFld(ctx, key, title, example) {
+  var D = sD(ctx);
+  return '<div style="margin-top:8px"><label class="mut" style="font-size:12px;display:block;margin-bottom:4px">' + title + '</label>' +
+    '<textarea id="shinput_' + ctx + '_' + key + '" class="sin ltr" rows="5" spellcheck="false" autocapitalize="off" style="width:100%;box-sizing:border-box;resize:vertical;line-height:1.7;padding:9px;border-radius:10px" placeholder="' + example + '" oninput="sIn(\'' + ctx + '\',\'n\',\'' + key + '\',this)" onblur="sBlur()">' + esc(D[key] || '') + '</textarea>' +
+    '<div class="quick" style="margin-top:5px"><button onclick="sHistImport(\'' + ctx + '\',\'' + key + '\')">📋 چسباندن تاریخچه و تشخیص خودکار تیم</button><button onclick="sHistClear(\'' + ctx + '\',\'' + key + '\')">پاک‌کردن</button></div>' +
+    '<div class="mut" style="font-size:11px;line-height:1.7">متن کامل صفحهٔ عمومی Matches / Last 50 همان تیم را کپی کن؛ همهٔ بازی‌ها ذخیره می‌شوند و با تاریخ، حریف، نتیجه از نگاه همان تیم و برچسب خانه/خارج نمایش داده می‌شوند. سپس مدل کل ۵۰ بازی را وزن‌دار بررسی می‌کند و جداگانه حداکثر ۲۵ بازی خانگی میزبان یا ۲۵ بازی خارج از خانهٔ میهمان را استخراج می‌کند.</div>' +
+    '<div id="shmsg_' + ctx + '_' + key + '" class="mut" style="font-size:11px;line-height:1.7;margin-top:3px"></div></div>';
+}
+function sHistDigits(text) {
+  return String(text || '').replace(/[۰-۹]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0x06f0 + 48); })
+    .replace(/[٠-٩]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0x0660 + 48); })
+    .replace(/[−‑–—]/g, '-').replace(/[：]/g, ':').replace(/\u00a0/g, ' ');
+}
+function sHistCleanLabel(text) {
+  return sHistDigits(text).replace(/\b(?:19|20)\d{2}[/.\-]\d{1,2}[/.\-]\d{1,2}\b/g, ' ')
+    .replace(/\b\d{1,2}[/.\-]\d{1,2}[/.\-](?:\d{2}|\d{4})\b/g, ' ')
+    .replace(/\b\d{1,2}:\d{2}\b/g, ' ').replace(/(?:\d{1,2}\.\d{2}){2,3}$/, '').replace(/\s+/g, ' ').replace(/^[|\s,;]+|[|\s,;]+$/g, '').trim();
+}
+function sHistLooksDate(text) {
+  var t=sHistDigits(text).trim();
+  return !t || /^(?:\d{1,2}[/.\-]\d{1,2}(?:[/.\-]\d{2,4})?|(?:19|20)\d{2}[/.\-]\d{1,2}[/.\-]\d{1,2}|\d{1,2}:\d{2})$/.test(t) || /^(?:FT|AET|PEN|HT|FINAL|FINAL SCORE)$/i.test(t);
+}
+function sHistNameScore(a,b) {
+  var fold=function(x){return String(x||'').replace(/\b(?:[A-Za-z]\.){2,}/g,function(ac){return ac.replace(/\./g,'');}).replace(/\s+/g,' ').trim();};
+  return sim1(fold(a),fold(b));
+}
+/* Normalize names independently from dates, punctuation and appended decimal odds in mobile clipboard text. */
+function sHistNameKey(x) {
+  return sHistDigits(String(x||'').toLowerCase())
+    .replace(/\b(?:19|20)\d{2}[-/.]\d{1,2}[-/.]\d{1,2}\b/g,' ')
+    .replace(/[^a-z\u0600-\u06ff\u0750-\u077f]+/g,'');
+}
+function sHistPrepareLine(x) {
+  return sHistDigits(String(x||'')).replace(/^\s*(?:19|20)\d{2}[-/.]\d{1,2}[-/.]\d{1,2}\s*/,'')
+    .replace(/^\s*\d{1,2}[/.-]\d{1,2}[/.-](?:\d{2}|\d{4})\s*/,'').trim();
+}
+/* Identify which of the two fixture teams the copied page actually describes. This prevents a Shimizu history pasted into the Gamba-away box from being reduced to only head-to-head matches. */
+function sHistNameCount(raw, name) {
+  var key=sHistNameKey(name), all=sHistNameKey(raw), count=0, pos=0;
+  if(!key) return 0;
+  while((pos=all.indexOf(key,pos))>=0){count++;pos+=key.length;}
+  return count;
+}
+function sHistDetectSourceKey(raw, names) {
+  var h=sHistNameCount(raw,names[0]), a=sHistNameCount(raw,names[1]);
+  if(h>=5 && h>=Math.max(2,a*1.55)) return 'histH';
+  if(a>=5 && a>=Math.max(2,h*1.55)) return 'histA';
+  return null;
+}
+function sHistImport(ctx, key, suppliedRaw, quiet, allowScoreOnly) {
+  var nm=sNames(ctx), requestedKey=key, raw=suppliedRaw || '';
+  if (!raw) { try { if (window.Android && Android.clip) raw=Android.clip() || ''; } catch(e) { raw=''; } }
+  if ((!raw || !String(raw).trim()) && sD(ctx)[requestedKey] && /(?:Matches|Last 50|تاریخچه|S-Pulse|FC|United|Osaka)/i.test(sD(ctx)[requestedKey])) raw=sD(ctx)[requestedKey];
+  if (!raw || !String(raw).trim()) raw=prompt('متن کامل صفحهٔ نتایج تیم را Paste کن؛ همهٔ ۵۰ بازی ذخیره و بازی‌های خانه/خارج در محاسبه جدا می‌شوند.', '');
+  if (!raw || !String(raw).trim()) return 0;
+  var detectedKey=sHistDetectSourceKey(raw,nm), destKey=detectedKey || requestedKey;
+  var target=destKey==='histH'?nm[0]:nm[1], autoRouted=destKey!==requestedKey;
+  var txt=sHistDigits(raw).replace(/\r/g,'').replace(/\u00a0/g,' '), lines=txt.split(/[\n]+/).map(function(x){return x.trim();}).filter(function(x){return !!x;}), rows=[], seen={};
+  function scoreTeam(rawHome, hs, as, rawAway, token, date) {
+    var home=sHistCleanLabel(rawHome), away=sHistCleanLabel(rawAway);
+    if (!home || !away || !isFinite(hs) || !isFinite(as) || hs<0 || as<0 || hs>20 || as>20) return;
+    var tk=sHistNameKey(target), hk=sHistNameKey(rawHome), ak=sHistNameKey(rawAway);
+    var exactHome=!!(tk && hk.indexOf(tk)>=0), exactAway=!!(tk && ak.indexOf(tk)>=0);
+    var sh=exactHome?1:sHistNameScore(target,home), sa=exactAway?1:sHistNameScore(target,away);
+    var isHome=exactHome || (!exactAway && sh>=0.38 && sh>sa+0.10);
+    var isAway=exactAway || (!exactHome && sa>=0.38 && sa>sh+0.10);
+    if (isHome===isAway) return;
+    var opponent=sHistCleanLabel(isHome?rawAway:rawHome);
+    if (!opponent || sHistNameKey(opponent)===tk) opponent='';
+    var f=isHome?hs:as, a=isHome?as:hs, venue=isHome?'H':'A';
+    var sig=date ? date+'|'+venue+'|'+sHistNameKey(opponent)+'|'+f+'-'+a : token+'|'+venue+'|'+sHistNameKey(opponent)+'|'+f+'-'+a;
+    if (seen[sig]) return; seen[sig]=1;
+    rows.push({f:f,a:a,venue:venue,opponent:opponent,date:date||'',order:rows.length});
+  }
+  function findInline(line, token) {
+    var dm=line.match(/((?:19|20)\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/), date=dm?(dm[1]+'-'+('0'+dm[2]).slice(-2)+'-'+('0'+dm[3]).slice(-2)):'';
+    var x=sHistPrepareLine(line), re=/(\d{1,2})\s*[-–—:]\s*(\d{1,2})/g, m;
+    while ((m=re.exec(x))!==null) {
+      var left=x.slice(0,m.index).replace(/[|\s,;]+$/g,'').trim(), right=x.slice(re.lastIndex).replace(/^[|\s,;]+/g,'').trim();
+      if (left && right && left.length>1 && right.length>1) scoreTeam(left,+m[1],+m[2],right,token+'i'+m.index,date);
+    }
+  }
+  lines.forEach(function(line,i){ findInline(line,'l'+i); });
+  function prevLabel(i) { for(var j=i-1;j>=0 && j>=i-5;j--) if(!sHistLooksDate(lines[j]) && !/^\d{1,2}$/.test(lines[j]) && !/\d{1,2}\s*[-:]\s*\d{1,2}/.test(lines[j])) return sHistCleanLabel(lines[j]); return ''; }
+  function nextLabel(i) { for(var j=i+1;j<lines.length && j<=i+5;j++) if(!sHistLooksDate(lines[j]) && !/^\d{1,2}$/.test(lines[j]) && !/\d{1,2}\s*[-:]\s*\d{1,2}/.test(lines[j])) return sHistCleanLabel(lines[j]); return ''; }
+  lines.forEach(function(line,i){
+    var dm=line.match(/((?:19|20)\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/), date=dm?(dm[1]+'-'+('0'+dm[2]).slice(-2)+'-'+('0'+dm[3]).slice(-2)):'';
+    var m=line.match(/^\s*(\d{1,2})\s*[-:]\s*(\d{1,2})\s*$/);
+    if(m) scoreTeam(prevLabel(i),+m[1],+m[2],nextLabel(i),'v'+i,date);
+    if(/^\s*\d{1,2}\s*$/.test(line) && i+1<lines.length && /^\s*\d{1,2}\s*$/.test(lines[i+1])) scoreTeam(prevLabel(i),+line.trim(),+lines[i+1].trim(),nextLabel(i+1),'n'+i,date);
+  });
+  if (!rows.length && allowScoreOnly !== false) {
+    var pairs=[], cleanLines=lines.filter(function(line){return !sHistLooksDate(line);});
+    cleanLines.forEach(function(line){var m=sHistDigits(line).trim().match(/^(\d{1,2})\s*[-:–—]\s*(\d{1,2})$/);if(m&&+m[1]<=20&&+m[2]<=20)pairs.push({f:+m[1],a:+m[2],venue:null,opponent:'',date:'',order:pairs.length});});
+    if(pairs.length>=3 && pairs.length===cleanLines.length) rows=pairs;
+  }
+  if (!rows.length) {
+    if (!quiet) toast('تیمِ متن: '+target+'؛ بازی قابل تشخیص پیدا نشد. متن باید شامل نام تیم‌ها و نتیجهٔ هر بازی باشد.');
+    return 0;
+  }
+  /* Keep the page order (normally newest first), but sort dated records by date if needed. */
+  if(rows.length>1 && rows.every(function(g){return !!g.date;})) rows.sort(function(a,b){return b.date.localeCompare(a.date);});
+  var D=sD(ctx), limited=rows.slice(0,50);
+  if(autoRouted) { var prior=sHistParse(D[requestedKey]||'', requestedKey==='histH'?'H':'A'); if(prior.games.length<3) D[requestedKey]=''; }
+  var otherKey=destKey==='histH'?'histA':'histH';
+  if(D[otherKey] && sHistParse(D[otherKey],otherKey==='histH'?'H':'A').games.length<3) D[otherKey]='';
+  /* Human-readable structured history. All matches are preserved; venue is NOT filtered at paste time. */
+  D[destKey]=limited.map(function(g){return (g.venue==='H'?'خانه':(g.venue==='A'?'خارج':'نامشخص'))+' | '+(g.date||'-')+' | '+(g.opponent||'-')+' | '+g.f+'-'+g.a;}).join('\n');
+  var m0=sM(ctx); if(m0) D._t=m0.time; sv('sman',SMN); sUpd(ctx);
+  var destBox=$('shinput_'+ctx+'_'+destKey); if(destBox) destBox.value=D[destKey];
+  var ptDestBox=$('ptshinput_'+ctx+'_'+destKey); if(ptDestBox) ptDestBox.value=D[destKey];
+  if(autoRouted){var reqBox=$('shinput_'+ctx+'_'+requestedKey);if(reqBox)reqBox.value=D[requestedKey]||'';var ptReqBox=$('ptshinput_'+ctx+'_'+requestedKey);if(ptReqBox)ptReqBox.value=D[requestedKey]||'';}
+  var homeN=limited.filter(function(g){return g.venue==='H';}).length, awayN=limited.filter(function(g){return g.venue==='A';}).length;
+  var wanted=destKey==='histH'?'H':'A', venueN=limited.filter(function(g){return g.venue===wanted;}).length;
+  var otherName=destKey==='histH'?nm[1]:nm[0], h2hN=limited.filter(function(g){return g.opponent && sHistNameScore(g.opponent,otherName)>=0.66;}).length;
+  var summary='✅ '+fa(limited.length)+' بازی کامل برای '+target+' ذخیره شد؛ '+fa(homeN)+' بازی خانگی و '+fa(awayN)+' بازی خارج از خانه. '+fa(Math.min(25,venueN))+' بازی اخیرِ '+(wanted==='H'?'خانگی':'خارج از خانه')+' برای مقایسهٔ اصلی در دسترس است.'+(h2hN?' رودررو با حریف فعلی: '+fa(h2hN)+' بازی.':'');
+  var e=$('shmsg_'+ctx+'_'+destKey); if(e) e.textContent=summary+(autoRouted?' (تیم تشخیص داده شد و متن به کادر درست منتقل شد)':'');
+  if(autoRouted){var re=$('shmsg_'+ctx+'_'+requestedKey);if(re)re.textContent='تاریخچهٔ تیم دیگر شناسایی شد؛ متن به کادر '+target+' منتقل شد.';}
+  if (!quiet) toast(summary);
+  return limited.length;
+}
+function sHistImportBoth(ctx) {
+  var raw=''; try { if(window.Android && Android.clip) raw=Android.clip() || ''; } catch(e) { raw=''; }
+  if(!raw || !String(raw).trim()) raw=prompt('متن کامل صفحهٔ نتایج یک تیم را Paste کن؛ همهٔ بازی‌هایش را ذخیره می‌کنم و خانه/خارج را در محاسبه جدا می‌کنم.', '');
+  if(!raw || !String(raw).trim()) return;
+  var nm=sNames(ctx), detected=sHistDetectSourceKey(raw,nm);
+  if(detected){sHistImport(ctx,detected,raw,false,false);return;}
+  toast('نام تیم از روی این متن به‌طور مطمئن با میزبان یا میهمان مسابقه تطبیق نکرد. از دکمهٔ «چسباندن تاریخچه» داخل کادر تیم درست استفاده کن؛ متن یک تیم را داخل هر دو تاریخچه کپی نکن.');
+}
+function sHistClear(ctx,key) { var D=sD(ctx); D[key]=''; sv('sman',SMN); sUpd(ctx); var e=$('shmsg_'+ctx+'_'+key); if(e)e.textContent=''; }
+
+function sCalc(ctx) {
+  var D=sD(ctx), nm=sNames(ctx), err=[], w=[];
+  var histH=sHistParse(D.histH,'H'), histA=sHistParse(D.histA,'A'), histMode=histH.hasText || histA.hasText;
+  if(histH.hasText && histH.games.length < 3) err.push(nm[0]+': حداقل ۳ نتیجه معتبر وارد کن؛ برای تاریخچه کامل هر خط باید قالب «خانه/خارج | تاریخ | حریف | گل‌زده-گل‌خورده» داشته باشد.');
+  if(histA.hasText && histA.games.length < 3) err.push(nm[1]+': حداقل ۳ نتیجه معتبر وارد کن؛ برای تاریخچه کامل هر خط باید قالب «خانه/خارج | تاریخ | حریف | گل‌زده-گل‌خورده» داشته باشد.');
+  if(err.length) return {err:err};
+  var prep=function(T,n0,hist,venueWanted){
+    if(hist && hist.hasText && hist.games.length>=3){
+      var all={sw:0,sw2:0,gf:0,ga:0,ppg:0,w:0,d:0,l:0}, venue={sw:0,sw2:0,gf:0,ga:0,ppg:0,w:0,d:0,l:0}, venueGames=[];
+      var add=function(acc,g,rw,neutralize){
+        var adj=1;
+        if(neutralize && g.venue==='H') adj=MP.ha;
+        else if(neutralize && g.venue==='A') adj=1/MP.ha;
+        var gf=+g.f/adj, ga=+g.a*adj, pts=(g.f>g.a?3:(g.f===g.a?1:0));
+        acc.sw+=rw;acc.sw2+=rw*rw;acc.gf+=rw*gf;acc.ga+=rw*ga;acc.ppg+=rw*pts;
+        if(g.f>g.a)acc.w+=rw;else if(g.f===g.a)acc.d+=rw;else acc.l+=rw;
+      };
+      hist.games.slice(0,50).forEach(function(g,i){add(all,g,Math.pow(0.97,i),true);if(g.venue===venueWanted && venueGames.length<25)venueGames.push(g);});
+      venueGames.forEach(function(g,i){add(venue,g,Math.pow(0.97,i),true);});
+      var stats=function(x,n){return {n:n,effN:x.sw2>0?x.sw*x.sw/x.sw2:n,gf:x.sw?x.gf/x.sw:1.35,ga:x.sw?x.ga/x.sw:1.35,ppg:x.sw?x.ppg/x.sw:1.35,sw:x.sw,w:x.w,d:x.d,l:x.l};};
+      return {n:hist.games.length,history:true,base:stats(all,hist.games.length),venue:stats(venue,venueGames.length),venueN:venueGames.length,games:hist.games,sh:sAvg(T.sh),po:sNum(T.po),ws:sNum(T.ws)||0,us:sNum(T.us)||0,ls:sNum(T.ls)||0};
+    }
+    var w0=sNum(T.w)||0,d=sNum(T.d)||0,l=sNum(T.l)||0,n=w0+d+l,gf=sNum(T.gf),ga=sNum(T.ga);
+    if(n<3){err.push(n0+': تعداد برد، مساوی و باخت را بده (حداقل ۳ بازی)');return null;}
+    if(gf===null||ga===null){err.push(n0+': گل زده و گل خورده را بده');return null;}
+    var base={n:n,effN:n,gf:gf/n,ga:ga/n,ppg:(3*w0+d)/n,w:w0,d:d,l:l,sw:n};
+    return {n:n,history:false,base:base,venue:{n:0,effN:0},venueN:0,games:[],gf:base.gf,ga:base.ga,ppg:base.ppg,effN:n,sh:sAvg(T.sh),po:sNum(T.po),ws:sNum(T.ws)||0,us:sNum(T.us)||0,ls:sNum(T.ls)||0};
+  };
+  var h=prep(D.h,nm[0],histH,'H'),a=prep(D.a,nm[1],histA,'A');if(!h||!a)return {err:err};
+  if(histMode){
+    if(histH.hasText && histA.hasText) w.push('هر دو تاریخچه به‌صورت مستقل وارد شده‌اند: '+nm[0]+' = '+h.n+' بازی کلی، '+h.venueN+' بازی خانگیِ اخیر برای مقایسهٔ محل مسابقه؛ '+nm[1]+' = '+a.n+' بازی کلی، '+a.venueN+' بازی خارج از خانهٔ اخیر. ابتدا کل نمونهٔ ۵۰تایی حفظ می‌شود و بعد زیرنمونهٔ حداکثر ۲۵ بازی هم‌شرایط مقایسه می‌شود.');
+    else if(histH.hasText) w.push('تاریخچهٔ '+nm[0]+': '+h.n+' بازی کلی حفظ شد و از میان آن '+h.venueN+' بازی خانگی برای مقایسهٔ اصلی انتخاب شد. چون تاریخچهٔ '+nm[1]+' وارد نشده، میهمان فعلاً از آمار دستی استفاده می‌کند.');
+    else w.push('تاریخچهٔ '+nm[1]+': '+a.n+' بازی کلی حفظ شد و از میان آن '+a.venueN+' بازی خارج از خانه برای مقایسهٔ اصلی انتخاب شد. چون تاریخچهٔ '+nm[0]+' وارد نشده، میزبان فعلاً از آمار دستی استفاده می‌کند.');
+    if(histH.invalid || histA.invalid) w.push('چند خط تاریخچه با قالب معتبر تشخیص داده نشد و نادیده گرفته شد.');
+    if(histH.valid>50 || histA.valid>50) w.push('از هر تاریخچه حداکثر ۵۰ بازی اخیر استفاده شده است.');
+    if((histH.hasText && h.venueN<5)||(histA.hasText && a.venueN<5)) w.push('برای یکی از تیم‌ها کمتر از ۵ بازی در شرایط محل فعلی ثبت شده؛ بنابراین سهم این زیرنمونه به‌صورت خودکار کاهش یافته تا دادهٔ کم، مدل را منحرف نکند.');
+  }
+  var K=4, nh=h.base.effN||h.n, na=a.base.effN||a.n;
+  var ms=((h.base.gf+h.base.ga)*nh+(a.base.gf+a.base.ga)*na)/(2*(nh+na)),mu=clp(.6*ms+.4*1.35,.95,1.9);
+  var finalize=function(t){
+    if(!t.history){t.gf=t.base.gf;t.ga=t.base.ga;t.ppg=t.base.ppg;t.effN=t.base.effN;return;}
+    var b=t.base,v=t.venue, prior=5;
+    var bgf=(b.gf*b.effN+prior*mu)/(b.effN+prior), bga=(b.ga*b.effN+prior*mu)/(b.effN+prior), bppg=(b.ppg*b.effN+prior*1.35)/(b.effN+prior);
+    var conf=v.n?0.60*Math.min(1,v.effN/12):0;
+    var vgf=v.n?(v.gf*v.effN+prior*mu)/(v.effN+prior):bgf, vga=v.n?(v.ga*v.effN+prior*mu)/(v.effN+prior):bga, vppg=v.n?(v.ppg*v.effN+prior*1.35)/(v.effN+prior):bppg;
+    t.gf=(1-conf)*bgf+conf*vgf;t.ga=(1-conf)*bga+conf*vga;t.ppg=(1-conf)*bppg+conf*vppg;t.effN=b.effN;t.venueShare=conf;
+  };
+  finalize(h);finalize(a);
+  if(histMode && (h.history || a.history)){
+    /* Build a deduplicated head-to-head sample from both pages, always expressed from the current home team's perspective. */
+    var hh=[], hhSeen={};
+    var namesMatch=function(x,y){return !!(x&&y&&(sHistNameKey(x)===sHistNameKey(y)||sHistNameScore(x,y)>=0.66));};
+    var addHh=function(g,fromAway){
+      var f=fromAway?g.a:g.f, ag=fromAway?g.f:g.a, venue=fromAway?(g.venue==='A'?'H':(g.venue==='H'?'A':null)):g.venue;
+      var sig=(g.date||'no-date')+'|'+venue+'|'+f+'-'+ag;
+      if(hhSeen[sig])return;hhSeen[sig]=1;hh.push({f:f,a:ag,venue:venue,date:g.date||''});
+    };
+    (h.games||[]).forEach(function(g){if(g.opponent&&namesMatch(g.opponent,nm[1]))addHh(g,false);});
+    (a.games||[]).forEach(function(g){if(g.opponent&&namesMatch(g.opponent,nm[0]))addHh(g,true);});
+    hh.sort(function(x,y){return (y.date||'').localeCompare(x.date||'');});hh=hh.slice(0,10);
+    if(hh.length>=2){
+      var sw=0,sw2=0,gf=0,ga=0;hh.forEach(function(g,i){var rw=Math.pow(.96,i)*(g.venue==='H'?1.5:(g.venue==='A'?.65:1)),adj=g.venue==='H'?MP.ha:(g.venue==='A'?1/MP.ha:1);sw+=rw;sw2+=rw*rw;gf+=rw*(g.f/adj);ga+=rw*(g.a*adj);});
+      var heff=sw2?sw*sw/sw2:hh.length, gh=gf/sw, ga2=ga/sw, priorH=4;
+      var h2hH=(gh*heff+priorH*mu)/(heff+priorH)/mu, h2hA=(ga2*heff+priorH*mu)/(heff+priorH)/mu;
+      var hc=Math.min(.15,.035*heff);
+      var hfact=clp(1+hc*(clp(h2hH,.70,1.30)-1),.94,1.06), afact=clp(1+hc*(clp(h2hA,.70,1.30)-1),.94,1.06); h._h2hFactor=hfact; a._h2hFactor=afact;
+      w.push('رودررو: '+hh.length+' بازی مستقیم پیدا شد؛ اثر آن با کوچک‌سازی آماری محدود شده و فقط تا حدود ۶٪ می‌تواند نرخ گل را تغییر دهد.');
+    } else w.push('از تاریخچه‌های واردشده حداقل دو بازی رودررو قابل اعتماد پیدا نشد؛ مدل بدون افزودن اثر رودررو عمل می‌کند.');
+    if(h._h2hFactor) { /* factors are applied below after baseline lambdas are formed */ }
+  }
+  var att=function(t){var x=t.gf;if(t.sh!==null)x=.85*x+.15*t.gf*clp(t.sh/12,.75,1.35);if(t.po!==null){var po=clp(t.po,30,70);x=.85*x+.15*t.gf*(1+(po-50)/100);}return x;};
+  var ah=h.history?att(h)/mu:(att(h)*nh+K*mu)/(nh+K)/mu,dh=h.history?h.ga/mu:(h.ga*nh+K*mu)/(nh+K)/mu,aa=a.history?att(a)/mu:(att(a)*na+K*mu)/(na+K)/mu,da=a.history?a.ga/mu:(a.ga*na+K*mu)/(na+K)/mu;
+  var lh=mu*MP.ha*ah*da,la=mu/MP.ha*aa*dh,f=Math.exp(MP.bs*clp(h.ppg-a.ppg,-2.5,2.5)/2);lh*=f;la/=f;
+  if(h._h2hFactor) lh*=h._h2hFactor;if(a._h2hFactor) la*=a._h2hFactor;
+  var stk=function(t){var fo=1,fx=1;if(t.ws>=3)fo*=1+.015*Math.min(t.ws-2,4);if(t.ls>=3){fo*=1-.02*Math.min(t.ls-2,4);fx*=1+.01*Math.min(t.ls-2,4);}if(t.us>=5)fx*=1-.01*Math.min(t.us-4,5);return[fo,fx];};
+  var sh=stk(h),sa=stk(a),mtf={league:[1,1],friendly:[1.08,1.08],club_group:[.98,.98],club_knockout:[.94,.94],nat_group:[.96,.96],nat_knockout:[.90,.90]}[D.mt]||[1,1];
+  lh*=mtf[0];la*=mtf[1];if(D.mt=='friendly')w.push('\u0628\u0627\u0632\u06cc \u062f\u0648\u0633\u062a\u0627\u0646\u0647: \u0627\u0641\u0632\u0627\u06cc\u0634 \u0645\u062d\u062f\u0648\u062f \u0646\u0631\u062e \u06af\u0644 \u0627\u0639\u0645\u0627\u0644 \u0634\u062f');
+  var wf={clear:1,cloudy:.995,rain:.92}[D.weather]||1;lh*=wf;la*=wf;
+  var temp=sNum(D.temp);if(temp!==null){var tf=temp<5?.94:(temp>35?.93:(temp>30?.97:(temp<10?.98:1)));lh*=tf;la*=tf;}
+  var ry=sNum(D.refY),rr=sNum(D.refR);if(ry!==null||rr!==null){var ref=1+clp(((ry===null?3.8:ry)-3.8)*.004+((rr===null?.12:rr)-.12)*.015,-.025,.025);lh*=ref;la*=ref;}
+  var xa=xAdj(ctx,lh,la,false);lh=xa[0];la=xa[1];if(xa[2])w.push(xa[2]);
+
+  /* Last-10 BTTS frequency: count of matches (0..10) in which BOTH teams scored.
+     Jeffreys Beta(0.5,0.5) posterior regularizes the ten-match sample. The evidence
+     is used primarily for the BTTS market and cannot overpower the goal model. */
+  var bH=sNum(D.btts10H),bA=sNum(D.btts10A),bhP=null,baP=null,bhist=null;
+  if(bH!==null){bH=Math.round(clp(bH,0,10));bhP=(bH+0.5)/11;}
+  if(bA!==null){bA=Math.round(clp(bA,0,10));baP=(bA+0.5)/11;}
+  if(bhP!==null&&baP!==null){
+    var logit=function(p){p=clp(p,.001,.999);return Math.log(p/(1-p));};
+    var invlogit=function(z){return 1/(1+Math.exp(-z));};
+    bhist=invlogit((logit(bhP)+logit(baP))/2);
+    w.push('BTTS \u062f\u0647 \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631: '+bH+' \u0627\u0632 \u06f1\u06f0 \u0628\u0631\u0627\u06cc '+nm[0]+' \u0648 '+bA+' \u0627\u0632 \u06f1\u06f0 \u0628\u0631\u0627\u06cc '+nm[1]+'\u061b \u0627\u062b\u0631 \u0645\u0646\u0638\u0645\u200c\u0634\u062f\u0647 \u0631\u0648\u06cc \u0628\u0627\u0632\u0627\u0631 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0646\u062f \u0627\u0639\u0645\u0627\u0644 \u0634\u062f');
+  }
+
+  /* Formation-vs-formation tactical interaction. */
+  var fm=formMatch(D.formH,D.formA);lh*=fm.home;la*=fm.away;Array.prototype.push.apply(w,fm.notes);
+  lh*=clp(sh[0]*sa[1],.9,1.1);la*=clp(sa[0]*sh[1],.9,1.1);lh=clp(lh*MP.gs,.15,4.5);la=clp(la*MP.gs,.15,4.5);
+  var raw=[r3(lh),r3(la)],mk=null;
+  if(D.bl && !histMode){var g=sGet(ctx),T=lh+la,Dd=lh-la,tm=null,dm=null,qo=sNv(g,'O25');if(qo!==null)tm=bis(function(x){return ceq(ctot(x,2.5,'O'));},qo,.3,7);
+    var Tf=tm!==null?(T+tm)/2:T,q1=sNv(g,'1'),q2=sNv(g,'2');if(q1!==null&&q2!==null)dm=bis(function(x){var r=chcp((Tf+x)/2,(Tf-x)/2,1,0);return r[0]-r[2];},q1-q2,-Tf+.05,Tf-.05);
+    var Df=dm!==null?(Dd+dm)/2:Dd;if(tm!==null||dm!==null){lh=clp((Tf+Df)/2,.1,4.5);la=clp((Tf-Df)/2,.1,4.5);mk={t:tm,d:dm};}}
+  if(h.n<6||a.n<6)w.push('\u0646\u0645\u0648\u0646\u0647 \u06a9\u0645\u062a\u0631 \u0627\u0632 \u06f6 \u0628\u0627\u0632\u06cc \u0627\u0633\u062a\u061b \u0627\u0637\u0645\u06cc\u0646\u0627\u0646 \u0645\u062f\u0644 \u0645\u062a\u0648\u0633\u0637 \u0627\u0633\u062a');
+  if(histMode)w.push('مدل این پیش‌بینی مستقل است: ضرایب بازار احتمال خام مدل را تغییر نمی‌دهند؛ فقط برای مقایسهٔ احتمال با قیمت و محاسبهٔ EV استفاده می‌شوند.');
+  return {lh:r3(lh),la:r3(la),rho:MP.rho,raw:raw,mk:mk,mu:mu,w:w,h:h,a:a,independent:!!histMode,bttsHist:bhist,bttsCounts:{home:bH,away:bA},inputs:{weather:D.weather,temp:temp,refY:ry,refR:rr,formH:D.formH,formA:D.formA,btts10H:bH,btts10A:bA,matchType:D.mt,formationEffect:fm}};
+}
+var SMK = [['1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646'], ['X', '\u0645\u0633\u0627\u0648\u06cc'], ['2', '\u06f2 \u0645\u0647\u0645\u0627\u0646'], ['1X', '1X'], ['X2', 'X2'], ['12', '12'], ['H1:0', '\u0645\u06cc\u0632\u0628\u0627\u0646 \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc'], ['H2:0', '\u0645\u0647\u0645\u0627\u0646 \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc'], ['O15', 'O 1.5'], ['U15', 'U 1.5'], ['O25', 'O 2.5'], ['U25', 'U 2.5'], ['O35', 'O 3.5'], ['U35', 'U 3.5'], ['BY', 'BTTS \u0628\u0644\u0647'], ['BN', 'BTTS \u062e\u06cc\u0631']];
+function sLn(v) { return (v > 0 ? '+' : '') + v; }
+function sRow(R, g, k, l) {
+  var p = mPr(R, k), o = g(k), q = o ? sNv(g, k) : null;
+  if (p === null) p = 0;
+  var pr = p; if (!R.independent) p = anc(k, p, q);
+  var ev = o ? p * o - 1 : null, ed = q === null ? null : pr - q;
+  var q1 = sNv(g, '1'), q2 = sNv(g, '2'), ag = false;
+  if (q1 !== null && q1 >= FAVT && { '2': 1, 'X': 1, 'X2': 1, 'H2:0': 1 }[k]) ag = true;
+  if (q2 !== null && q2 >= FAVT && { '1': 1, 'X': 1, '1X': 1, 'H1:0': 1 }[k]) ag = true;
+  var v = valOK(k, pr, ev, q, o, ag);
+  var v2 = !v && !isCau(k) && o && o >= 1.40 && ev >= 0 && !ag && (q === null || (pr - q >= 0.03 && pr - q <= 0.15)) ? 1 : 0;
+  return { k: k, l: cauL(k, l), p: p, o: o, q: q, ev: ev, ed: ed, v: v, v2: v2, ag: ag };
+}
+function sAll(R, g) {
+  var M = SMK.map(function (x) { return sRow(R, g, x[0], x[1]); }), T = [], H = [];
+  TLN.forEach(function (v) { T.push([sRow(R, g, tkey('O', v), 'O ' + v), sRow(R, g, tkey('U', v), 'U ' + v)]); });
+  HLN.forEach(function (v) { H.push([sRow(R, g, hkey('1', v), sLn(v)), sRow(R, g, hkey('2', -v), sLn(-v))]); });
+  var seen = {}, V = [];
+  var add = function (x) { if (seen[x.k]) return; seen[x.k] = 1; if (x.v || x.v2) V.push(x); };
+  M.forEach(add); T.forEach(function (r) { add(r[0]); add(r[1]); }); H.forEach(function (r) { add(r[0]); add(r[1]); });
+  V.sort(function (a, b) { return b.v - a.v || b.ev - a.ev; });
+  return { M: M, T: T, H: H, V: V };
+}
+function sEvb(x) { return x.ev === null ? '-' : '<b class="ltr" style="color:' + (x.ev >= 0.05 ? 'var(--green)' : (x.ev >= 0 ? 'var(--gold)' : 'var(--red)')) + '">' + (x.ev >= 0 ? '+' : '') + x.ev.toFixed(2) + '</b>'; }
+function sStakeRec(x) {
+  if (!x || !x.v || x.p === null || !x.o || x.o <= 1 || !W || W.coins <= 0) return 0;
+  return stakeRec(x.ev === null || x.ev === undefined ? x.p * x.o - 1 : x.ev, x.o, W.coins);
+}
+function sTr(ctx, x, l) {
+  return '<tr' + (x.v ? ' class="best"' : '') + ' onclick="sAdd(\'' + ctx + '\',\'' + x.k + '\')"><td>' + (x.v ? '\ud83d\udc8e ' : (x.v2 ? '\ud83e\udd48 ' : '')) + (x.ag ? '\u26a0\ufe0f ' : '') + '<span class="ltr">' + (l || x.l) + '</span></td><td>' + pc(x.p) + '</td><td>' + (x.q === null ? '-' : pct(x.q)) + '</td><td class="gold">' + fo2(x.p > 0 ? 1 / x.p : 0) + '</td><td>' + (x.o ? x.o.toFixed(2) : '-') + '</td><td>' + sEvb(x) + '</td></tr>';
+}
+var STH = '<tr><th>\u0628\u0627\u0632\u0627\u0631</th><th>\u0645\u062f\u0644</th><th>\u0628\u0627\u0632\u0627\u0631</th><th>\u0645\u0646\u0635\u0641\u0627\u0646\u0647</th><th>\u0636\u0631\u06cc\u0628</th><th>EV</th></tr>';
+function sNameOf(x, nm) {
+  var k = x.k, h = hcp(k);
+  if (k == '1') return '\u0628\u0631\u062f ' + nm[0]; if (k == '2') return '\u0628\u0631\u062f ' + nm[1]; if (k == 'X') return '\u0645\u0633\u0627\u0648\u06cc';
+  if (k == 'H1:0') return nm[0] + ' \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc'; if (k == 'H2:0') return nm[1] + ' \u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc';
+  if (h) return '\u0647\u0646\u062f\u06cc\u06a9\u067e ' + (h.s == '1' ? nm[0] : nm[1]) + ' ' + sLn(h.v);
+  return x.l;
+}
+function sResHtml(ctx) {
+  var R = sCalc(ctx);
+  if (R.err) { delete SRES[ctx]; return '<div class="mut" style="line-height:1.9;margin-top:6px">' + R.err.map(esc).join('<br>') + '</div>'; }
+  SRES[ctx] = R;
+  var g = sGet(ctx), nm = sNames(ctx), A = sAll(R, g), hasO = A.M.some(function (x) { return x.o; }), h = '';
+  h += '<div class="grid" style="margin-top:8px"><div class="cell">\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631 ' + esc(nm[0]) + '<b class="gold">' + fc(R.lh) + '</b></div><div class="cell">\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631 ' + esc(nm[1]) + '<b class="gold">' + fc(R.la) + '</b></div></div>';
+  if(R.bttsCounts && R.bttsCounts.home!==null && R.bttsCounts.away!==null) h += '<div class="mut" style="line-height:1.8;margin-top:4px">BTTS \u062f\u0631 \u06f1\u06f0 \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631: <b>'+fa(R.bttsCounts.home)+'</b> \u0627\u0632 \u06f1\u06f0 \u0628\u0631\u0627\u06cc '+esc(nm[0])+' | <b>'+fa(R.bttsCounts.away)+'</b> \u0627\u0632 \u06f1\u06f0 \u0628\u0631\u0627\u06cc '+esc(nm[1])+'</div>';
+  h += '<div class="mut" style="line-height:1.8;margin-top:4px">\u06a9\u0644: ' + fc(R.lh + R.la) + ' \u06af\u0644' + (R.mk ? ' | \u0645\u062f\u0644 \u062e\u0627\u0645: <span class="ltr">' + fc(R.raw[0]) + ' - ' + fc(R.raw[1]) + '</span>' + (R.mk.t !== null ? ' | \u0628\u0627\u0632\u0627\u0631: ' + fc(R.mk.t) + ' \u06af\u0644' : '') + '. \u0646\u0635\u0641\u200c\u0646\u0635\u0641 \u06a9\u0634\u06cc\u062f\u0647 \u0634\u062f \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631 (\u062f\u0631\u0633 \u06f1\u060c \u06f2\u06f6 \u0648 \u06f5\u06f0)' : '') + '</div>';
+  R.w.forEach(function (t) { h += '<div class="warn">\u26a0\ufe0f ' + esc(t) + '</div>'; });
+  h += '<div class="note" style="white-space:normal"><b>\ud83d\udc8e \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u0627\u0627\u0631\u0632\u0634</b>';
+  if (!hasO) h += '<br><span class="mut">\u0636\u0631\u0627\u06cc\u0628 \u0628\u062a \u0648\u0627\u0646\u0627 \u0631\u0648 \u0628\u0686\u0633\u0628\u0648\u0646 \u062a\u0627 \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u0627\u0627\u0631\u0632\u0634 \u0631\u0648 \u062c\u062f\u0627 \u06a9\u0646\u0645</span>';
+  else if (!A.V.length) h += '<br>\u274c \u0634\u0631\u0637 \u0627\u0631\u0632\u0634\u0645\u0646\u062f\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f (\u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632\u060c \u0633\u0624\u0627\u0644 \u06f1\u06f0)';
+  else A.V.forEach(function (x) { h += '<br>' + (x.v ? '\ud83d\udc8e ' : '\ud83e\udd48 \u062f\u0631\u062c\u0647 \u062f\u0648: ') + '<b>' + esc(sNameOf(x, nm)) + '</b> \u0627\u0632 <b class="gold">' + x.o.toFixed(2) + '</b> | \u0627\u062d\u062a\u0645\u0627\u0644 ' + pc(x.p) + ' | EV <span class="ltr">+' + x.ev.toFixed(2) + '</span>' + (x.p < 0.5 ? ' | <span style="color:var(--red)">\u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0627\u062e\u062a\u0634 \u0628\u06cc\u0634\u062a\u0631\u0647\u060c \u062a\u06a9\u06cc \u0648 \u0628\u0627 \u0645\u0628\u0644\u063a \u06a9\u0645</span>' : '') + (x.v ? ' | <span style="color:var(--green);cursor:pointer;text-decoration:underline" title="\u0627\u0641\u0632\u0648\u062f\u0646 \u0628\u0647 \u0628\u0644\u06cc\u0637 \u0648 \u062f\u0631\u062c \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc" onclick="event.stopPropagation();sAddStake(\'' + ctx + '\',\'' + x.k + '\',' + sStakeRec(x) + ')">\ud83d\udcb0 \u0633\u06a9\u0647 \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc: ' + fc(sStakeRec(x)) + '</span>' : ''); });
+  h += '</div>';
+  h += '<table class="tbl">' + STH; A.M.forEach(function (x) { h += sTr(ctx, x); }); h += '</table>';
+  h += '<details class="gdd" style="margin-top:6px"><summary class="mut">\u26bd \u0647\u0645\u0647 \u062e\u0637\u200c\u0647\u0627\u06cc \u06af\u0644 (\u06f0.\u06f5 \u062a\u0627 \u06f5.\u06f5)</summary><table class="tbl">' + STH;
+  A.T.forEach(function (r) { h += sTr(ctx, r[0]) + sTr(ctx, r[1]); });
+  h += '</table></details><details class="gdd" style="margin-top:6px"><summary class="mut">\ud83c\udfc1 \u0647\u0645\u0647 \u0647\u0646\u062f\u06cc\u06a9\u067e\u200c\u0647\u0627 (\u06f2.\u06f5- \u062a\u0627 \u06f2.\u06f5+)</summary><table class="tbl">' + STH;
+  A.H.forEach(function (r) { h += sTr(ctx, r[0], '\u0645\u06cc\u0632\u0628\u0627\u0646 ' + r[0].l) + sTr(ctx, r[1], '\u0645\u0647\u0645\u0627\u0646 ' + r[1].l); });
+  h += '</table><div class="mut" style="margin-top:4px">\u062e\u0637 \u06a9\u0627\u0645\u0644 (\u06f0\u060c \u06f1\u060c \u06f2) \u0627\u06af\u0647 \u0645\u0633\u0627\u0648\u06cc \u0628\u0634\u0647 \u0628\u0631\u06af\u0634\u062a \u067e\u0648\u0644\u0647 \u0648 \u062a\u0648 \u062f\u0631\u0635\u062f \u062d\u0633\u0627\u0628 \u0646\u0634\u062f\u0647</div></details>';
+  h += '<div class="quick" style="margin-top:6px"><button onclick="sCopy(\'' + ctx + '\')">\ud83d\udccb \u06a9\u067e\u06cc \u0646\u062a\u06cc\u062c\u0647</button></div>';
+  h += '<div class="mut" style="line-height:1.8;margin-top:4px">\ud83d\udc8e \u06cc\u0639\u0646\u06cc \u0636\u0631\u06cc\u0628 \u06f1.\u06f4\u06f5 \u0628\u0647 \u0628\u0627\u0644\u0627\u060c EV \u062d\u062f\u0627\u0642\u0644 \u06f0.\u06f0\u06f5+ \u0648 \u062d\u062f\u0627\u0642\u0644 \u06f5\u066a \u0628\u0627\u0644\u0627\u062a\u0631 \u0627\u0632 \u0628\u0627\u0632\u0627\u0631. \ud83e\udd48 \u06cc\u0639\u0646\u06cc Over \u0628\u0627 \u0627\u062e\u062a\u0644\u0627\u0641 \u06f3 \u062a\u0627 \u06f5 \u062f\u0631\u0635\u062f (\u062f\u0631\u0633 \u06f2\u06f7). \u0628\u0631\u0627\u06cc EV \u0633\u0642\u0641 \u0627\u062d\u062a\u0645\u0627\u0644 \u06f8\u06f0\u066a \u0648 \u0628\u0631\u0627\u06cc Under 3.5 \u0633\u0642\u0641 \u06f7\u06f0\u066a \u06af\u0630\u0627\u0634\u062a\u0647 \u0634\u062f\u0647. \u26a0\ufe0f \u06cc\u0639\u0646\u06cc \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u06f5\u06f5\u066a \u0628\u0647 \u0628\u0627\u0644\u0627\u060c \u06a9\u0647 \u0647\u06cc\u0686\u200c\u0648\u0642\u062a \ud83d\udc8e \u0646\u0645\u06cc\u200c\u06af\u06cc\u0631\u0647.' + (sM(ctx) ? ' \u0631\u0648\u06cc \u0647\u0631 \u0633\u0637\u0631 \u0628\u0632\u0646\u06cc \u0645\u06cc\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637 \u0648 \u00ab\ud83c\udfaf \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646\u00bb \u0627\u0632 \u0647\u0645\u06cc\u0646 \u0645\u062f\u0644 \u067e\u0631 \u0645\u06cc\u0634\u0647.' : '') + '</div>';
+  return h;
+}
+function sUpd(ctx) { var e = $('sres_' + ctx); if (e) e.innerHTML = sResHtml(ctx); }
+function sIn(ctx, s, k, el) { var D = sD(ctx), m = sM(ctx); if (s == 'n') D[k] = el.value; else D[s][k] = el.value; if (m) D._t = m.time; sv('sman', SMN); sUpd(ctx); }
+function sRe(ctx) { if (ctx == 'calc') renderCalc(); else rerender(); }
+function sTog(ctx) { SOPEN[ctx] = !SOPEN[ctx]; if (ctx != 'calc' && SOPEN[ctx] && SEL != ctx && MATCHES[ctx]) { openM(ctx); return; } sRe(ctx); }
+function sBl(ctx) { var D = sD(ctx); D.bl = D.bl ? 0 : 1; sv('sman', SMN); sRe(ctx); }
+function sClr(ctx) { if (!confirm('\u0622\u0645\u0627\u0631 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return; var D = sD(ctx); D.h = {}; D.a = {}; D.mt = 'league'; D.weather='clear'; D.temp=''; D.refY=''; D.refR=''; D.formH=''; D.formA=''; D.btts10H=''; D.btts10A=''; D.histH=''; D.histA=''; if (ctx == 'calc') { D.o = {}; D.hn = ''; D.an = ''; } delete SRES[ctx]; sv('sman', SMN); sRe(ctx); }
+function sAdd(ctx, k) { var m = sM(ctx); if (!m) { toast('\u0627\u06cc\u0646\u062c\u0627 \u0641\u0642\u0637 \u0645\u062d\u0627\u0633\u0628\u0647\u200c\u0633\u062a. \u0628\u0631\u0627\u06cc \u0628\u0644\u06cc\u0637 \u0627\u0632 \u0635\u0641\u062d\u0647 \u0647\u0645\u0648\u0646 \u0628\u0627\u0632\u06cc \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u06a9\u0646'); return false; } if (!getOdd(m, k)) { toast('\u0627\u0648\u0644 \u0636\u0631\u06cc\u0628 \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u0628\u0686\u0633\u0628\u0648\u0646 \u06cc\u0627 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647'); return false; } tog(ctx, k); return true; }
+function sAddStake(ctx, k, amount) {
+  var n = Number(amount) || 0;
+  if (n <= 0) { sAdd(ctx, k); return; }
+  if (sAdd(ctx, k)) {
+    SLIPSTAKE = n;
+    go('slip');
+  }
+}
+function sPaste(ctx) {
+  if (ctx != 'calc') { pasteOdds(ctx); return; }
+  var t = '';
+  try { if (window.Android && Android.clip) t = Android.clip(); } catch (e) { t = ''; }
+  if (!t || !parseOdds(t).n) { t = prompt('\ud83d\udccb \u0645\u062a\u0646 \u0635\u0641\u062d\u0647 \u0628\u0627\u0632\u06cc \u0631\u0648 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627 \u06a9\u067e\u06cc \u06a9\u0646 \u0648 \u0627\u06cc\u0646\u062c\u0627 Paste \u06a9\u0646', ''); if (!t) return; }
+  var P = parseOdds(t); if (!P.n) { toast('\u062a\u0648 \u0627\u06cc\u0646 \u0645\u062a\u0646 \u0636\u0631\u06cc\u0628\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f'); return; }
+  var D = sD(ctx); D.o = P.o; if (P.h) D.hn = P.h; if (P.a) D.an = P.a; sv('sman', SMN);
+  toast('\u2705 ' + fa(P.n) + ' \u0636\u0631\u06cc\u0628 \u062b\u0628\u062a \u0634\u062f'); renderCalc();
+}
+function sInt10Fld(ctx, k, l) { var D=sD(ctx), v=D[k]; return '<div><label class="mut" style="font-size:11px">'+l+'</label><input class="sin ltr" type="number" min="0" max="10" step="1" inputmode="numeric" value="'+esc(v || '')+'" oninput="sIn(\''+ctx+'\',\'n\',\''+k+'\',this)" onblur="sBlur()"></div>'; }
+function sFld(ctx, s, k, l, txt) { var D = sD(ctx), v = s == 'n' ? D[k] : D[s][k]; return '<div><label class="mut" style="font-size:11px">' + l + '</label><input class="sin' + (txt ? '' : ' ltr') + '" ' + (txt ? '' : 'inputmode="decimal" ') + 'value="' + esc(v || '') + '" oninput="sIn(\'' + ctx + '\',\'' + s + '\',\'' + k + '\',this)" onblur="sBlur()"></div>'; }
+function sSide(ctx, s, n0) {
+  var r = function (a) { return '<div class="sg" style="grid-template-columns:repeat(' + a.length + ',1fr)">' + a.map(function (x) { return sFld(ctx, s, x[0], x[1], x[2]); }).join('') + '</div>'; };
+  return '<div class="note" style="white-space:normal"><b>' + esc(n0) + '</b>' + r([['w', '\u0628\u0631\u062f'], ['d', '\u0645\u0633\u0627\u0648\u06cc'], ['l', '\u0628\u0627\u062e\u062a']]) + r([['gf', '\u06af\u0644 \u0632\u062f\u0647 (\u062c\u0645\u0639)'], ['ga', '\u06af\u0644 \u062e\u0648\u0631\u062f\u0647 (\u062c\u0645\u0639)']]) +
+    r([['sh', '\u0645\u062c\u0645\u0648\u0639 \u0634\u0648\u062a (\u0647\u0631 \u0628\u0627\u0632\u06cc)', 1], ['po', '\u0645\u0627\u0644\u06a9\u06cc\u062a \u062a\u0648\u067e (\u062f\u0631\u0635\u062f)', 1]]) + '<div class="mut" style="font-size:11px">\u0631\u06a9\u0648\u0631\u062f \u067e\u0634\u062a\u200c\u0633\u0631\u0647\u0645 \u0627\u0644\u0627\u0646 (\u0627\u062e\u062a\u06cc\u0627\u0631\u06cc)</div>' + r([['ws', '\u0628\u0631\u062f'], ['us', '\u0628\u0631\u062f \u06cc\u0627 \u0645\u0633\u0627\u0648\u06cc'], ['ls', '\u0628\u0627\u062e\u062a']]) + '</div>';
+}
+function sPanel(ctx) {
+  var m = sM(ctx), D = SMN[ctx];
+  if (m && started(m)) return '';
+  if (!SOPEN[ctx]) return '<div class="more" onclick="sTog(\'' + ctx + '\')">\ud83d\udcdd \u062a\u062d\u0644\u06cc\u0644 \u0628\u0627 \u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc + \u062a\u0627\u0631\u06cc\u062e\u0686\u0647 \u062c\u062f\u0627\u06cc \u06f5\u06f0 \u0628\u0627\u0632\u06cc' + (D && D.h && (D.h.w || D.h.gf) ? ' \u2705' : '') + '</div>';
+  D = sD(ctx); var nm = sNames(ctx);
+  var h = '<div class="hpp"><div class="lbl">\ud83d\udcdd \u062a\u062d\u0644\u06cc\u0644 \u0628\u0627 \u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc</div><div class="mut" style="line-height:1.9">\u062a\u0639\u062f\u0627\u062f \u0628\u0631\u062f\u060c \u0645\u0633\u0627\u0648\u06cc \u0648 \u0628\u0627\u062e\u062a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0627\u062e\u06cc\u0631 \u0647\u0631 \u062a\u06cc\u0645 (\u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06f1\u06f0 \u062a\u0627) \u0648 \u062c\u0645\u0639 \u06af\u0644 \u0632\u062f\u0647 \u0648 \u062e\u0648\u0631\u062f\u0647 \u0647\u0645\u0648\u0646 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0631\u0648 \u0628\u062f\u0647. \u0645\u062c\u0645\u0648\u0639 \u0634\u0648\u062a\u060c \u0645\u0627\u0644\u06a9\u06cc\u062a \u062a\u0648\u067e \u0648 \u0631\u06a9\u0648\u0631\u062f\u0647\u0627\u06cc \u067e\u0634\u062a\u200c\u0633\u0631\u0647\u0645 \u0627\u062e\u062a\u06cc\u0627\u0631\u06cc\u200c\u0627\u0646. \u0645\u062c\u0645\u0648\u0639 \u0634\u0648\u062a \u0631\u0648 \u0645\u06cc\u062a\u0648\u0646\u06cc \u0645\u06cc\u0627\u0646\u06a9\u06cc\u0646 \u0628\u062f\u06cc \u060c \u0645\u0627\u0644\u06a9\u06cc\u062a \u0631\u0648 \u0628\u0647\u0635\u0648\u0631\u062a \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u062f\u0631\u0635\u062f\u06cc \u0628\u062f\u0647\u060c \u0645\u062b\u0644\u0627\u064b \u06f5\u06f8\u066b\u060c \u0628\u0631\u0627\u06cc \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u062c\u062f\u0627.</div>';
+  if (!m) h += '<div class="sg" style="grid-template-columns:1fr 1fr">' + sFld(ctx, 'n', 'hn', '\u0627\u0633\u0645 \u0645\u06cc\u0632\u0628\u0627\u0646', 1) + sFld(ctx, 'n', 'an', '\u0627\u0633\u0645 \u0645\u0647\u0645\u0627\u0646', 1) + '</div>';
+  h += '<div class="note" style="white-space:normal"><b>\ud83d\udcca \u062a\u0627\u0631\u06cc\u062e\u0686\u0647 \u0645\u0633\u062a\u0642\u0644 \u06f5\u06f0 \u0628\u0627\u0632\u06cc</b><div class="mut" style="font-size:11px;line-height:1.8">هر بار متن کامل Last 50 / Matches یک تیم را Paste کن؛ برنامه همهٔ حداکثر ۵۰ بازی را نگه می‌دارد و هر بازی را با تاریخ، نام حریف، نتیجه از نگاه همان تیم و برچسب خانه/خارج ذخیره می‌کند. سپس در محاسبه، کل فرم اخیر با وزن ۰٫۹۷ به توان شماره بازی استفاده می‌شود و جداگانه حداکثر ۲۵ بازی خانگی میزبان و ۲۵ بازی خارج از خانه میهمان استخراج و مقایسه می‌شود. عملکرد محل مسابقه با نمونهٔ کم به‌صورت خودکار به میانگین کلی نزدیک می‌شود. رودرروهای دو تیم هم در صورت وجود، با کوچک‌سازی آماری و وزن محدود وارد مدل می‌شوند.</div><div class="quick" style="margin-top:7px"><button onclick="sHistImportBoth(\'' + ctx + '\')">📋 چسباندن تاریخچه و تشخیص خودکار تیم</button></div>' + sHistFld(ctx,'histH','\ud83c\udfe0 '+nm[0]+' — تاریخچهٔ ۵۰ بازی (خانه و خارج)','خانه | 2026-10-14 | حریف | 2-1\nخارج | 2026-10-11 | حریف | 1-0') + sHistFld(ctx,'histA','\u2708\ufe0f '+nm[1]+' — تاریخچهٔ ۵۰ بازی (خانه و خارج)','خارج | 2026-10-14 | حریف | 1-0\nخانه | 2026-10-11 | حریف | 0-2') + '</div>';
+  h += '<div class="mut" style="line-height:1.8;margin-top:8px">\u0622\u0645\u0627\u0631 \u062e\u0644\u0627\u0635\u0647 \u0632\u06cc\u0631 \u0641\u0642\u0637 \u0645\u0633\u06cc\u0631 \u0633\u0646\u062a\u06cc \u0627\u0633\u062a؛ \u0648\u0642\u062a\u06cc \u0647\u0631 \u062f\u0648 \u062a\u0627\u0631\u06cc\u062e\u0686\u0647 \u067e\u0631 \u0628\u0627\u0634\u062f، \u0645\u062d\u0627\u0633\u0628\u0647 \u0627\u0632 \u0646\u062a\u0627\u06cc\u062c \u062a\u06a9\u200c\u0628\u0647\u200c\u062a\u06a9 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0645\u06cc\u200c\u06a9\u0646\u062f.</div>';
+  h += sSide(ctx, 'h', '\ud83c\udfe0 ' + nm[0]) + sSide(ctx, 'a', '\u2708\ufe0f ' + nm[1]);
+  h += '<div class="note" style="white-space:normal"><b>\u0634\u0631\u0627\u06cc\u0637 \u062a\u06a9\u0645\u06cc\u0644\u06cc \u0645\u062f\u0644</b><div class="sg" style="grid-template-columns:1fr 1fr">' + '<div><label class="mut">\u0622\u0628\u200c\u0648\u0647\u0648\u0627</label><select onchange="sIn(\''+ctx+'\',\'n\',\'weather\',this)"><option value="clear"'+(D.weather=='clear'?' selected':'')+'>\u0635\u0627\u0641</option><option value="cloudy"'+(D.weather=='cloudy'?' selected':'')+'>\u0627\u0628\u0631\u06cc</option><option value="rain"'+(D.weather=='rain'?' selected':'')+'>\u0628\u0627\u0631\u0627\u0646\u06cc</option></select></div>' + sFld(ctx,'n','temp','\u062f\u0645\u0627 \u00b0C',0) + '</div><div class="sg" style="grid-template-columns:1fr 1fr">' + sFld(ctx,'n','refY','\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0632\u0631\u062f \u062f\u0627\u0648\u0631',0) + sFld(ctx,'n','refR','\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0642\u0631\u0645\u0632 \u062f\u0627\u0648\u0631',0) + '</div><div class="sg" style="grid-template-columns:1fr 1fr"><div><label class="mut">\u062a\u0631\u06a9\u06cc\u0628 \u067e\u0627\u06cc\u0647 \u0645\u06cc\u0632\u0628\u0627\u0646</label><select onchange="sIn(\''+ctx+'\',\'n\',\'formH\',this)"><option value=""'+(D.formH==''?' selected':'')+'>\u0628\u062f\u0648\u0646 \u062a\u0631\u06a9\u06cc\u0628 / \u0646\u0627\u0645\u0634\u062e\u0635</option>'+FORM_LIST.map(function(k){return '<option value="'+k+'"'+(D.formH==k?' selected':'')+'>'+k+'</option>';}).join('')+'</select></div><div><label class="mut">\u062a\u0631\u06a9\u06cc\u0628 \u067e\u0627\u06cc\u0647 \u0645\u0647\u0645\u0627\u0646</label><select onchange="sIn(\''+ctx+'\',\'n\',\'formA\',this)"><option value=""'+(D.formA==''?' selected':'')+'>\u0628\u062f\u0648\u0646 \u062a\u0631\u06a9\u06cc\u0628 / \u0646\u0627\u0645\u0634\u062e\u0635</option>'+FORM_LIST.map(function(k){return '<option value="'+k+'"'+(D.formA==k?' selected':'')+'>'+k+'</option>';}).join('')+'</select></div></div><div class="sg" style="grid-template-columns:1fr 1fr">'+sInt10Fld(ctx,'btts10H','\u062a\u0639\u062f\u0627\u062f BTTS \u0645\u06cc\u0632\u0628\u0627\u0646 \u062f\u0631 \u06f1\u06f0 \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631')+sInt10Fld(ctx,'btts10A','\u062a\u0639\u062f\u0627\u062f BTTS \u0645\u0647\u0645\u0627\u0646 \u062f\u0631 \u06f1\u06f0 \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631')+'</div><div class="mut" style="font-size:11px;line-height:1.8">\u062a\u0631\u06a9\u06cc\u0628\u200c\u0647\u0627 \u0628\u0647\u200c\u0635\u0648\u0631\u062a \u062a\u0637\u0628\u06cc\u0642\u06cc \u0628\u0631\u0631\u0633\u06cc \u0645\u06cc\u200c\u0634\u0648\u0646\u062f\u061b \u0645\u062f\u0644 \u0641\u0642\u0637 \u00ab\u0642\u062f\u0631\u062a \u062a\u0631\u06a9\u06cc\u0628\u00bb \u0646\u0645\u06cc\u200c\u062f\u0647\u062f\u060c \u0628\u0644\u06a9\u0647 \u0627\u062b\u0631 \u062a\u0642\u0627\u0628\u0644 \u0633\u0627\u062e\u062a\u0627\u0631\u06cc \u062f\u0648 \u0622\u0631\u0627\u06cc\u0634 \u0631\u0627 \u0631\u0648\u06cc \u0639\u0631\u0636\u060c \u0645\u06cc\u0627\u0646\u0647 \u0632\u0645\u06cc\u0646\u060c \u0641\u0634\u0627\u0631\u060c \u0641\u0636\u0627\u0647\u0627\u06cc \u0646\u06cc\u0645\u0647\u200c\u0639\u0645\u0642\u06cc \u0648 \u0627\u0646\u062a\u0642\u0627\u0644\u200c\u0647\u0627 \u0648\u0627\u0631\u062f \u0645\u06cc\u200c\u06a9\u0646\u062f.</div></div>';
+  h += '<div class="note" style="white-space:normal"><b>\u0646\u0648\u0639 \u0645\u0633\u0627\u0628\u0642\u0647</b><select onchange="sIn(\'' + ctx + '\',\'n\',\'mt\',this)"><option value="league"' + (D.mt == 'league' ? ' selected' : '') + '>\u0644\u06cc\u06af</option><option value=\"friendly\"'+(D.mt == 'friendly' ? ' selected' : '')+'>\u062f\u0648\u0633\u062a\u0627\u0646\u0647</option><option value="club_group"' + (D.mt == 'club_group' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u06af\u0631\u0648\u0647\u06cc</option><option value="club_knockout"' + (D.mt == 'club_knockout' ? ' selected' : '') + '>\u0628\u0627\u0634\u06af\u0627\u0647\u06cc \u062d\u0630\u0641\u06cc</option><option value="nat_group"' + (D.mt == 'nat_group' ? ' selected' : '') + '>\u0645\u0644\u06cc \u06af\u0631\u0648\u0647\u06cc \u0686\u0647\u0627\u0631 \u062a\u06cc\u0645\u06cc</option><option value="nat_knockout"' + (D.mt == 'nat_knockout' ? ' selected' : '') + '>\u0645\u0644\u06cc \u062d\u0630\u0641\u06cc</option></select></div>';
+  var no = m ? 0 : Object.keys(D.o).length;
+  h += '<div class="quick" style="margin-top:6px"><button onclick="sPaste(\'' + ctx + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646 \u0636\u0631\u0627\u06cc\u0628 \u0628\u062a \u0648\u0627\u0646\u0627</button><button onclick="sClr(\'' + ctx + '\')">\ud83e\uddf9 \u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646</button><button onclick="sTog(\'' + ctx + '\')">\u25b2 \u0628\u0633\u062a\u0646</button></div>';
+  if (!m && no) h += '<div class="mut">' + fa(no) + ' \u0636\u0631\u06cc\u0628 \u0627\u0632 \u0628\u062a \u0648\u0627\u0646\u0627 \u062b\u0628\u062a \u0634\u062f\u0647</div>';
+  h += '<div id="sres_' + ctx + '">' + sResHtml(ctx) + '</div></div>';
+  return h;
+}
+function sF(x) { return (Math.round(x * 1000) / 10).toFixed(1) + '%'; }
+function sO(p) { return p > 0 ? (1 / p).toFixed(2) : '-'; }
+function sText(ctx) {
+  var R = sCalc(ctx); if (R.err) return '';
+  var g = sGet(ctx), nm = sNames(ctx), A = sAll(R, g), L = [], by = {};
+  A.M.forEach(function (x) { by[x.k] = x; });
+  var it = function (x, l) { return l + ': ' + sF(x.p) + ' (' + sO(x.p) + ')' + (x.o ? ' [' + x.o.toFixed(2) + ' EV ' + (x.ev >= 0 ? '+' : '') + x.ev.toFixed(2) + ']' : ''); };
+  L.push('\ud83d\udcdd ' + nm[0] + ' - ' + nm[1] + ' (\u0622\u0645\u0627\u0631 \u062f\u0633\u062a\u06cc)');
+  L.push('\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631: ' + R.lh.toFixed(2) + ' - ' + R.la.toFixed(2) + ' (\u06a9\u0644 ' + (R.lh + R.la).toFixed(2) + ')' + (R.mk ? ' | \u0645\u062f\u0644 \u062e\u0627\u0645 ' + R.raw[0].toFixed(2) + ' - ' + R.raw[1].toFixed(2) : ''));
+  L.push('\u062f\u0631\u0635\u062f (\u0636\u0631\u06cc\u0628 \u0645\u0646\u0635\u0641\u0627\u0646\u0647) [\u0636\u0631\u06cc\u0628 \u0633\u0627\u06cc\u062a \u0648 EV]');
+  L.push(''); L.push('\u0646\u062a\u06cc\u062c\u0647:'); L.push(it(by['1'], '1 ' + nm[0])); L.push(it(by.X, 'X \u0645\u0633\u0627\u0648\u06cc')); L.push(it(by['2'], '2 ' + nm[1]));
+  L.push(''); L.push('\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647:'); L.push(it(by['1X'], '1X')); L.push(it(by.X2, 'X2')); L.push(it(by['12'], '12'));
+  L.push(''); L.push('\u0628\u062f\u0648\u0646 \u0645\u0633\u0627\u0648\u06cc:'); L.push(it(by['H1:0'], nm[0])); L.push(it(by['H2:0'], nm[1]));
+  L.push(''); L.push('\u06af\u0644 \u0632\u062f\u0646 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645:'); L.push(it(by.BY, '\u0628\u0644\u0647')); L.push(it(by.BN, '\u062e\u06cc\u0631'));
+  L.push(''); L.push('\u0645\u062c\u0645\u0648\u0639 \u06af\u0644 (Over / Under):');
+  A.T.forEach(function (r) { L.push(it(r[0], r[0].l) + ' | ' + it(r[1], r[1].l)); });
+  L.push(''); L.push('\u0647\u0646\u062f\u06cc\u06a9\u067e (\u0645\u06cc\u0632\u0628\u0627\u0646 | \u0645\u0647\u0645\u0627\u0646):');
+  A.H.forEach(function (r) { L.push(it(r[0], nm[0] + ' ' + r[0].l) + ' | ' + it(r[1], nm[1] + ' ' + r[1].l)); });
+  L.push('');
+  if (!A.M.some(function (x) { return x.o; })) L.push('\u0636\u0631\u0627\u06cc\u0628 \u0633\u0627\u06cc\u062a \u0648\u0627\u0631\u062f \u0646\u0634\u062f\u0647');
+  else if (!A.V.length) L.push('\u274c \u0634\u0631\u0637 \u0627\u0631\u0632\u0634\u0645\u0646\u062f\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f');
+  else { L.push('\ud83d\udc8e \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u0627\u0627\u0631\u0632\u0634:'); A.V.forEach(function (x) { L.push((x.v ? '\ud83d\udc8e ' : '\ud83e\udd48 ') + sNameOf(x, nm) + ' \u0627\u0632 ' + x.o.toFixed(2) + ' | ' + sF(x.p) + ' | EV +' + x.ev.toFixed(2) + (x.p < 0.5 ? ' | \u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0627\u062e\u062a\u0634 \u0628\u06cc\u0634\u062a\u0631\u0647\u060c \u062a\u06a9\u06cc \u0648 \u06a9\u0645' : '')); }); }
+  return L.join('\n');
+}
+function sCopy(ctx) {
+  var t = sText(ctx); if (!t) { toast('\u0627\u0648\u0644 \u0622\u0645\u0627\u0631 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u0631\u0648 \u06a9\u0627\u0645\u0644 \u06a9\u0646'); return; }
+  var ok = false;
+  try { if (window.Android && Android.setClip) { Android.setClip(t); ok = true; } } catch (e) { ok = false; }
+  if (!ok) { try { var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); document.body.removeChild(ta); } catch (e2) { ok = false; } }
+  if (ok) toast('\u2705 \u06a9\u067e\u06cc \u0634\u062f\u060c \u0647\u0631 \u062c\u0627 \u062e\u0648\u0627\u0633\u062a\u06cc Paste \u06a9\u0646'); else prompt('\u0627\u06cc\u0646 \u0645\u062a\u0646 \u0631\u0648 \u06a9\u067e\u06cc \u06a9\u0646', t);
+}
+/* ---------- settings ---------- */
+/* betting guide (update 17) */
+function guideHtml() { return '<div class="box"><div class="row"><b>\ud83d\udcd6 \u0631\u0627\u0647\u0646\u0645\u0627\u06cc \u0634\u0631\u0637\u200c\u0628\u0646\u062f\u06cc</b><span class="x" onclick="go(\'set\')">\u21a9\ufe0f \u0628\u0631\u06af\u0634\u062a</span></div><div class="mut">\u062e\u0644\u0627\u0635\u0647 \u06f5\u06f0 \u062f\u0631\u0633 \u062f\u0641\u062a\u0631\u0686\u0647 \u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc\u200c\u0647\u0627. \u0642\u0628\u0644 \u0627\u0632 \u0647\u0631 \u0634\u0631\u0637\u060c \u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632 \u0631\u0648 \u0645\u0631\u0648\u0631 \u06a9\u0646.</div></div><div class="box"><b>\ud83c\udfaf \u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632 \u0642\u0628\u0644 \u0627\u0632 \u0634\u0631\u0637</b><ol class="gd"><li><b>\u0628\u0627\u0632\u0627\u0631 \u0686\u06cc \u0645\u06cc\u06af\u0647\u061f</b> \u0627\u06af\u0647 \u0628\u0631\u0622\u0648\u0631\u062f\u0645 \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f5\u066a \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u062a\u06cc\u0632 (Pinnacle) \u0641\u0631\u0642 \u062f\u0627\u0631\u0647\u060c \u062f\u0648 \u0634\u0627\u062e\u0635 \u0622\u0645\u0627\u0631\u06cc \u0645\u0633\u062a\u0642\u0644 \u0644\u0627\u0632\u0645\u0647. \u0648\u06af\u0631\u0646\u0647 \u0628\u0631\u0622\u0648\u0631\u062f \u0631\u0648 \u0628\u0628\u0631 \u0633\u0645\u062a \u0628\u0627\u0632\u0627\u0631</li><li><b>\u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u06f5\u06f5\u066a \u0628\u0647 \u0628\u0627\u0644\u0627 \u0634\u0631\u0637 \u0646\u0632\u0646</b> (X2\u060c 1X \u06cc\u0627 \u0628\u0631\u062f \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641). \u06a9\u0627\u0631\u0646\u0627\u0645\u0647: \u06f0 \u0627\u0632 \u06f4 \u274c</li><li><b>\u0627\u0646\u062a\u0638\u0627\u0631 \u06af\u0644 \u0631\u0648 \u0627\u0632 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0645\u062f\u0644\u200c\u0647\u0627 \u0648 \u0628\u0627\u0632\u0627\u0631 \u067e\u0627\u06cc\u06cc\u0646\u200c\u062a\u0631 \u0646\u06cc\u0627\u0631.</b> \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644 \u0648\u0627\u0642\u0639\u06cc \u06f3.\u06f0\u06f5 \u0628\u0648\u062f\u0647 \u0648 \u0628\u0631\u0622\u0648\u0631\u062f\u0647\u0627\u0645 \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06f2.\u06f3 \u062a\u0627 \u06f2.\u06f7</li><li><b>Under 3.5 \u06a9\u0645\u200c\u0631\u06cc\u0633\u06a9 \u0646\u06cc\u0633\u062a.</b> \u062d\u062f\u0648\u062f \u06f3\u06f6\u066a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u06f4 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u062f\u0627\u0634\u062a\u0646. \u0633\u0642\u0641\u0634 \u06f7\u06f0\u066a\u0647. \u062a\u0648 \u0628\u0627\u0632\u06cc \u0646\u0627\u0628\u0631\u0627\u0628\u0631\u060c \u06cc\u0627 \u0648\u0642\u062a\u06cc \u062a\u06cc\u0645 \u0639\u0642\u0628\u200c\u0627\u0641\u062a\u0627\u062f\u0647 \u0628\u0627\u06cc\u062f \u0628\u06cc\u0627\u062f \u062c\u0644\u0648\u060c \u0646\u0632\u0646</li><li><b>Under 2.5 \u067e\u06cc\u0634\u0646\u0647\u0627\u062f \u0627\u0635\u0644\u06cc \u0646\u06cc\u0633\u062a.</b> \u0627\u0632 \u06f2\u06f2 \u0628\u0627\u0632\u06cc\u060c \u06f1\u06f5 \u062a\u0627 \u06f3 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u062f\u0627\u0634\u062a\u0646</li><li><b>BTTS \u0641\u0642\u0637 \u0628\u0627 \u0634\u0627\u062e\u0635 \u0641\u0635\u0644 \u06a9\u0627\u0645\u0644:</b> \u0628\u0631\u0627\u06cc \u00ab\u062e\u06cc\u0631\u00bb \u06a9\u0644\u06cc\u0646\u200c\u0634\u06cc\u062a \u06f5\u06f0\u066a \u0628\u0647 \u0628\u0627\u0644\u0627\u060c \u06cc\u0627 BTTS \u0632\u06cc\u0631 \u06f2\u06f0\u066a \u0647\u0645\u0631\u0627\u0647 \u0628\u0627 \u063a\u06cc\u0628\u062a \u06af\u0644\u0632\u0646 \u0627\u0635\u0644\u06cc. \u0628\u0631\u0627\u06cc \u00ab\u0628\u0644\u0647\u00bb \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u062a\u0648 \u062d\u062f\u0648\u062f \u06f8\u06f0\u066a \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u06af\u0644 \u062e\u0648\u0631\u062f\u0647 \u0628\u0627\u0634\u0646\u060c \u0628\u0647\u200c\u0639\u0644\u0627\u0648\u0647 \u063a\u06cc\u0628\u062a \u0645\u062f\u0627\u0641\u0639 \u06a9\u0644\u06cc\u062f\u06cc. \u06a9\u0627\u0631\u0646\u0627\u0645\u0647: \u06f3 \u0627\u0632 \u06f3 \u2705</li><li><b>\u0636\u0631\u0628\u0627\u062a \u0627\u06cc\u0633\u062a\u06af\u0627\u0647\u06cc \u0647\u0631 \u062f\u0648 \u0637\u0631\u0641 \u0631\u0648 \u0628\u0627 \u0639\u062f\u062f \u0628\u0633\u0646\u062c:</b> \u06a9\u0631\u0646\u0631\u0632\u0646\u060c \u0632\u0646\u0646\u062f\u0647 \u0636\u0631\u0628\u0647 \u0622\u0632\u0627\u062f \u0648 \u0642\u062f \u0645\u062f\u0627\u0641\u0639\u200c\u0647\u0627</li><li><b>\u062a\u0631\u06a9\u06cc\u0628 \u0631\u0633\u0645\u06cc\u060c \u063a\u0627\u06cc\u0628\u200c\u0647\u0627\u060c \u0646\u06cc\u0645\u06a9\u062a\u060c \u062f\u0627\u0648\u0631 \u0648 \u0647\u0634\u062f\u0627\u0631 \u0647\u0648\u0627\u0634\u0646\u0627\u0633\u06cc \u0631\u0633\u0645\u06cc</b> \u0631\u0648 \u0642\u0628\u0644 \u0627\u0632 \u0628\u0633\u062a\u0646 \u0686\u06a9 \u06a9\u0646</li><li><b>\u0633\u0646\u0627\u0631\u06cc\u0648\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0645\u06cc\u200c\u0646\u0648\u06cc\u0633\u06cc \u062a\u0648 \u0639\u062f\u062f\u0647\u0627 \u0647\u0645 \u0628\u06cc\u0627\u062f:</b> \u06af\u0644 \u0632\u0648\u062f\u0647\u0646\u06af\u0627\u0645\u060c \u062a\u06cc\u0645 \u0639\u0642\u0628\u200c\u0627\u0641\u062a\u0627\u062f\u0647\u060c \u06a9\u0627\u0631\u062a \u0642\u0631\u0645\u0632\u060c \u062e\u0633\u062a\u06af\u06cc \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641 \u062a\u0648 \u0646\u06cc\u0645\u0647 \u062f\u0648\u0645</li><li><b>\u0641\u06cc\u0644\u062a\u0631 \u0646\u0647\u0627\u06cc\u06cc:</b> \u0636\u0631\u06cc\u0628 \u06f1.\u06f4\u06f5 \u0628\u0647 \u0628\u0627\u0644\u0627 \u0648 EV \u062d\u062f\u0627\u0642\u0644 \u06f0.\u06f0\u06f5+\u060c \u0648\u06af\u0631\u0646\u0647 \u00ab\u0634\u0631\u0637 \u0627\u0631\u0632\u0634\u0645\u0646\u062f\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f\u00bb. \u0627\u06af\u0647 \u0627\u062d\u062a\u0645\u0627\u0644 \u0632\u06cc\u0631 \u06f5\u06f0\u066a\u0647\u060c \u0641\u0642\u0637 \u062a\u06a9\u06cc \u0648 \u0628\u0627 \u0645\u0628\u0644\u063a \u06a9\u0645</li></ol></div><div class="box"><b>\ud83d\udcca \u06a9\u0627\u0631\u0646\u0627\u0645\u0647 (\u062a\u0627 \u06f4 \u0627\u06a9\u062a\u0628\u0631 \u06f2\u06f0\u06f2\u06f6)</b><ul class="gd"><li>\u06a9\u0644 \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u0647\u0627\u06cc \u0627\u0635\u0644\u06cc: \u06f7 \u0628\u0631\u062f\u060c \u06f8 \u0628\u0627\u062e\u062a</li><li>BTTS \u0628\u0627 \u0634\u0627\u062e\u0635 \u0642\u0648\u06cc: \u06f3 \u0627\u0632 \u06f3 \u2705</li><li>\u0634\u0627\u0646\u0633 \u062f\u0648\u06af\u0627\u0646\u0647 \u06cc\u0627 \u0628\u0631\u062f \u062a\u06cc\u0645 \u06a9\u0645\u062a\u0631 \u0645\u062d\u0628\u0648\u0628 \u0648\u0642\u062a\u06cc \u0641\u06cc\u0648\u0631\u062f \u0632\u06cc\u0631 \u06f5\u06f5\u066a \u0628\u0648\u062f: \u06f2 \u0627\u0632 \u06f2 \u2705</li><li>\u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f \u06f5\u06f5\u066a \u0628\u0647 \u0628\u0627\u0644\u0627: \u06f0 \u0627\u0632 \u06f4 \u274c</li><li>Under 2.5: \u06f0 \u0627\u0632 \u06f3 \u274c \u00b7 Under 3.5: \u06f2 \u0627\u0632 \u06f3 \u00b7 Over 1.5: \u06f0 \u0627\u0632 \u06f1</li></ul></div><details class="box gdd"><summary><b>\u26bd \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u06af\u0644</b> <span class="mut">(\u06f9)</span></summary><ul class="gd"><li>\u062a\u06cc\u0645\u06cc \u06a9\u0647 \u062a\u0648 \u06f3 \u0628\u0627\u0632\u06cc \u0622\u062e\u0631 \u06f2 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u0632\u062f\u0647\u060c Under \u0631\u0648 \u0628\u0627 \u0627\u0637\u0645\u06cc\u0646\u0627\u0646 \u0628\u0627\u0644\u0627 \u0646\u06af\u06cc\u0631</li><li>\u0627\u06af\u0647 xGA \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u06f1.\u06f4 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631\u0647\u060c Under 2.5 \u0646\u0632\u0646</li><li>\u062a\u0648\u0632\u06cc\u0639 \u06af\u0644 \u0631\u0648 \u0628\u0628\u06cc\u0646\u060c \u0646\u0647 \u0641\u0642\u0637 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646. \u062a\u06cc\u0645\u06cc \u06a9\u0647 \u0628\u0639\u062f \u0627\u0632 \u06af\u0644 \u062e\u0648\u0631\u062f\u0646 \u0628\u0647 \u0647\u0645 \u0645\u06cc\u200c\u0631\u06cc\u0632\u0647 \u067e\u0634\u062a\u200c\u0633\u0631\u0647\u0645 \u06af\u0644 \u0645\u06cc\u200c\u062e\u0648\u0631\u0647</li><li>\u0632\u0645\u06cc\u0646 \u062e\u06cc\u0633 \u0648 \u0628\u0627\u0631\u0648\u0646 \u062f\u0644\u06cc\u0644 Under \u0646\u06cc\u0633\u062a</li><li>\u0645\u0647\u0627\u062c\u0645 \u062f\u0627\u063a (\u06f5 \u06af\u0644 \u06cc\u0627 \u0628\u06cc\u0634\u062a\u0631 \u062a\u0648 \u06f5 \u0628\u0627\u0632\u06cc \u0622\u062e\u0631) \u0631\u0648 \u00ab\u0627\u0641\u062a \u0628\u0627\u0632\u062f\u0647\u06cc\u00bb \u062d\u0633\u0627\u0628 \u0646\u06a9\u0646</li><li>\u0627\u0646\u062a\u0638\u0627\u0631 \u06af\u0644 \u062a\u06cc\u0645\u06cc \u06a9\u0647 \u06af\u0644 \u0646\u0645\u06cc\u200c\u0632\u0646\u0647 \u0631\u0648 \u0627\u0632 \u0622\u0645\u0627\u0631 \u062e\u0648\u062f\u0634 \u0628\u06af\u06cc\u0631\u060c \u0646\u0647 \u0627\u0632 \u0645\u062f\u0644\u200c\u0647\u0627</li><li>\u0646\u06cc\u0645\u0647 \u0627\u0648\u0644 \u06f0-\u06f0 \u0645\u0642\u0627\u0628\u0644 \u062a\u06cc\u0645 \u0622\u0645\u0627\u062a\u0648\u0631 \u06cc\u0639\u0646\u06cc Under \u0646\u06cc\u0633\u062a\u060c \u0686\u0648\u0646 \u0646\u06cc\u0645\u0647 \u062f\u0648\u0645 \u062e\u0633\u062a\u0647 \u0645\u06cc\u0634\u0646</li><li>\u0648\u0642\u062a\u06cc \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 \u0628\u0627 \u0645\u0633\u0627\u0648\u06cc \u0631\u0627\u0636\u06cc\u200c\u0627\u0646 \u0648 \u06cc\u0647 \u062d\u0645\u0644\u0647 \u0636\u0639\u06cc\u0641\u0647\u060c Over 1.5 \u0628\u0627\u0644\u0627\u06cc \u06f6\u06f5\u066a \u0646\u06cc\u0633\u062a</li><li>\u062f\u0631\u0633\u200c\u0647\u0627 \u0631\u0648 \u0628\u0627 \u0628\u06cc\u0634\u200c\u0628\u0631\u0622\u0648\u0631\u062f \u062c\u0628\u0631\u0627\u0646 \u0646\u06a9\u0646. \u0648\u0642\u062a\u06cc \u0647\u0645\u0647\u200c\u0686\u06cc \u06a9\u0645\u200c\u06af\u0644 \u0645\u06cc\u06af\u0647\u060c \u0628\u0631\u0622\u0648\u0631\u062f\u062a \u0631\u0648 \u0627\u0632 \u0627\u0648\u0646\u0627 \u0628\u0627\u0644\u0627\u062a\u0631 \u0646\u0628\u0631</li></ul></details><details class="box gdd"><summary><b>\ud83e\udd1d \u06af\u0644 \u0632\u062f\u0646 \u0647\u0631 \u062f\u0648 \u062a\u06cc\u0645 (BTTS)</b> <span class="mut">(\u06f4)</span></summary><ul class="gd"><li>\u06a9\u0644\u06cc\u0646\u200c\u0634\u06cc\u062a \u0645\u0642\u0627\u0628\u0644 \u062a\u06cc\u0645\u200c\u0647\u0627\u06cc \u0642\u0639\u0631 \u062c\u062f\u0648\u0644 \u062f\u0644\u06cc\u0644 \u062f\u0641\u0627\u0639 \u0642\u0648\u06cc \u0646\u06cc\u0633\u062a</li><li>\u062a\u06cc\u0645\u06cc \u06a9\u0647 \u0647\u06cc\u0686 \u06a9\u0644\u06cc\u0646\u200c\u0634\u06cc\u062a\u06cc \u0646\u062f\u0627\u0631\u0647\u060c \u062d\u062a\u06cc \u0645\u0642\u0627\u0628\u0644 \u062a\u06cc\u0645\u06cc \u06a9\u0647 \u06af\u0644 \u0646\u0645\u06cc\u200c\u0632\u0646\u0647 \u0647\u0645 \u0645\u0645\u06a9\u0646\u0647 \u06af\u0644 \u0628\u062e\u0648\u0631\u0647</li><li>\u0648\u0642\u062a\u06cc \u0634\u06a9\u0627\u0641 \u06a9\u06cc\u0641\u06cc\u062a \u0632\u06cc\u0627\u062f\u0647 \u0648 \u062a\u06cc\u0645 \u0642\u0648\u06cc \u0632\u0648\u062f \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0647\u060c \u06af\u0644 \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641 \u0642\u0637\u0639\u06cc \u0646\u06cc\u0633\u062a</li><li>\u062a\u0627 \u0648\u0642\u062a\u06cc \u0627\u0631\u0632\u0634 BTTS \u062e\u06cc\u0631 \u062a\u0648 \u0627\u067e \u0632\u06cc\u0631 \u06f1\u0647\u060c \u0641\u0642\u0637 \u0628\u0627 \u0636\u0631\u06cc\u0628 \u0627\u0631\u0632\u0634\u0645\u0646\u062f \u0648 \u062a\u06a9\u06cc</li></ul></details><details class="box gdd"><summary><b>\ud83c\udfc6 \u0646\u062a\u06cc\u062c\u0647 \u0648 \u0641\u06cc\u0648\u0631\u062f</b> <span class="mut">(\u06f6)</span></summary><ul class="gd"><li>\u0645\u06cc\u0632\u0628\u0627\u0646\u06cc \u06a9\u0647 \u0642\u0644\u0639\u0647 \u062e\u0648\u0646\u06af\u06cc \u062f\u0627\u0631\u0647 \u0648 \u0627\u0631\u0632\u0634 \u062a\u06cc\u0645\u0634 \u0686\u0646\u062f \u0628\u0631\u0627\u0628\u0631\u0647\u060c \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u0628\u0627\u0632\u0627\u0631 \u062f\u0631\u0628\u0627\u0631\u0647\u200c\u0634 \u062f\u0631\u0633\u062a\u200c\u062a\u0631 \u0627\u0632 \u0645\u062f\u0644\u200c\u0647\u0627\u0633\u062a</li><li>\u062a\u06cc\u0645 \u0645\u06cc\u0647\u0645\u0627\u0646\u06cc \u06a9\u0647 \u0628\u0639\u062f \u0627\u0632 \u06af\u0644 \u0639\u0642\u0628 \u0645\u06cc\u200c\u0634\u06cc\u0646\u0647\u060c \u062f\u0642\u06cc\u0642\u0647\u200c\u0647\u0627\u06cc \u0622\u062e\u0631 \u06af\u0644 \u0645\u06cc\u200c\u062e\u0648\u0631\u0647. \u062c\u0644\u0648 \u0627\u0641\u062a\u0627\u062f\u0646\u0634 \u0631\u0648 \u0642\u0637\u0639\u06cc \u0628\u0631\u0627\u06cc X2 \u062d\u0633\u0627\u0628 \u0646\u06a9\u0646</li><li>\u0648\u0642\u062a\u06cc \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641 \u0632\u0648\u062f \u06af\u0644 \u0645\u06cc\u200c\u0632\u0646\u0647\u060c \u062a\u06cc\u0645 \u0642\u0648\u06cc \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u0646\u06cc\u0645\u0647 \u062f\u0648\u0645 \u0628\u0631\u0645\u06cc\u200c\u06af\u0631\u062f\u0647</li><li>\u0631\u06a9\u0648\u0631\u062f \u062e\u0648\u0646\u06af\u06cc \u0648 \u0628\u06cc\u0631\u0648\u0646 \u0631\u0648 \u0628\u0627 \u06a9\u06cc\u0641\u06cc\u062a \u062d\u0631\u06cc\u0641 \u0628\u0633\u0646\u062c. \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u062f\u0648\u0633\u062a\u0627\u0646\u0647 \u0628\u0627 \u062a\u06cc\u0645\u200c\u0647\u0627\u06cc \u062e\u06cc\u0644\u06cc \u0636\u0639\u06cc\u0641 \u062d\u0633\u0627\u0628 \u0646\u06cc\u0633\u062a\u0646</li><li>\u0627\u0633\u062a\u0639\u0641\u0627\u06cc \u0645\u0631\u0628\u06cc \u0628\u0627 \u062c\u0645\u0644\u0647 \u00ab\u0627\u0639\u062a\u0645\u0627\u062f \u0628\u0627\u0632\u06cc\u06a9\u0646\u200c\u0647\u0627 \u0631\u0648 \u0627\u0632 \u062f\u0633\u062a \u062f\u0627\u062f\u06cc\u0645\u00bb \u06cc\u0639\u0646\u06cc \u062a\u06cc\u0645 \u0636\u0639\u06cc\u0641\u200c\u062a\u0631 \u0634\u062f\u0647</li><li>xG \u0628\u0627\u0644\u0627 \u0628\u0627 \u062a\u0628\u062f\u06cc\u0644 \u0636\u0639\u06cc\u0641 \u062a\u0648 \u06a9\u0648\u062a\u0627\u0647\u200c\u0645\u062f\u062a \u062f\u0631\u0633\u062a \u0646\u0645\u06cc\u0634\u0647. \u0628\u0631\u0627\u06cc \u0628\u0631\u062f \u062a\u06cc\u0645 \u0628\u062f\u0634\u0627\u0646\u0633 \u0631\u0648\u06cc \u00ab\u0628\u0631\u06af\u0634\u062a \u0628\u0647 \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646\u00bb \u062d\u0633\u0627\u0628 \u0646\u06a9\u0646</li></ul></details><details class="box gdd"><summary><b>\ud83c\udfab \u0633\u0627\u062e\u062a\u0646 \u0628\u0644\u06cc\u0637</b> <span class="mut">(\u06f4)</span></summary><ul class="gd"><li>\u0641\u0642\u0637 \u067e\u0627\u06cc\u0647\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0627\u062d\u062a\u0645\u0627\u0644 \u00d7 \u0636\u0631\u06cc\u0628\u0634\u0648\u0646 \u0628\u0627\u0644\u0627\u06cc \u06f1\u0647</li><li>\u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u0647\u0627\u06cc \u0636\u0631\u06cc\u0628\u200c\u0628\u0627\u0644\u0627 (\u0645\u062b\u0644 \u06f2.\u06f5 \u0628\u0647 \u0628\u0627\u0644\u0627) \u0631\u0648 \u062a\u06a9\u06cc \u0628\u0628\u0646\u062f\u060c \u0646\u0647 \u062a\u0648 \u0645\u06cc\u06a9\u0633</li><li>\u0647\u06cc\u0686\u200c\u0648\u0642\u062a \u0632\u06cc\u0631 \u062d\u062f \u0636\u0631\u06cc\u0628\u06cc \u06a9\u0647 \u0628\u0631\u0627\u06cc \u062e\u0648\u062f\u062a \u06af\u0630\u0627\u0634\u062a\u06cc \u0646\u0628\u0646\u062f</li><li>\u06a9\u0627\u0631\u062a \u0642\u0631\u0645\u0632 \u0641\u0642\u0637 \u0627\u0632 \u0628\u0627\u0632\u06cc\u06a9\u0646 \u062e\u0634\u0646 \u0646\u0645\u06cc\u0627\u062f. \u062f\u0631\u0648\u0627\u0632\u0647\u200c\u0628\u0627\u0646\u06cc \u06a9\u0647 \u0627\u0632 \u0639\u0642\u0628 \u0628\u0627\u0632\u06cc \u0645\u06cc\u200c\u0633\u0627\u0632\u0647 \u0645\u0642\u0627\u0628\u0644 \u067e\u0631\u0633 \u0647\u0645 \u0631\u06cc\u0633\u06a9\u0647. \u0622\u0645\u0627\u0631 \u062f\u0627\u0648\u0631 \u0628\u0647\u200c\u062a\u0646\u0647\u0627\u06cc\u06cc \u062d\u062f\u0627\u06a9\u062b\u0631 \u06f0.\u06f1 \u06af\u0644 \u0627\u0636\u0627\u0641\u0647</li></ul></details><details class="box gdd"><summary><b>\ud83e\udde0 \u0630\u0647\u0646\u06cc\u062a</b> <span class="mut">(\u06f6)</span></summary><ul class="gd"><li>\u00ab\u0634\u0631\u0637 \u0627\u0631\u0632\u0634\u0645\u0646\u062f\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f\u00bb \u06cc\u0647 \u062a\u0635\u0645\u06cc\u0645 \u062d\u0631\u0641\u0647\u200c\u0627\u06cc\u0647\u060c \u0646\u0647 \u0634\u06a9\u0633\u062a</li><li>\u0627\u062e\u062a\u0644\u0627\u0641 \u0628\u0632\u0631\u06af \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u06cc\u0639\u0646\u06cc \u06cc\u0647 \u0686\u06cc\u0632\u06cc \u0631\u0648 \u0646\u062f\u06cc\u062f\u06cc\u060c \u0646\u0647 \u0627\u06cc\u0646\u06a9\u0647 \u0627\u0631\u0632\u0634 \u067e\u06cc\u062f\u0627 \u06a9\u0631\u062f\u06cc</li><li>\u06cc\u0647 \u0628\u0627\u062e\u062a \u0628\u0627 \u0627\u062d\u062a\u0645\u0627\u0644 \u06f4\u06f0 \u062a\u0627 \u06f6\u06f0 \u062f\u0631\u0635\u062f \u062f\u0631\u0633 \u0646\u06cc\u0633\u062a\u060c \u0648\u0627\u0631\u06cc\u0627\u0646\u0633\u0647. \u062f\u0631\u0633 \u062c\u062f\u06cc\u062f \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0627\u0636\u0627\u0641\u0647 \u0645\u06cc\u0634\u0647 \u06a9\u0647 \u06cc\u0647 \u0627\u0644\u06af\u0648 \u06f3 \u0628\u0627\u0631 \u062a\u06a9\u0631\u0627\u0631 \u0634\u062f\u0647 \u0628\u0627\u0634\u0647</li><li>EV \u0645\u062b\u0628\u062a \u06cc\u0639\u0646\u06cc \u0627\u0631\u0632\u0634 \u062f\u0631 \u0628\u0644\u0646\u062f\u0645\u062f\u062a\u060c \u0646\u0647 \u0627\u06cc\u0646\u06a9\u0647 \u0627\u06cc\u0646 \u0634\u0631\u0637 \u0627\u062d\u062a\u0645\u0627\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0631\u0647</li><li>\u0639\u0645\u0644\u06a9\u0631\u062f \u0647\u0631 \u0628\u0627\u0632\u0627\u0631 \u0631\u0648 \u0628\u0627 \u062a\u0639\u062f\u0627\u062f \u0646\u0645\u0648\u0646\u0647\u060c \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u0636\u0631\u06cc\u0628 \u0648 \u0633\u0648\u062f \u0648\u0627\u0642\u0639\u06cc \u0628\u0633\u0646\u062c\u060c \u0646\u0647 \u0641\u0642\u0637 \u062f\u0631\u0635\u062f \u0628\u0631\u062f</li><li>\u0646\u062a\u06cc\u062c\u0647\u200c\u0647\u0627\u06cc \u062f\u0648\u0631\u0627\u0641\u062a\u0627\u062f\u0647 (\u0645\u062b\u0644 \u06f0-\u06f7) \u0631\u0648 \u0645\u0628\u0646\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u06a9\u0644 \u0631\u0648\u0634 \u0646\u06a9\u0646</li></ul></details><div class="box mut">\u0627\u06cc\u0646 \u0631\u0627\u0647\u0646\u0645\u0627 \u0628\u0631\u0627\u06cc \u0633\u0631\u06af\u0631\u0645\u06cc \u0628\u0627 \u0633\u06a9\u0647 \u0645\u062c\u0627\u0632\u06cc\u0647. \u0647\u06cc\u0686 \u0631\u0648\u0634\u06cc \u0628\u0631\u062f \u0631\u0648 \u062a\u0636\u0645\u06cc\u0646 \u0646\u0645\u06cc\u200c\u06a9\u0646\u0647.</div>'; }
+function showGuide() { go('set'); $('set').innerHTML = guideHtml(); window.scrollTo(0, 0); }
+function renderSet() {
+  var r = ld('remaining', ''), afr = ld('afrem', null);
+  $('set').innerHTML = '<div class="box"><b>\ud83d\udcd6 \u0631\u0627\u0647\u0646\u0645\u0627\u06cc \u0634\u0631\u0637\u200c\u0628\u0646\u062f\u06cc</b><div class="mut">\u06a9\u0627\u0631\u062a \u0627\u0645\u062a\u06cc\u0627\u0632 \u06f1\u06f0 \u0633\u0624\u0627\u0644\u06cc\u060c \u06a9\u0627\u0631\u0646\u0627\u0645\u0647 \u0648 \u062e\u0644\u0627\u0635\u0647 \u06f5\u06f0 \u062f\u0631\u0633</div><button class="btn blue" onclick="showGuide()">\u0628\u0627\u0632 \u06a9\u0631\u062f\u0646 \u0631\u0627\u0647\u0646\u0645\u0627</button></div>' + profBox() +
+    '<div class="box"><b>\ud83d\udd11 \u06a9\u0644\u06cc\u062f API</b><input id="k" class="ltr" placeholder="API key" value="' + esc(key()) + '"><button class="btn blue" onclick="saveKey()">\u0630\u062e\u06cc\u0631\u0647 \u06a9\u0644\u06cc\u062f</button>' +
+    (r ? '<div class="mut" style="margin-top:8px">\u0627\u0639\u062a\u0628\u0627\u0631 \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647 \u0627\u06cc\u0646 \u0645\u0627\u0647: ' + esc(r) + '</div>' : '') + '</div>' +
+    '<div class="box"><b>\ud83c\udf10 \u06a9\u0644\u06cc\u062f API-Football (\u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627)</b><div class="mut">\u0631\u0627\u06cc\u06af\u0627\u0646\u060c \u06f1\u06f0\u06f0 \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u062f\u0631 \u0631\u0648\u0632. \u0628\u0631\u0646\u0627\u0645\u0647 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1\u06f2\u06f0\u06f0 \u0644\u06cc\u06af\u060c \u062a\u0648 \u062a\u0628 \u00ab\ud83c\udf10 \u0647\u0645\u0647 \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc \u062f\u0646\u06cc\u0627\u00bb.</div><input id="afk" class="ltr" placeholder="API-Football key" value="' + esc(afKey()) + '"><div class="quick"><button onclick="saveAF()">\u0630\u062e\u06cc\u0631\u0647 \u06a9\u0644\u06cc\u062f</button><button onclick="testAF()">\ud83e\uddea \u062a\u0633\u062a \u06a9\u0644\u06cc\u062f</button></div>' + (afr ? '<div class="mut" style="margin-top:8px">\u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0628\u0627\u0642\u06cc\u200c\u0645\u0648\u0646\u062f\u0647 \u0627\u0645\u0631\u0648\u0632: ' + fa(afr.n) + ' (' + agoTxt(afr.t) + ')</div>' : '') + '</div>' +
+    '<div class="box"><b>\ud83d\udd04 \u0622\u067e\u062f\u06cc\u062a \u0628\u0631\u0646\u0627\u0645\u0647</b><div class="mut">\u0646\u0633\u062e\u0647 \u0641\u0639\u0644\u06cc: ' + (BUILD ? 'v' + fa(BUILD) : '-') + '</div><button class="btn blue" onclick="checkUpdate(true)">\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a</button></div>' +
+    '<div class="box"><b>\ud83c\udf0d \u0644\u06cc\u06af\u200c\u0647\u0627\u06cc ESPN</b><div class="mut">' + (ESV && ESV.ok ? fa(Object.keys(ESV.ok).length) + ' \u0644\u06cc\u06af \u0627\u0632 \u0644\u06cc\u0633\u062a\u062a \u062a\u0648 ESPN \u067e\u06cc\u062f\u0627 \u0634\u062f. \u0647\u0641\u062a\u0647\u200c\u0627\u06cc \u06cc\u0647 \u0628\u0627\u0631 \u062e\u0648\u062f\u06a9\u0627\u0631 \u0686\u06a9 \u0645\u06cc\u0634\u0647.' : '\u0647\u0646\u0648\u0632 \u0686\u06a9 \u0646\u0634\u062f\u0647.') + '</div><button class="btn" onclick="probeES(true)">' + (ESVR ? '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc...' : '\ud83d\udd04 \u0628\u0631\u0631\u0633\u06cc \u062f\u0648\u0628\u0627\u0631\u0647 (\u0631\u0627\u06cc\u06af\u0627\u0646)') + '</button></div>' +
+    '<div class="box"><b>\ud83e\ude99 \u0645\u062f\u06cc\u0631\u06cc\u062a \u0633\u06a9\u0647</b><div class="mut">\u0645\u0648\u062c\u0648\u062f\u06cc \u0641\u0639\u0644\u06cc: ' + fc(W.coins) + '</div><input id="coin" type="number" step="0.01" inputmode="decimal" placeholder="\u062a\u0639\u062f\u0627\u062f \u0633\u06a9\u0647">' +
+    '<div class="quick"><button onclick="coins(1)">\u2795 \u0627\u0636\u0627\u0641\u0647 \u06a9\u0646</button><button onclick="coins(0)">\u270f\ufe0f \u062a\u0646\u0638\u06cc\u0645 \u0645\u0648\u062c\u0648\u062f\u06cc</button></div></div>' +
+    '<div class="box"><b>\ud83d\udd14 \u06cc\u0627\u062f\u0622\u0648\u0631 \u0628\u0627\u0632\u06cc</b><div class="mut">\u06cc\u06a9 \u0633\u0627\u0639\u062a \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0631\u0648\u0634\u0648\u0646 \u0634\u0631\u0637 \u0645\u06cc\u200c\u0628\u0646\u062f\u06cc (\u06cc\u0627 \u0632\u0646\u06af\u0648\u0644\u0647\u200c\u0634\u0648\u0646 \u0631\u0648 \u0631\u0648\u0634\u0646 \u0645\u06cc\u200c\u06a9\u0646\u06cc) \u0646\u0648\u062a\u06cc\u0641\u06cc\u06a9\u06cc\u0634\u0646 \u0645\u06cc\u0627\u062f.</div></div>' +
+    bgBox() +
+    '<div class="box"><b>\ud83c\udf81 \u062c\u0627\u06cc\u0632\u0647 \u0631\u0648\u0632\u0627\u0646\u0647</b><div class="mut">\u0647\u0631 \u06f2\u06f4 \u0633\u0627\u0639\u062a ' + fmt(BONUS) + ' \u0633\u06a9\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646</div><button class="btn" onclick="bonus()">\u062f\u0631\u06cc\u0627\u0641\u062a \u062c\u0627\u06cc\u0632\u0647</button></div>' +
+    '<div class="box"><b>\u267b\ufe0f \u0634\u0631\u0648\u0639 \u062f\u0648\u0628\u0627\u0631\u0647</b><div class="mut">\u0641\u0642\u0637 \u0628\u0631\u0627\u06cc \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0641\u0639\u0644\u06cc: \u0633\u06a9\u0647\u200c\u0647\u0627 ' + fmt(START) + ' \u0645\u06cc\u0634\u0647 \u0648 \u062a\u0627\u0631\u06cc\u062e\u0686\u0647\u200c\u0627\u0634 \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0647</div><button class="btn sec" onclick="resetAll()">\u0631\u06cc\u0633\u062a</button></div>' +
+    '<div class="box mut">\u0627\u06cc\u0646 \u0627\u067e \u0641\u0642\u0637 \u0628\u0631\u0627\u06cc \u0633\u0631\u06af\u0631\u0645\u06cc\u0647 \u0648 \u0628\u0627 \u0633\u06a9\u0647 \u0645\u062c\u0627\u0632\u06cc \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647\u060c \u067e\u0648\u0644 \u0648\u0627\u0642\u0639\u06cc \u062f\u0631 \u06a9\u0627\u0631 \u0646\u06cc\u0633\u062a.<br>\u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631: \u0647\u06cc\u0686 \u0644\u06cc\u06af\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u062f\u0627\u0646\u0644\u0648\u062f \u0646\u0645\u06cc\u0634\u0647. \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647. \u0636\u0631\u0627\u06cc\u0628 \u06a9\u0644 \u06cc\u0647 \u0644\u06cc\u06af \u06f2 (\u062a\u0627 \u0622\u062e\u0631 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u062a\u0648 \u062d\u0627\u0641\u0638\u0647 \u0645\u06cc\u200c\u0645\u0648\u0646\u0647)\u060c \u0628\u0627\u0632\u0627\u0631\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631 \u0647\u0631 \u0628\u0627\u0632\u06cc \u06f2\u060c \u0686\u06a9 \u0646\u062a\u0627\u06cc\u062c \u06f2 \u0628\u0631\u0627\u06cc \u0647\u0631 \u0644\u06cc\u06af. \u0646\u062a\u06cc\u062c\u0647 \u0632\u0646\u062f\u0647 \u0648 \u0628\u0633\u062a\u0646 \u0634\u0631\u0637\u200c\u0647\u0627 \u0627\u0632 ESPN \u0648 \u0631\u0627\u06cc\u06af\u0627\u0646\u0647 (\u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0627\u067e \u0628\u0627\u0632\u0647). \u0627\u06af\u0647 ESPN \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u0631\u0648 \u067e\u06cc\u062f\u0627 \u0646\u06a9\u0646\u0647\u060c \u0642\u0628\u0644 \u0627\u0632 \u0645\u0635\u0631\u0641 \u0627\u0639\u062a\u0628\u0627\u0631 \u0627\u0632\u062a \u0645\u06cc\u200c\u067e\u0631\u0633\u0647.</div>';
+}
+/* profiles UI (update 14) */
+function profBox() {
+  var h = '<div class="box"><b>\ud83d\udc64 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644\u200c\u0647\u0627</b><div class="mut">\u0647\u0631 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0633\u06a9\u0647\u060c \u0634\u0631\u0637\u200c\u0647\u0627 \u0648 \u0622\u0645\u0627\u0631 \u062c\u062f\u0627 \u062f\u0627\u0631\u0647. \u0645\u062b\u0644\u0627\u064b \u06cc\u06a9\u06cc \u0628\u0627 \u06a9\u0645\u06a9 Brain \u0648 \u06cc\u06a9\u06cc \u0628\u0627 \u0639\u0642\u0644 \u062e\u0648\u062f\u062a\u060c \u0628\u0639\u062f \u0622\u0645\u0627\u0631\u0634\u0648\u0646 \u0631\u0648 \u06a9\u0646\u0627\u0631 \u0647\u0645 \u0645\u0642\u0627\u06cc\u0633\u0647 \u06a9\u0646.</div>';
+  PR.l.forEach(function (p) {
+    var on = p.id == PR.cur, w = on ? W : ld(pk2(p.id, 'wallet'), null), bs = on ? BETS : ld(pk2(p.id, 'bets'), []), wn = 0, ls = 0, stk = 0, ret = 0;
+    bs.forEach(function (b) { if (b.st == 'w') wn++; if (b.st == 'l') ls++; if (b.st == 'w' || b.st == 'l') { stk += b.stake; ret += b.win; } });
+    var roi = stk ? Math.round((ret - stk) * 100 / stk) : null;
+    h += '<div class="pr1' + (on ? ' on' : '') + '" onclick="switchProf(\'' + p.id + '\')"><div><b>' + esc(p.n) + '</b>' + (on ? ' <span class="mut">(\u0641\u0639\u0627\u0644)</span>' : '') +
+      '<div class="mut">\ud83e\ude99 ' + fc(w ? w.coins : START) + ' | ' + fa(bs.length) + ' \u0634\u0631\u0637 | \u0628\u0631\u062f ' + fa(wn) + ' \u0628\u0627\u062e\u062a ' + fa(ls) + (roi !== null ? ' | \u0628\u0627\u0632\u062f\u0647 <span class="ltr">' + (roi >= 0 ? '+' : '') + roi + '\u066a</span>' : '') + '</div></div><span class="gold">' + (on ? '\u2705' : '\u203a') + '</span></div>';
+  });
+  h += '<div class="quick" style="margin-top:8px"><button onclick="newProf()">\u2795 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u062c\u062f\u06cc\u062f</button><button onclick="renProf()">\u270f\ufe0f \u062a\u063a\u06cc\u06cc\u0631 \u0627\u0633\u0645</button>' + (PR.cur != 'p0' ? '<button onclick="delProf()">\ud83d\uddd1\ufe0f \u062d\u0630\u0641</button>' : '') + '</div></div>';
+  return h;
+}
+function loadProf() {
+  W = ld(pk('wallet'), null); if (!W) { W = { coins: START, last: 0 }; sv(pk('wallet'), W); }
+  BETS = ld(pk('bets'), []); slip = ld(pk('slip'), []); NOTE = '';
+  renderBal(); updateCnt();
+}
+function switchProf(id) {
+  if (id == PR.cur) return;
+  PR.cur = id; sv('profs', PR); loadProf(); settle(); renderSet(); liveTick(false);
+  toast('\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0641\u0639\u0627\u0644: ' + pn());
+}
+function newProf() {
+  var n = prompt('\u0627\u0633\u0645 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u062c\u062f\u06cc\u062f:', PR.l.length == 1 ? '\ud83e\udde0 \u0628\u0627 \u0639\u0642\u0644 \u062e\u0648\u062f\u0645' : '\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 ' + fa(PR.l.length + 1));
+  if (n === null) return; n = String(n).trim().slice(0, 30); if (!n) return;
+  var id = 'p' + Date.now(); PR.l.push({ id: id, n: n }); PR.cur = id; sv('profs', PR);
+  loadProf(); renderSet(); toast('\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + n + '\u00bb \u0628\u0627 ' + fmt(START) + ' \u0633\u06a9\u0647 \u0633\u0627\u062e\u062a\u0647 \u0634\u062f');
+}
+function renProf() {
+  var n = prompt('\u0627\u0633\u0645 \u062c\u062f\u06cc\u062f \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0641\u0639\u0644\u06cc:', pn()); if (n === null) return; n = String(n).trim().slice(0, 30); if (!n) return;
+  PR.l.forEach(function (p) { if (p.id == PR.cur) p.n = n; }); sv('profs', PR); renderBal(); renderSet();
+}
+function delProf() {
+  if (PR.cur == 'p0') return;
+  if (!confirm('\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + pn() + '\u00bb \u0628\u0627 \u0647\u0645\u0647 \u0634\u0631\u0637\u200c\u0647\u0627\u0634 \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return;
+  var id = PR.cur; ['wallet', 'bets', 'slip'].forEach(function (k) { sv(pk2(id, k), null); });
+  PR.l = PR.l.filter(function (p) { return p.id != id; }); PR.cur = 'p0'; sv('profs', PR); loadProf(); renderSet(); toast('\u067e\u0627\u06a9 \u0634\u062f');
+}
+
+function saveKey() {
+  sv('key', $('k').value.trim()); sv('sports2', null); toast('\u06a9\u0644\u06cc\u062f \u0630\u062e\u06cc\u0631\u0647 \u0634\u062f'); renderSet();
+  loadSports(function () { renderLeagues(); if (reg != 'all') loadOdds(false); });
+}
+function coins(add) {
+  var v = r2(+$('coin').value || 0);
+  if (v < 0 || (add && v == 0)) { toast('\u06cc\u0647 \u0639\u062f\u062f \u062f\u0631\u0633\u062a \u0648\u0627\u0631\u062f \u06a9\u0646'); return; }
+  W.coins = add ? r2(W.coins + v) : v; saveAll(); renderSet();
+  toast(add ? fc(v) + ' \u0633\u06a9\u0647 \u0627\u0636\u0627\u0641\u0647 \u0634\u062f' : '\u0645\u0648\u062c\u0648\u062f\u06cc \u0634\u062f ' + fc(v));
+}
+
+/* ---------- reminders ---------- */
+var REM = ld('rem', {});
+function setRem(m, on, silent) {
+  var at = new Date(m.time).getTime() - 3600000;
+  if (on) {
+    if (at <= Date.now()) { if (!silent) toast('\u06a9\u0645\u062a\u0631 \u0627\u0632 \u06cc\u06a9 \u0633\u0627\u0639\u062a \u0628\u0647 \u0628\u0627\u0632\u06cc \u0645\u0648\u0646\u062f\u0647'); return; }
+    REM[m.id] = { t: at, title: '\u26bd \u06cc\u06a9 \u0633\u0627\u0639\u062a \u062f\u06cc\u06af\u0647 \u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0645\u06cc\u0634\u0647', text: m.home + ' - ' + m.away + ' | \u0633\u0627\u0639\u062a ' + hm(m.time) };
+    try { Android.alarm(m.id, String(at), REM[m.id].title, REM[m.id].text); } catch (e) {}
+    if (!silent) toast('\ud83d\udd14 \u06cc\u06a9 \u0633\u0627\u0639\u062a \u0642\u0628\u0644 \u0627\u0632 \u0628\u0627\u0632\u06cc \u062e\u0628\u0631\u062a \u0645\u06cc\u200c\u06a9\u0646\u0645');
+  } else {
+    delete REM[m.id];
+    try { Android.cancelAlarm(m.id); } catch (e) {}
+    if (!silent) toast('\ud83d\udd15 \u06cc\u0627\u062f\u0622\u0648\u0631 \u062e\u0627\u0645\u0648\u0634 \u0634\u062f');
+  }
+  sv('rem', REM);
+}
+function bell(id) { var m = MATCHES[id]; if (!m) return; setRem(m, !REM[id], false); rerender(); }
+function syncRem() {
+  var now = Date.now();
+  Object.keys(REM).forEach(function (id) {
+    var r = REM[id];
+    if (r.t <= now) delete REM[id];
+    else { try { Android.alarm(id, String(r.t), r.title, r.text); } catch (e) {} }
+  });
+  sv('rem', REM);
+}
+/* ---------- app update ---------- */
+function checkUpdate(manual) {
+  if (!BUILD || REPO.indexOf('/') < 0) { if (manual) toast('\u0622\u067e\u062f\u06cc\u062a \u0641\u0642\u0637 \u062a\u0648 \u0646\u0633\u062e\u0647 \u0633\u0627\u062e\u062a\u0647\u200c\u0634\u062f\u0647 \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647'); return; }
+  if (!manual && Date.now() - ld('updT', 0) < 12 * 3600000) { showUpd(false); return; }
+  if (manual) toast('\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a...');
+  http('https://api.github.com/repos/' + REPO + '/releases/latest', function (r) {
+    if (r.status != 200) { if (manual) toast('\u062e\u0637\u0627 \u062f\u0631 \u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a (' + r.status + ')\u060c VPN \u0631\u0648 \u0686\u06a9 \u06a9\u0646'); showUpd(false); return; }
+    try {
+      var j = JSON.parse(r.body), n = parseInt(String(j.tag_name).replace(/\D/g, ''), 10) || 0;
+      var a = (j.assets || []).filter(function (x) { return /\.apk$/.test(x.name); })[0];
+      sv('upd', { n: n, url: a ? a.browser_download_url : j.html_url }); sv('updT', Date.now());
+    } catch (e) {}
+    showUpd(manual);
+  });
+}
+function showUpd(manual) {
+  var u = ld('upd', null), el = $('upd');
+  if (u && u.n > BUILD) el.innerHTML = '<div class="box upd"><div class="row"><b>\ud83c\udd95 \u0646\u0633\u062e\u0647 \u062c\u062f\u06cc\u062f (v' + fa(u.n) + ') \u0622\u0645\u0627\u062f\u0647\u200c\u0633\u062a</b></div><button class="btn" onclick="getUpd()">\u2b07\ufe0f \u062f\u0627\u0646\u0644\u0648\u062f \u0648 \u0646\u0635\u0628</button></div>';
+  else { el.innerHTML = ''; if (manual) toast('\u0622\u062e\u0631\u06cc\u0646 \u0646\u0633\u062e\u0647 \u0631\u0648 \u062f\u0627\u0631\u06cc \u2705'); }
+  if (manual && u && u.n > BUILD) { go('matches'); }
+}
+function getUpd() { var u = ld('upd', null); if (!u) return; try { Android.openUrl(u.url); toast('\u0628\u0639\u062f \u0627\u0632 \u062f\u0627\u0646\u0644\u0648\u062f\u060c \u0641\u0627\u06cc\u0644 \u0631\u0648 \u0628\u0627\u0632 \u06a9\u0646 \u0648 \u00ab\u0628\u0647\u200c\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc\u00bb \u0631\u0648 \u0628\u0632\u0646'); } catch (e) { toast('\u0645\u0631\u0648\u0631\u06af\u0631 \u0628\u0627\u0632 \u0646\u0634\u062f'); } }
+
+function bonus() {
+  var n = Date.now();
+  if (n - (W.last || 0) < 86400000) { toast(fmt(Math.ceil((86400000 - (n - W.last)) / 3600000)) + ' \u0633\u0627\u0639\u062a \u062f\u06cc\u06af\u0647 \u062f\u0648\u0628\u0627\u0631\u0647 \u0628\u06cc\u0627'); return; }
+  W.last = n; W.coins = r2(W.coins + BONUS); saveAll(); toast('\ud83c\udf81 ' + fmt(BONUS) + ' \u0633\u06a9\u0647 \u06af\u0631\u0641\u062a\u06cc');
+}
+function resetAll() {
+  if (!confirm('\u0645\u0637\u0645\u0626\u0646\u06cc\u061f \u0647\u0645\u0647 \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u00ab' + pn() + '\u00bb \u067e\u0627\u06a9 \u0645\u06cc\u0634\u0646')) return;
+  W = { coins: START, last: 0 }; BETS = []; slip = []; sv(pk('slip'), slip); saveAll(); updateCnt(); renderSet(); toast('\u0631\u06cc\u0633\u062a \u0634\u062f');
+}
+
+
+/* ---------- PrimaTips paste (update 31) ---------- */
+/* user selects the whole PrimaTips match page, copies it, and the percentages of 1X2, double chance, O/U 1.5/2.5/3.5 and BTTS are read from the text.
+   PrimaTips own coefficients are ignored on purpose, only the percentages are used as statistical analysis. */
+var PTD = ld('ptd', {}), PTO = {};
+(function () { var n = Date.now(), ch = false; for (var k in PTD) { if (!PTD[k] || !PTD[k]._t || new Date(PTD[k]._t).getTime() + 3 * 86400000 < n) { delete PTD[k]; ch = true; } } if (ch) sv('ptd', PTD); })();
+var PTK = [['1', '\u06f1 \u0645\u06cc\u0632\u0628\u0627\u0646'], ['X', '\u0645\u0633\u0627\u0648\u06cc'], ['2', '\u06f2 \u0645\u0647\u0645\u0627\u0646'], ['1X', '1X'], ['X2', 'X2'], ['12', '12'], ['O15', 'Over 1.5'], ['U15', 'Under 1.5'], ['O25', 'Over 2.5'], ['U25', 'Under 2.5'], ['O35', 'Over 3.5'], ['U35', 'Under 3.5'], ['BY', 'BTTS \u0628\u0644\u0647'], ['BN', 'BTTS \u062e\u06cc\u0631']];
+
+function ptTok(a) { return a.join(' ').split(' ').filter(function (x) { return x; }); }
+function parsePT(text) {
+  var ls = String(text).split(/\r?\n/).map(function (x) { return String(x).replace(/[\u200c\u200e\u200f\u00a0\t]/g, ' ').replace(/\s+/g, ' ').trim(); }).filter(function (x) { return x; });
+  var H = [[/^standard 1x2$/i, 'x12', 3], [/^double chance$/i, 'dc', 2], [/^over\/under 1\.5$/i, 'o15', 2], [/^over\/under 2\.5$/i, 'o25', 2], [/^over\/under 3\.5$/i, 'o35', 2], [/^both teams to score$/i, 'bt', 2]];
+  var KM = { x12: ['1', 'X', '2'], dc: ['1X', 'X2'], o15: ['O15', 'U15'], o25: ['O25', 'U25'], o35: ['O35', 'U35'], bt: ['BY', 'BN'] };
+  var hits = [], P = {}, got = 0, seen = {};
+  ls.forEach(function (x, i) { H.forEach(function (h) { if (h[0].test(x)) hits.push({ i: i, k: h[1], n: h[2] }); }); });
+  hits.forEach(function (h, j) {
+    if (seen[h.k]) return;
+    var end = j + 1 < hits.length ? hits[j + 1].i : ls.length;
+    var tk = ptTok(ls.slice(h.i + 1, end)), pi = -1, t, pc = [];
+    for (t = 0; t < tk.length; t++) if (/^probability$/i.test(tk[t])) { pi = t; break; }
+    if (pi < 0) return;
+    for (t = pi + 1; t < tk.length && pc.length < h.n; t++) if (/^\d+(\.\d+)?%$/.test(tk[t])) pc.push(parseFloat(tk[t]) / 100);
+    if (pc.length < h.n) return;
+    seen[h.k] = 1; KM[h.k].forEach(function (k, z) { P[k] = pc[z]; got++; });
+  });
+  var names = [], form = [];
+  ls.forEach(function (x, i) {
+    var m = /^(.+) last (\d+) games$/i.exec(x); if (!m || /^h2h$/i.test(m[1])) return;
+    names.push(m[1]);
+    var j = i + 1; while (j < ls.length && !/ (last|next) \d+ games$/i.test(ls[j])) j++;
+    var tk = ptTok(ls.slice(i + 1, j)), k = tk.indexOf('+3.5'), f = null;
+    if (k >= 0) {
+      var nums = [], prc = [], t;
+      for (t = k + 1; t < tk.length && (nums.length < 6 || prc.length < 6); t++) {
+        if (/^\d+$/.test(tk[t]) && nums.length < 6 && !prc.length) nums.push(+tk[t]);
+        else if (/^\d+%$/.test(tk[t]) && prc.length < 6) prc.push(parseFloat(tk[t]) / 100);
+      }
+      if (nums.length == 6 && prc.length == 6) f = { n: +m[2], w: nums[0], d: nums[1], l: nums[2], o15: nums[3], o25: nums[4], o35: nums[5], pw: prc[0], pd: prc[1], pl: prc[2], p15: prc[3], p25: prc[4], p35: prc[5] };
+    }
+    form.push(f);
+  });
+  return { p: P, got: got, names: names, form: form };
+}
+/* ---------- own model from the PrimaTips raw stats (update 37): 75% own model + 25% PrimaTips percentages ---------- */
+var PT_W = 0.25;
+function ptLines(text) { return String(text).split(/\r?\n/).map(function (x) { return String(x).replace(/[\u200c\u200e\u200f\u00a0\t]/g, ' ').replace(/\s+/g, ' ').trim(); }).filter(function (x) { return x; }); }
+function ptGames(ls, a, b) {
+  var out = [], i;
+  for (i = a; i < b - 3; i++) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ls[i])) continue;
+    var s = /^(\d+)\s*-\s*(\d+)$/.exec(ls[i + 2]);
+    if (!s) continue;
+    out.push({ d: ls[i], h: ls[i + 1], a: ls[i + 3], hs: +s[1], as: +s[2] });
+    i += 3;
+  }
+  return out;
+}
+function ptNum(ls, i, lab) { var r = ls[i].slice(lab.length).trim(), m = /^(-?\d+(?:\.\d+)?)%?$/.exec(r); if (m) return parseFloat(m[1]); if (!r && ls[i + 1] && /^-?\d+(\.\d+)?%?$/.test(ls[i + 1])) return parseFloat(ls[i + 1]); return null; }
+function ptPair(ls, i, lab) { var t = ls[i].slice(lab.length).trim().split(' '); if (t.length >= 2) { var a = parseFloat(t[0]), b = parseFloat(t[1]); if (!isNaN(a) && !isNaN(b)) return [a, b]; } return null; }
+function parseST(text) {
+  var ls = ptLines(text), S = { g: [[], []], h2h: [], tb: {}, ts: null, tv: null, lg: {}, names: [] }, i, j;
+  for (i = 0; i < ls.length; i++) {
+    var m = /^(.+) last (\d+) games$/i.exec(ls[i]); if (!m) continue;
+    j = i + 1; while (j < ls.length && !/ (last|next) \d+ games$/i.test(ls[j]) && !/^table /i.test(ls[j])) j++;
+    var gs = ptGames(ls, i + 1, j);
+    if (/^h2h$/i.test(m[1])) S.h2h = gs; else if (S.names.length < 2) { S.g[S.names.length] = gs; S.names.push(m[1]); }
+  }
+  for (i = 0; i < ls.length; i++) if (/^no team mp w d l gf ga g pts$/i.test(ls[i])) {
+    for (j = i + 1; j + 2 < ls.length; j++) {
+      if (/^chronology/i.test(ls[j])) break;
+      if (!/^\d+$/.test(ls[j])) continue;
+      var nm = ls[j + 1], nu = ls[j + 2].split(' ');
+      if (nu.length >= 8 && nu.every(function (x) { return /^[+-]?\d+$/.test(x); })) { S.tb[nm.toLowerCase()] = { n: nm, mp: +nu[0], w: +nu[1], d: +nu[2], l: +nu[3], gf: +nu[4], ga: +nu[5], pts: +nu[7] }; j += 2; }
+    }
+    break;
+  }
+  var ti = -1; for (i = 0; i < ls.length; i++) if (/^teams league statistic$/i.test(ls[i])) { ti = i; break; }
+  if (ti >= 0) {
+    var blocks = [], cur = null;
+    for (i = ti + 1; i < ls.length && !/^overall statistics/i.test(ls[i]); i++) {
+      var L = ls[i];
+      if (/^wins /i.test(L)) { cur = {}; blocks.push(cur); }
+      if (!cur) continue;
+      [['wins', 'w'], ['draws', 'd'], ['losses', 'l'], ['average scored', 'sc'], ['average conceded', 'cn'], ['both teams to score', 'bt'], ['over 2.5', 'o25'], ['over 1.5', 'o15']].forEach(function (z) { if (L.toLowerCase().indexOf(z[0] + ' ') == 0) { var p = ptPair([L], 0, z[0]); if (p) cur[z[1]] = p; } });
+    }
+    if (blocks[0]) S.ts = blocks[0];
+    if (blocks[1]) S.tv = blocks[1];
+  }
+  var oi = -1; for (i = 0; i < ls.length; i++) if (/^overall statistics/i.test(ls[i])) { oi = i; break; }
+  if (oi >= 0) {
+    for (i = oi + 1; i < Math.min(ls.length, oi + 60); i++) {
+      var x = ls[i].toLowerCase();
+      if (/ next \d+ games$/.test(x)) break;
+      if (x.indexOf('home goals per game') == 0) S.lg.hg = ptNum(ls, i, 'home goals per game');
+      else if (x.indexOf('away goals per game') == 0) S.lg.ag = ptNum(ls, i, 'away goals per game');
+      else if (x.indexOf('goals per game') == 0) S.lg.gg = ptNum(ls, i, 'goals per game');
+      else if (x.indexOf('both teams to score') == 0) S.lg.bt = ptNum(ls, i, 'both teams to score');
+      else if (x.indexOf('over 2.5') == 0) S.lg.o25 = ptNum(ls, i, 'over 2.5');
+      else if (/^matches\s*\(\d+\)/.test(x)) S.lg.n = +(/\((\d+)\)/.exec(x)[1]);
+    }
+  }
+  S.ok = (S.g[0].length >= 4 && S.g[1].length >= 4) ? 1 : 0;
+  return S;
+}
+function stTeam(tb, n) { if (!n) return null; var k = String(n).toLowerCase(); if (tb[k]) return tb[k]; var best = null, bs = 0; for (var q in tb) { var s = sim1(n, tb[q].n); if (s > bs) { bs = s; best = tb[q]; } } return bs >= 0.67 ? best : null; }
+function stSide(S, t, ven, muH, muA, mu, hfa) {
+  /* t: 0 = upcoming home team, 1 = upcoming away team; ven = 1 home / 0 away. returns attack and defence ratios vs league average, plus sample sizes */
+  var nm = S.names[t], K = 4, sf = 0, sa = 0, sw = 0, nB = 0, nV = 0, sb = 0, nS = 0, sS = 0, nC = 0;
+  S.g[t].slice(0, 50).forEach(function (g, i) {
+    /* Separate team-history imports store goals from the team's point of view; a full PrimaTips page stores historical home/away scores. */
+    var perspective = g && g.teamPerspective === true;
+    var home = perspective ? (g.teamVenue === 'H' ? true : (g.teamVenue === 'A' ? false : null)) : (sim1(g.h, nm) >= sim1(g.a, nm));
+    var gf, ga, opp;
+    if (perspective) { gf = g.teamGF; ga = g.teamGA; opp = g.opponent; }
+    else { gf = home ? g.hs : g.as; ga = home ? g.as : g.hs; opp = home ? g.a : g.h; }
+    var ot = stTeam(S.tb, opp), oa = 1, od = 1, w = Math.pow(0.97, i);
+    if (ot && ot.mp > 0) { oa = (ot.gf + K * mu) / (ot.mp + K) / mu; od = (ot.ga + K * mu) / (ot.mp + K) / mu; }
+    else if (S.tb && Object.keys(S.tb).length) w *= 0.75;
+    if (home !== null && home === !!ven) w *= 1.5;
+    var vf = home === null ? 1 : (home ? Math.sqrt(hfa) : 1 / Math.sqrt(hfa));
+    sf += w * (gf / vf) / Math.max(0.4, od); sa += w * (ga * vf) / Math.max(0.4, oa); sw += w;
+    nB++; if (home !== null && home === !!ven) nV++; if (gf > 0 && ga > 0) sb++; if (gf > 0) nS++; if (ga == 0) nC++;
+  });
+  var fa = (sf / mu + K) / (sw + K), fd = (sa / mu + K) / (sw + K), parts = [{ a: fa, d: fd, w: 0.45 * sw / (sw + K) }];
+  var tt = stTeam(S.tb, nm);
+  if (tt && tt.mp > 0) parts.push({ a: (tt.gf + K * mu) / (tt.mp + K) / mu, d: (tt.ga + K * mu) / (tt.mp + K) / mu, w: 0.35 * tt.mp / (tt.mp + K) });
+  else if (S.ts && S.ts.sc && S.ts.w) { var n0 = S.ts.w[t] + S.ts.d[t] + S.ts.l[t]; if (n0 > 0) parts.push({ a: (S.ts.sc[t] * n0 + K * mu) / (n0 + K) / mu, d: (S.ts.cn[t] * n0 + K * mu) / (n0 + K) / mu, w: 0.35 * n0 / (n0 + K) }); }
+  if (S.tv && S.tv.sc && S.tv.w) {
+    var nv = S.tv.w[t] + S.tv.d[t] + S.tv.l[t], vm = ven ? muH : muA, vo = ven ? muA : muH;
+    if (nv > 0) parts.push({ a: (S.tv.sc[t] * nv + K * vm) / (nv + K) / vm, d: (S.tv.cn[t] * nv + K * vo) / (nv + K) / vo, w: 0.20 * nv / (nv + K) });
+  }
+  var W = 0, A = 0, D = 0;
+  parts.forEach(function (p) { W += p.w; A += p.w * Math.log(p.a); D += p.w * Math.log(p.d); });
+  return { at: W ? Math.exp(A / W) : 1, df: W ? Math.exp(D / W) : 1, n: nB, venueN: nV, bt: nB ? sb / nB : null, mp: tt ? tt.mp : 0 };
+}
+function stModel(S, id, sw) {
+  if (!S || !S.ok) return null;
+  var muH = S.lg.hg, muA = S.lg.ag, tbs = 0, tgf = 0;
+  for (var k in S.tb) { tbs += S.tb[k].mp; tgf += S.tb[k].gf; }
+  if (!(muH > 0) || !(muA > 0)) { var gpg = S.lg.gg > 0 ? S.lg.gg : (tbs ? 2 * tgf / tbs : 2.6); muH = gpg * 0.53; muA = gpg * 0.47; }
+  var mu = (muH + muA) / 2, hfa = clp(muH / muA, 1, 1.5);
+  var A = stSide(S, 0, 1, muH, muA, mu, hfa), B = stSide(S, 1, 0, muH, muA, mu, hfa);
+  var lh = muH * A.at * B.df, la = muA * B.at * A.df;
+  var hh = S.h2h.slice(0, 6), n1 = 0, g1 = 0, g2 = 0;
+  hh.forEach(function (g) { var y = +g.d.slice(0, 4); if (y < new Date().getFullYear() - 4) return; var home = sim1(g.h, S.names[0]) >= sim1(g.a, S.names[0]); g1 += home ? g.hs : g.as; g2 += home ? g.as : g.hs; n1++; });
+  if (n1) { lh *= Math.pow((g1 + 2 * lh) / (n1 + 2) / lh, 0.25); la *= Math.pow((g2 + 2 * la) / (n1 + 2) / la, 0.25); }
+  if (id) { var xa = sw ? xAdj(id, la, lh, true) : xAdj(id, lh, la, true); if (sw) { lh = xa[1]; la = xa[0]; } else { lh = xa[0]; la = xa[1]; } }
+  lh = clp(lh, 0.2, 4); la = clp(la, 0.2, 4);
+  var bts = [], R;
+  if (A.bt !== null) bts.push(A.bt); if (B.bt !== null) bts.push(B.bt);
+  if (S.lg.bt > 0) bts.push(S.lg.bt / 100);
+  if (S.ts && S.ts.bt) bts.push((S.ts.bt[0] + S.ts.bt[1]) / 200);
+  R = { lh: lh, la: la, rho: MP.rho !== undefined ? MP.rho : -0.08, bttsHist: bts.length ? bts.reduce(function (a, b) { return a + b; }, 0) / bts.length : null };
+  var P = {};
+  PTK.forEach(function (z) { var q = mPr(R, z[0]); if (q !== null) P[z[0]] = Math.round(q * 1000) / 1000; });
+  return { p: P, lh: Math.round(lh * 100) / 100, la: Math.round(la * 100) / 100, n0: A.n, n1: B.n, v0: A.venueN, v1: B.venueN, h2h: n1, tb: A.mp || B.mp ? 1 : 0, ven: S.tv ? 1 : 0, lg: S.lg.hg ? 1 : 0, at: [A.at, B.at], df: [A.df, B.df] };
+}
+function ptSwap(P) {
+  var Q = {}, k, M = { '1': '2', '2': '1', '1X': 'X2', 'X2': '1X' };
+  for (k in P) Q[M[k] || k] = P[k];
+  return Q;
+}
+/* effective probabilities: if PrimaTips double chance does not match its own 1X2 (it is a two-way split that always sums to 100%), 1X, X2 and 12 are rebuilt from 1X2 unless the user switches to the raw numbers */
+function ptEff(d) {
+  var P = {}, k, dv = {}, warns = [], bad = false;
+  for (k in d.p) P[k] = d.p[k];
+  var have = P['1'] !== undefined && P.X !== undefined && P['2'] !== undefined;
+  if (have) {
+    var s = P['1'] + P.X + P['2'];
+    if (Math.abs(s - 1) > 0.03) warns.push('\u062c\u0645\u0639 \u06f1 \u0648 \u0645\u0633\u0627\u0648\u06cc \u0648 \u06f2 ' + pc(s) + ' \u0634\u062f\u0647\u060c \u0646\u0647 \u06f1\u06f0\u06f0\u066a');
+    if (P['12'] === undefined) { P['12'] = P['1'] + P['2']; dv['12'] = 1; }
+    if (P['1X'] !== undefined && Math.abs(P['1'] + P.X - P['1X']) > 0.05) bad = true;
+    if (P.X2 !== undefined && Math.abs(P.X + P['2'] - P.X2) > 0.05) bad = true;
+    if (P['1X'] === undefined || (bad && !d.raw)) { P['1X'] = P['1'] + P.X; dv['1X'] = 1; }
+    if (P.X2 === undefined || (bad && !d.raw)) { P.X2 = P.X + P['2']; dv.X2 = 1; }
+  }
+  if (bad) warns.push(d.raw ? '\u062f\u0631\u0635\u062f\u0647\u0627\u06cc 1X \u0648 X2 \u062e\u0648\u062f PrimaTips (' + pc(d.p['1X']) + ' \u0648 ' + pc(d.p.X2) + ') \u0628\u0627 \u06f1X\u06f2 \u0627\u0634 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646 \u0648 \u0647\u0645\u06cc\u0646\u200c\u0647\u0627 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0634\u062f' : '\u062f\u0631\u0635\u062f\u0647\u0627\u06cc 1X \u0648 X2 \u062e\u0648\u062f PrimaTips (' + pc(d.p['1X']) + ' \u0648 ' + pc(d.p.X2) + ') \u0628\u0627 \u06f1X\u06f2 \u0627\u0634 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646 (1X \u0648 X2 \u0647\u0631 \u062f\u0648 \u0634\u0627\u0645\u0644 \u0645\u0633\u0627\u0648\u06cc\u0646\u060c \u067e\u0633 \u062c\u0645\u0639\u0634\u0648\u0646 \u0646\u0628\u0627\u06cc\u062f \u06f1\u06f0\u06f0\u066a \u0628\u0634\u0647). \u0628\u0631\u0627\u06cc \u0647\u0645\u06cc\u0646 \u0627\u0632 \u062c\u0645\u0639 \u06f1X\u06f2 \u062f\u0648\u0628\u0627\u0631\u0647 \u062d\u0633\u0627\u0628 \u0634\u062f');
+  var PTr = {}, MDr = null;
+  for (k in P) PTr[k] = P[k];
+  if (d.st && d.id) { var xt = XI[d.id] ? XI[d.id].at || 0 : 0, hs = d._historySource === 'separate'; if (!d._mc || d._mc.x != xt || d._mc.hs !== hs) { var M2 = stModel(d.st, d.id, hs ? false : d.sw); if (M2 && d.sw && !hs) M2.p = ptSwap(M2.p); d._mc = { x: xt, hs: hs, m: M2 }; } if (d._mc.m) d.m = d._mc.m; }
+  if (d.m && d.m.p) {
+    MDr = d.m.p;
+    PTK.forEach(function (z) { var a = PTr[z[0]], b = MDr[z[0]], q = z[0]; if (a !== undefined && b !== undefined) P[q] = PT_W * a + (1 - PT_W) * b; else if (b !== undefined) P[q] = b; });
+  }
+  if (PTr.O15 !== undefined && PTr.O25 !== undefined && PTr.O15 < PTr.O25) warns.push('Over 1.5 \u06a9\u0645\u062a\u0631 \u0627\u0632 Over 2.5 \u0634\u062f\u0647\u060c \u0639\u062f\u062f\u0647\u0627 \u0642\u0627\u0628\u0644 \u0627\u062a\u06a9\u0627 \u0646\u06cc\u0633\u062a\u0646');
+  if (PTr.O25 !== undefined && PTr.O35 !== undefined && PTr.O25 < PTr.O35) warns.push('Over 2.5 \u06a9\u0645\u062a\u0631 \u0627\u0632 Over 3.5 \u0634\u062f\u0647\u060c \u0639\u062f\u062f\u0647\u0627 \u0642\u0627\u0628\u0644 \u0627\u062a\u06a9\u0627 \u0646\u06cc\u0633\u062a\u0646');
+  return { p: P, dv: dv, bad: bad, warns: warns, pt: PTr, md: MDr };
+}
+function ptP(id, p) { var d = PTD[id]; if (!d || !d.p) return null; var P = ptEff(d).p; return P[p] !== undefined ? P[p] : null; }
+function ptHas(id, p) { return ptP(id, p) !== null; }
+
+/* suggested stake (update 31): EV x 100 coins (EV +0.25 = 25), half when odds > 2.7, quarter when > 3.7, and it grows with profit above the 1000 start (1100 coins = +10%). Below 1000 it stays normal */
+function stakeF(o) { return o > 3.7 ? 0.25 : (o > 2.7 ? 0.5 : 1); }
+function stakeG(bank) { return bank > START ? bank / START : 1; }
+function stakeRec(ev, o, bank) {
+  if (!(ev > 0) || !(o > 1) || !(bank > 0)) return 0;
+  var s = Math.max(1, Math.round(ev * 100 * stakeF(o) * stakeG(bank)));
+  return Math.min(s, Math.floor(bank));
+}
+function kelly(p, o, bank, mixed) {
+  if (!(o > 1) || !(p > 0) || !(bank > 0)) return null;
+  var pe = Math.min(p, 0.8), ev = pe * o - 1;
+  if (ev <= 0) return { s: 0, ev: ev, why: '\u0627\u0631\u0632\u0634 \u0646\u062f\u0627\u0631\u0647' };
+  var s = stakeRec(ev, o, bank);
+  return { s: s, share: s / bank, ev: ev, f: stakeF(o), g: stakeG(bank), low: ev < 0.05 };
+}
+function kWhy(k) {
+  return 'EV\u00d7\u06f1\u06f0\u06f0 = ' + fa(Math.round(k.ev * 100)) + (k.f == 0.5 ? '\u060c \u0646\u0635\u0641 \u0686\u0648\u0646 \u0636\u0631\u06cc\u0628 \u0628\u0627\u0644\u0627\u06cc \u06f2.\u06f7' : (k.f == 0.25 ? '\u060c \u06cc\u06a9\u200c\u0686\u0647\u0627\u0631\u0645 \u0686\u0648\u0646 \u0636\u0631\u06cc\u0628 \u0628\u0627\u0644\u0627\u06cc \u06f3.\u06f7' : '')) + (k.g > 1 ? '\u060c \u00d7' + fc(k.g) + ' \u0633\u0648\u062f \u0633\u0631\u0645\u0627\u06cc\u0647' : '') + (k.low ? '\u060c EV \u0645\u0631\u0632\u06cc' : '');
+}
+function kTxt(k) { return k.s ? fa(k.s) + ' \u0633\u06a9\u0647 (' + kWhy(k) + ')' : '\u06f0 (' + k.why + ')'; }
+function slipSug() {
+  if (!slip.length) return null;
+  var p = 1, ok = true;
+  slip.forEach(function (x) { if (!x.my) ok = false; else p *= x.my / 100; });
+  if (!ok) return null;
+  var k = kelly(p, totalOdd(), W.coins, slip.length > 1); if (k) k.p = p;
+  return k;
+}
+function sugHtml() {
+  var k = slipSug();
+  if (!k) return '<div class="mut" style="line-height:1.8">\ud83d\udcb0 \u00ab\u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646\u00bb \u0631\u0648 \u0628\u0631\u0627\u06cc \u0647\u0645\u0647 \u067e\u0627\u06cc\u0647\u200c\u0647\u0627 \u0628\u0646\u0648\u06cc\u0633 (\u06cc\u0627 \u0627\u0632 PrimaTips \u0628\u06cc\u0627\u0631) \u062a\u0627 \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc \u0628\u06cc\u0627\u062f</div>';
+  if (!k.s) return '<div class="warn">\ud83d\udcb0 \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc: ' + kTxt(k) + '</div>';
+  return '<div class="note" style="white-space:normal">\ud83d\udcb0 \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc: <b class="gold">' + fa(k.s) + '</b> \u0633\u06a9\u0647 (' + kWhy(k) + ')' + (k.p < 0.5 ? '<br>\u0627\u062d\u062a\u0645\u0627\u0644 \u0628\u0631\u062f \u06a9\u0644 \u0632\u06cc\u0631 \u06f5\u06f0\u066a\u0647\u060c \u062a\u06a9\u06cc \u0648 \u0628\u0627 \u0645\u0628\u0644\u063a \u06a9\u0645' : '') + '<br><span class="mut">\u0627\u062d\u062a\u0645\u0627\u0644 \u06a9\u0644 ' + pc(k.p) + ' | \u0636\u0631\u06cc\u0628 \u06a9\u0644 ' + totalOdd().toFixed(2) + ' | EV +' + k.ev.toFixed(2) + (slip.length > 1 ? ' | \u0645\u06cc\u06a9\u0633: \u0641\u0631\u0636 \u0634\u062f\u0647 \u067e\u0627\u06cc\u0647\u200c\u0647\u0627 \u0645\u0633\u062a\u0642\u0644\u0646' : '') + '</span><div class="quick" style="margin-top:6px"><button onclick="qs(' + k.s + ')">\u0628\u0630\u0627\u0631 \u062a\u0648 \u0645\u0628\u0644\u063a \u0634\u0631\u0637</button></div></div>';
+}
+function sugUpd() { var e = $('sugw'); if (e) e.innerHTML = sugHtml(); }
+
+/* cautious markets (update 38): away win, draw-or-away and Under 2.5 lost money in Saeed's history, plus any market with 10+ results and weighted profit below -1.
+   their probability is pulled halfway to the market, and a \ud83d\udc8e needs EV +0.10 and 8% above the market */
+var CAU_FIX = { '2': 1, 'X2': 1, 'U25': 1 }, CAUC = { t: 0, s: {} };
+function cauSet() {
+  if (Date.now() - CAUC.t < 30000) return CAUC.s;
+  var g = {}, s = {}, k;
+  BETS.forEach(function (b) { b.sel.forEach(function (x) { if (x.res != 'w' && x.res != 'l') return; var q = x.pick == 'O' ? 'O25' : (x.pick == 'U' ? 'U25' : x.pick), o = g[q] = g[q] || { n: 0, p: 0 }; o.n++; o.p += x.res == 'w' ? x.odd - 1 : -1; }); });
+  for (k in CAU_FIX) s[k] = 'fix';
+  for (k in g) if (g[k].n >= 10 && g[k].p < -1) s[k] = 'auto';
+  CAUC = { t: Date.now(), s: s }; return s;
+}
+function isCau(k) { return !!cauSet()[k]; }
+function cauP(k, p, q) { return anc(k, p, q); }
+function cauEV(k) { return isCau(k) ? 0.10 : 0.05; }
+function cauED(k) { return isCau(k) ? 0.08 : 0.05; }
+function cauL(k, l) { return (isCau(k) ? '\ud83e\uddca ' : '') + l; }
+/* market anchoring (update 39): the market is the base, the model moves it only by its weight (logit blend). the weight starts at 30% and adapts to how the shadow bets score against the market.
+   cautious markets get half the weight. per-market calibration from 30+ shadow results. */
+function lgt(x) { x = clp(x, 0.01, 0.99); return Math.log(x / (1 - x)); }
+function anc(k, p, q) {
+  if (p === null || p === undefined || isNaN(p)) return p;
+  var w = shCal().w * (isCau(k) ? 0.5 : 1), r = p;
+  if (q !== null && q !== undefined && q > 0.01 && q < 0.99) r = 1 / (1 + Math.exp(-((1 - w) * lgt(q) + w * lgt(p))));
+  else if (isCau(k)) r = p * 0.92;
+  var c = shCal().c[k]; if (c) r = clp(r * c, 0.01, 0.97);
+  return r;
+}
+/* \ud83d\udc8e only when: odds 1.45+, final EV +0.03 (+0.06 cautious), and the raw model is 5-15% above the market (8-15% cautious). more than 15% usually means the market knows something */
+function valOK(k, pr, ev, q, o, ag) {
+  if (!o || o < 1.45 || ag || ev === null || ev === undefined || ev < (isCau(k) ? 0.06 : 0.03)) return 0;
+  if (q !== null && q !== undefined && pr !== null && pr !== undefined) { var g = pr - q; if (g < (isCau(k) ? 0.08 : 0.05) || g > 0.15) return 0; }
+  return 1;
+}
+/* ---------- shadow bets (update 39): every \ud83d\udc8e the app shows is logged with a virtual 1 coin, so the model gets judged on hundreds of results ---------- */
+var SH = ld('shadow', []), SHC = null;
+function shAdd(m, k, o, pr, pf, q, src) {
+  if (!m || !m.id || started(m) || !o) return;
+  var id = m.id + '|' + k, now = Date.now(), e = null, i;
+  for (i = 0; i < SH.length; i++) if (SH[i].id == id) { e = SH[i]; break; }
+  if (e) { if (e.res != 'p') return; if (e.o == r2(o) && Math.abs(e.pr - pr) < 0.005) return; e.o = r2(o); e.pr = Math.round(pr * 1000) / 1000; e.pf = Math.round(pf * 1000) / 1000; e.q = q === null ? null : Math.round(q * 1000) / 1000; e.t = now; }
+  else {
+    SH.push({ id: id, mid: m.id, lg: m.lg, home: m.home, away: m.away, time: m.time, k: k, o: r2(o), pr: Math.round(pr * 1000) / 1000, pf: Math.round(pf * 1000) / 1000, q: q === null ? null : Math.round(q * 1000) / 1000, src: src, t: now, res: 'p' });
+    if (SH.length > 800) { var keep = SH.filter(function (x) { return x.res == 'p'; }), done = SH.filter(function (x) { return x.res != 'p'; }); SH = done.slice(done.length - (800 - keep.length)).concat(keep); }
+  }
+  SHC = null; sv('shadow', SH);
+}
+function shSettle() {
+  var now = Date.now(), ch = false;
+  SH.forEach(function (x) {
+    if (x.res != 'p') return;
+    var L = LIVE[x.mid], k = new Date(x.time).getTime();
+    if (L && L.pp) { x.res = 'v'; x.score = 'PP'; ch = true; return; }
+    if (L && L.st == 'post') { x.res = resX(x.k, L.hs, L.as); x.score = L.hs + '-' + L.as; ch = true; return; }
+    if (now - k > 84 * 3600000) { x.res = 'v'; ch = true; }
+  });
+  if (ch) { SHC = null; sv('shadow', SH); }
+}
+function shCal() {
+  if (SHC && Date.now() - SHC.at < 60000) return SHC;
+  var D = SH.filter(function (x) { return x.res == 'w' || x.res == 'l'; }), n = 0, llm = 0, llq = 0, bm = 0, bq = 0, g = {}, c = {}, w = 0.30;
+  D.forEach(function (x) {
+    var y = x.res == 'w' ? 1 : 0, o = g[x.k] = g[x.k] || { n: 0, w: 0, sp: 0 };
+    o.n++; o.w += y; o.sp += x.pf;
+    if (x.q === null || x.q === undefined) return;
+    n++; llm += -Math.log(clp(y ? x.pr : 1 - x.pr, 0.01, 0.99)); llq += -Math.log(clp(y ? x.q : 1 - x.q, 0.01, 0.99));
+    bm += (x.pr - y) * (x.pr - y); bq += (x.q - y) * (x.q - y);
+  });
+  if (n >= 30) w = clp(0.30 * Math.pow(llq / Math.max(llm, 0.01), 4), 0.15, 0.60);
+  for (var k in g) if (g[k].n >= 30) c[k] = clp((g[k].w + 2) / (g[k].sp + 2), 0.8, 1.2);
+  SHC = { at: Date.now(), w: w, c: c, n: n, all: D.length, llm: n ? llm / n : null, llq: n ? llq / n : null, bm: n ? bm / n : null, bq: n ? bq / n : null, g: g };
+  return SHC;
+}
+function shCard() {
+  var C = shCal(), P = SH.filter(function (x) { return x.res == 'p'; }).length, D = SH.filter(function (x) { return x.res == 'w' || x.res == 'l'; }), wn = 0, pnl = 0;
+  D.forEach(function (x) { if (x.res == 'w') { wn++; pnl += x.o - 1; } else pnl -= 1; });
+  var h = '<div class="box"><b>\ud83e\udd16 \u0634\u0631\u0637\u200c\u0647\u0627\u06cc \u0633\u0627\u06cc\u0647 (\u0647\u0631 \ud83d\udc8e \u0628\u0627 \u06f1 \u0633\u06a9\u0647 \u0641\u0631\u0636\u06cc)</b><div class="mut" style="line-height:1.9;margin-top:6px">' + fa(SH.length) + ' \u062b\u0628\u062a\u200c\u0634\u062f\u0647 | ' + fa(D.length) + ' \u0646\u062a\u06cc\u062c\u0647 | ' + fa(P) + ' \u0645\u0646\u062a\u0638\u0631';
+  if (D.length) h += '<br>\u062f\u0631\u0635\u062f \u0628\u0631\u062f: <b>' + fa(Math.round(wn * 100 / D.length)) + '\u066a</b> | \u0633\u0648\u062f \u0641\u0631\u0636\u06cc: <b class="ltr" style="color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '</b> (\u0628\u0627\u0632\u062f\u0647 ' + fa(Math.round(pnl * 100 / D.length)) + '\u066a)';
+  if (C.n) h += '<br>\u062e\u0637\u0627\u06cc \u0645\u062f\u0644 / \u0628\u0627\u0632\u0627\u0631 (Brier): <span class="ltr">' + C.bm.toFixed(3) + ' / ' + C.bq.toFixed(3) + '</span>';
+  h += '<br>\u0633\u0647\u0645 \u0645\u062f\u0644 \u062f\u0631 \u0628\u0631\u0627\u0628\u0631 \u0628\u0627\u0632\u0627\u0631 \u0627\u0644\u0627\u0646: <b class="gold">' + fa(Math.round(C.w * 100)) + '\u066a</b>' + (C.n >= 30 ? ' (\u0627\u0632 ' + fa(C.n) + ' \u0646\u062a\u06cc\u062c\u0647 \u062e\u0648\u062f\u06a9\u0627\u0631 \u062a\u0646\u0638\u06cc\u0645 \u0634\u062f)' : ' (\u067e\u06cc\u0634\u200c\u0641\u0631\u0636\u060c \u0628\u0639\u062f \u0627\u0632 \u06f3\u06f0 \u0646\u062a\u06cc\u062c\u0647 \u062e\u0648\u062f\u06a9\u0627\u0631 \u062a\u0646\u0638\u06cc\u0645 \u0645\u06cc\u0634\u0647)');
+  var cs = Object.keys(C.c); if (cs.length) h += '<br>\u06a9\u0627\u0644\u06cc\u0628\u0631\u0627\u0633\u06cc\u0648\u0646 \u062e\u0648\u062f\u06a9\u0627\u0631: ' + cs.map(function (k) { return mkLbl(k) + ' \u00d7' + C.c[k].toFixed(2); }).join('\u060c ');
+  h += '</div></div>';
+  return h;
+}
+function ptRow(m, k, l, p, dv) {
+  var o = getOdd(m, k), q = o ? nv(m, k) : null, cap = k == 'U35' ? 0.7 : 0.8, pr = p;
+  p = anc(k, p, q); var pe = Math.min(p, cap);
+  var ev = o ? pe * o - 1 : null, ed = q === null ? null : p - q, ag = against(m, k) ? true : false;
+  var v = valOK(k, pr, ev, q, o, ag);
+  if (v) shAdd(m, k, o, pr, p, q, 'pt');
+  var kk = (v && o) ? kelly(p, o, W.coins, false) : null;
+  return { k: k, l: cauL(k, l) + (dv ? ' *' : ''), pr: pr, p: p, pe: pe, o: o, q: q, ev: ev, ed: ed, ag: ag, v: v, st: kk ? kk.s : 0, kk: kk };
+}
+function ptVd(x) { return x.ag ? '\u26a0\ufe0f \u062e\u0644\u0627\u0641 \u0641\u06cc\u0648\u0631\u062f' : (x.v ? '\ud83d\udc8e \u0627\u0631\u0632\u0634 \u062f\u0627\u0631\u0647' : (x.ev >= 0.05 ? '\ud83d\udfe1 EV \u062e\u0648\u0628\u0647 \u0648\u0644\u06cc \u0641\u06cc\u0644\u062a\u0631 \u0631\u062f \u06a9\u0631\u062f' : (x.ev >= 0 ? '\ud83d\udfe1 \u0645\u0631\u0632\u06cc' : '\u274c \u0627\u0631\u0632\u0634 \u0646\u062f\u0627\u0631\u0647'))); }
+function ptTog(id) { PTO[id] = !PTO[id]; rerender(); }
+function ptRaw(id) { var d = PTD[id]; if (!d) return; d.raw = !d.raw; sv('ptd', PTD); rerender(); }
+function ptClr(id) { if (!confirm('\u062a\u062d\u0644\u06cc\u0644 PrimaTips \u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u067e\u0627\u06a9 \u0628\u0634\u0647\u061f')) return; delete PTD[id]; sv('ptd', PTD); rerender(); }
+function ptPaste(id) {
+  var m = MATCHES[id]; if (!m) return;
+  if (started(m)) { toast('\u0627\u06cc\u0646 \u0628\u0627\u0632\u06cc \u0634\u0631\u0648\u0639 \u0634\u062f\u0647'); return; }
+  var t = '';
+  try { if (window.Android && Android.clip) t = Android.clip(); } catch (e) { t = ''; }
+  if (!t || !parsePT(t).got) {
+    t = prompt('\ud83d\udccb \u0635\u0641\u062d\u0647 \u0628\u0627\u0632\u06cc \u0631\u0648 \u062a\u0648 PrimaTips \u06a9\u0627\u0645\u0644 \u0627\u0646\u062a\u062e\u0627\u0628 (Select all) \u0648 \u06a9\u067e\u06cc \u06a9\u0646\u060c \u0628\u0639\u062f \u0627\u06cc\u0646\u062c\u0627 Paste \u06a9\u0646\n' + m.home + ' - ' + m.away, '');
+    if (!t) return;
+  }
+  var P = parsePT(t);
+  if (!P.got) { toast('\u062a\u0648 \u0627\u06cc\u0646 \u0645\u062a\u0646 \u062f\u0631\u0635\u062f PrimaTips \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f'); return; }
+  var nx = P.names, sw = false;
+  if (nx.length >= 2) {
+    var s1 = sim1(nx[0], m.home) + sim1(nx[1], m.away), s2 = sim1(nx[0], m.away) + sim1(nx[1], m.home);
+    if (Math.max(s1, s2) < 1.0 && !confirm('\u26a0\ufe0f \u0627\u0633\u0645 \u062a\u06cc\u0645\u200c\u0647\u0627 \u0628\u0627 \u0647\u0645 \u0646\u0645\u06cc\u200c\u062e\u0648\u0646\u0646.\nPrimaTips: ' + nx[0] + ' - ' + nx[1] + '\n\u062a\u0648 \u0627\u067e: ' + m.home + ' - ' + m.away + '\n\n\u0628\u0627\u0632 \u0647\u0645 \u062b\u0628\u062a \u0628\u0634\u0647\u061f')) return;
+    if (s2 >= s1 + 0.5) { P.p = ptSwap(P.p); sw = true; }
+  }
+  var ST = parseST(t), separateST = ptSeparateHistoryST(id, ST), modelST = separateST || (ST.ok ? ST : null), modelSw = !separateST && sw;
+  var MD = modelST ? stModel(modelST, id, modelSw) : null;
+  if (MD && modelSw) MD.p = ptSwap(MD.p);
+  PTD[id] = { _t: m.time, t: Date.now(), p: P.p, form: P.form, names: nx, sw: sw, raw: false, m: MD, st: modelST, _pageST: ST || null, _basePTST: ST || null, _historySource: separateST ? 'separate' : (ST.ok ? 'prima_page' : 'none'), _separateCounts: separateST ? separateST.historyCounts : null, id: id };
+  sv('ptd', PTD); PTO[id] = true;
+  slip.forEach(function (x) { if (x.id != id) return; var q = ptP(id, x.pick); if (q !== null) { x.my = Math.round(q * 100); x.mp = x.my; x.src = 'pt'; } });
+  sv(pk('slip'), slip);
+  toast('\u2705 ' + fa(P.got) + ' \u062f\u0631\u0635\u062f PrimaTips \u062b\u0628\u062a \u0634\u062f' + (MD ? '\u060c \u0645\u062f\u0644 \u062e\u0648\u062f\u0645 \u0627\u0632 ' + fa(MD.n0 + MD.n1) + ' \u0628\u0627\u0632\u06cc \u0633\u0627\u062e\u062a\u0647 \u0634\u062f' : '\u060c \u0622\u0645\u0627\u0631 \u0628\u0627\u0632\u06cc\u200c\u0647\u0627 \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f (\u0641\u0642\u0637 \u062f\u0631\u0635\u062f\u0647\u0627)') + (sw ? ' (\u062c\u0627\u06cc \u0645\u06cc\u0632\u0628\u0627\u0646 \u0648 \u0645\u0647\u0645\u0627\u0646 \u0639\u0648\u0636 \u0634\u062f)' : ''));
+  rerender();
+}
+function ptForm(n, f) {
+  if (!f) return '';
+  return '<div class="note" style="white-space:normal"><b>' + esc(n) + '</b> (' + fa(f.n) + ' \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631)<br>\u0628\u0631\u062f ' + fa(f.w) + '\u060c \u0645\u0633\u0627\u0648\u06cc ' + fa(f.d) + '\u060c \u0628\u0627\u062e\u062a ' + fa(f.l) + ' (' + pc(f.pw) + ' / ' + pc(f.pd) + ' / ' + pc(f.pl) + ')<br>\u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1.\u06f5 \u06af\u0644: ' + fa(f.o15) + ' \u0628\u0627\u0632\u06cc (' + pc(f.p15) + ') | \u06f2.\u06f5: ' + fa(f.o25) + ' (' + pc(f.p25) + ') | \u06f3.\u06f5: ' + fa(f.o35) + ' (' + pc(f.p35) + ')</div>';
+}
+/* ---------- PrimaTips separated last-50 histories (update 44) ---------- */
+function ptSeparateHistoryST(id, baseST) {
+  var m = MATCHES[id], D = SMN[id] || {};
+  if (!m) return null;
+  var H = sHistParse(D.histH || '', 'H'), A = sHistParse(D.histA || '', 'A');
+  if (H.games.length < 4 || A.games.length < 4) return null;
+  function convert(parsed, teamName) {
+    return parsed.games.slice(0, 50).map(function (g) {
+      var venue = g.venue === 'H' || g.venue === 'A' ? g.venue : null;
+      return { d:g.date || '', h: venue === 'A' ? (g.opponent || 'Unknown opponent') : teamName,
+        a: venue === 'H' ? (g.opponent || 'Unknown opponent') : teamName,
+        hs: venue === 'H' ? g.f : (venue === 'A' ? g.a : g.f),
+        as: venue === 'H' ? g.a : (venue === 'A' ? g.f : g.a),
+        teamPerspective:true, teamVenue:venue, teamGF:g.f, teamGA:g.a, opponent:g.opponent || '' };
+    });
+  }
+  var S = {}, base = baseST || {};
+  ['h2h','tb','ts','tv','lg'].forEach(function (k) { S[k] = base[k] || (k === 'h2h' ? [] : (k === 'tb' || k === 'lg' ? {} : null)); });
+  S.names = [m.home, m.away]; S.g = [convert(H, m.home), convert(A, m.away)];
+  S.ok = S.g[0].length >= 4 && S.g[1].length >= 4; S.separateHistory = true;
+  S.historyCounts = { home:S.g[0].length, away:S.g[1].length,
+    homeAtHome:H.games.filter(function(g){return g.venue==='H';}).length,
+    awayAway:A.games.filter(function(g){return g.venue==='A';}).length };
+  return S;
+}
+function ptRefreshSeparateHistory(id) {
+  var m = MATCHES[id]; if (!m) return null;
+  var d = PTD[id];
+  if (!d) d = { _t:m.time, t:Date.now(), p:{}, form:[], names:[m.home,m.away], sw:false, raw:false, id:id, st:null, m:null };
+  d.p = d.p || {};
+  if (d._historySource !== 'separate' && d._basePTST === undefined) d._basePTST = d._pageST || d.st || null;
+  var base = d._pageST || d._basePTST || (d._historySource === 'separate' ? null : d.st) || null;
+  var S = ptSeparateHistoryST(id, base);
+  if (S) {
+    d.st = S; d.m = stModel(S, id, false); d._historySource = 'separate'; d.names = [m.home,m.away];
+    d._mc = null; d._separateCounts = S.historyCounts;
+  } else if (d._historySource === 'separate') {
+    d.st = (d._basePTST && d._basePTST.ok) ? d._basePTST : null;
+    d.m = d.st ? stModel(d.st, id, d.sw) : null;
+    if (d.m && d.sw) d.m.p = ptSwap(d.m.p);
+    d._historySource = d.st ? 'prima_page' : 'none'; d._mc = null; d._separateCounts = null;
+  }
+  PTD[id] = d; sv('ptd', PTD); return { home:sHistParse((SMN[id]||{}).histH||'','H'), away:sHistParse((SMN[id]||{}).histA||'','A'), model:!!S, source:d._historySource || 'none' };
+}
+function ptHistWindow(games, n) {
+  var a = (games || []).slice(0, n), sw = 0, gf = 0, ga = 0, points = 0;
+  a.forEach(function(g,i){ var w=Math.pow(0.97,i); sw+=w; gf+=w*g.f; ga+=w*g.a; points+=w*(g.f>g.a?3:(g.f===g.a?1:0)); });
+  return { n:a.length, gf:sw?gf/sw:null, ga:sw?ga/sw:null, pts:sw?points/sw:null };
+}
+function ptHistorySummary(id) {
+  var D=SMN[id]||{}, H=sHistParse(D.histH||'','H'), A=sHistParse(D.histA||'','A');
+  function teamBlock(name, p, side) {
+    var homeN=p.games.filter(function(g){return g.venue==='H';}).length, awayN=p.games.filter(function(g){return g.venue==='A';}).length, unknown=p.games.filter(function(g){return g.venue!=='H'&&g.venue!=='A';}).length;
+    var h=' <div class="note" style="white-space:normal;margin-top:7px"><b>'+esc(name)+'</b> — <b>'+fa(Math.min(50,p.games.length))+'/50</b> بازی معتبر؛ خانه: '+fa(homeN)+' | خارج: '+fa(awayN)+' | نامشخص: '+fa(unknown)+'<br>';
+    [10,12,25,50].forEach(function(n){var w=ptHistWindow(p.games,n); h+='<span class="mut">آخرین '+fa(n)+': '+fa(w.n)+' بازی'; if(w.n) h+=' | گل زده/خوردهٔ وزنی '+w.gf.toFixed(2)+' / '+w.ga.toFixed(2)+' | امتیاز وزنی '+w.pts.toFixed(2); h+='</span><br>';});
+    var venueGames=side==='HOME'?p.games.filter(function(g){return g.venue==='H';}):p.games.filter(function(g){return g.venue==='A';});
+    var vn=venueGames.length, v10=ptHistWindow(venueGames,10), v25=ptHistWindow(venueGames,25);
+    h+='<span class="mut">نمونهٔ هم‌شرایط '+(side==='HOME'?'خانگی':'خارج از خانه')+': '+fa(vn)+' بازی از حداکثر ۲۵؛ میانگین وزنی گل زده/خورده در این نمونه: '+(vn?v25.gf.toFixed(2)+' / '+v25.ga.toFixed(2):'دادهٔ قابل‌استفاده ندارد')+'</span></div>';
+    return h;
+  }
+  var h='<div class="mut" style="font-size:12px;line-height:1.8;margin-top:7px">تاریخچهٔ دو تیم مستقل از درصدهای PrimaTips است. کادرها را جداگانه از صفحهٔ «Last 50 / Matches» همان تیم پُر کن؛ بعد از هر چسباندن، تعداد رکوردهای معتبر بررسی می‌شود. وزن آماری هر رکورد با 0.97 به توان شمارهٔ بازی کاهش می‌یابد؛ بازی جدیدتر وزن بیشتری دارد.</div>';
+  h+=teamBlock((MATCHES[id]||{}).home||'میزبان',H,'HOME');
+  h+=teamBlock((MATCHES[id]||{}).away||'میهمان',A,'AWAY');
+  if(H.games.length>=4 && A.games.length>=4) h+='<div class="note" style="white-space:normal"><b>✅ هر دو تاریخچه برای مدل قابل استفاده‌اند.</b> مدل تا ۵۰ رکورد معتبر هر تیم را استفاده می‌کند؛ زیرنمونهٔ خانهٔ میزبان و خارج از خانهٔ میهمان جداگانه گزارش می‌شود.</div>';
+  else h+='<div class="warn">برای فعال‌شدن مدل تاریخچهٔ مستقل، حداقل ۴ رکورد معتبر برای هر تیم لازم است. تعداد فعلی: میزبان '+fa(H.games.length)+'، میهمان '+fa(A.games.length)+'.</div>';
+  return h;
+}
+function ptHistField(id,key,title,example) {
+  var D=sD(id);
+  return '<div style="margin-top:9px;padding:9px;border:1px solid var(--line);border-radius:12px"><label class="mut" style="font-size:13px;display:block;margin-bottom:5px"><b>'+title+'</b></label>'+
+    '<textarea id="ptshinput_'+id+'_'+key+'" class="sin ltr" rows="4" spellcheck="false" autocapitalize="off" style="width:100%;box-sizing:border-box;resize:vertical;line-height:1.7;padding:9px;border-radius:10px" placeholder="'+example+'" oninput="sIn(\''+id+'\',\'n\',\''+key+'\',this)" onblur="sBlur()">'+esc(D[key]||'')+'</textarea>'+
+    '<div class="quick" style="margin-top:6px"><button onclick="ptHistPaste(\''+id+'\',\''+key+'\')">📋 چسباندن ۵۰ بازی این تیم</button><button onclick="ptHistClear(\''+id+'\',\''+key+'\')">🧹 پاک‌کردن تاریخچه</button></div></div>';
+}
+function ptHistPaste(id,key) {
+  var n=sHistImport(id,key); if(!n) return;
+  var result=ptRefreshSeparateHistory(id); rerender();
+  if(result && result.model) toast('✅ تاریخچهٔ مستقل هر دو تیم ذخیره شد؛ مدل با وزن‌دهی ۱۰/۱۲، ۲۵ و تا ۵۰ بازی به‌روزرسانی شد.');
+  else toast('✅ '+fa(n)+' بازی ذخیره شد. تاریخچهٔ تیم دیگر را هم در کادر جداگانه وارد کن؛ تا آن زمان مدل ۵۰ بازی کامل نیست.');
+}
+function ptHistClear(id,key) {
+  if(!confirm('تاریخچهٔ این تیم پاک شود؟')) return;
+  var D=sD(id); D[key]=''; sv('sman',SMN); ptRefreshSeparateHistory(id); rerender();
+}
+function ptPanel(m) {
+  if (started(m)) return '';
+  var d = PTD[m.id];
+  if (!PTO[m.id]) return '<div class="more" onclick="ptTog(\'' + m.id + '\')">\ud83d\udcca \u062a\u062d\u0644\u06cc\u0644 PrimaTips (\u062a\u0627 \u06f5\u06f0 \u0628\u0627\u0632\u06cc)' + (d ? ' \u2705' : '') + '</div>';
+  var h = '<div class="hpp"><div class="lbl">📊 تحلیل PrimaTips</div><div class="mut" style="line-height:1.9">دکمهٔ «چسباندن» بالا فقط درصدهای بازار را از صفحهٔ کامل PrimaTips می‌خواند. تاریخچهٔ ۵۰ بازی میزبان و میهمان جداست؛ نتایج هر تیم را در کادر همان تیم در پایین Paste کن. تعداد بازی‌های معتبر، پنجره‌های ۱۰/۱۲/۲۵/۵۰ بازی و نمونهٔ خانگی/خارج از خانه جداگانه نمایش داده می‌شود. ضرایب PrimaTips نادیده گرفته می‌شوند.</div>';
+  h += '<div class="quick" style="margin-top:6px"><button onclick="ptPaste(\'' + m.id + '\')">\ud83d\udccb \u0686\u0633\u0628\u0627\u0646\u062f\u0646</button>' + (d ? '<button onclick="ptClr(\'' + m.id + '\')">\ud83e\uddf9 \u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646</button>' : '') + '<button onclick="ptTog(\'' + m.id + '\')">\u25b2 \u0628\u0633\u062a\u0646</button></div>';
+  h += '<div class="note" style="white-space:normal;margin-top:9px"><b>📚 تاریخچهٔ مستقل ۵۰ بازی اخیر — دو کادر جداگانه</b><div class="mut" style="font-size:12px;line-height:1.8">این قسمت از کپی‌پیست درصدهای بازار جداست. اول صفحهٔ نتایج ۵۰ بازی میزبان را در کادر میزبان بچسبان و سپس صفحهٔ نتایج ۵۰ بازی میهمان را در کادر میهمان. هر دو تاریخچه در محاسبهٔ مدل استفاده می‌شوند؛ تاریخچهٔ کامل یک تیم را با دیگری مخلوط نکن.</div></div>';
+  h += ptHistField(m.id,'histH','🏠 '+m.home+' — ۵۰ بازی اخیر','صفحهٔ Last 50 همین تیم را کپی کن و اینجا Paste بزن');
+  h += ptHistField(m.id,'histA','✈️ '+m.away+' — ۵۰ بازی اخیر','صفحهٔ Last 50 همین تیم را کپی کن و اینجا Paste بزن');
+  h += ptHistorySummary(m.id);
+  if (!d) return h + '</div>';
+  var E = ptEff(d), rows = [];
+  PTK.forEach(function (z) { if (E.p[z[0]] !== undefined) { var rr = ptRow(m, z[0], z[1], E.p[z[0]], E.dv[z[0]]); rr.pt = E.pt ? E.pt[z[0]] : undefined; rr.md = E.md ? E.md[z[0]] : undefined; rows.push(rr); } });
+  if (d.m) { var mi = d.m, separateModel = d._historySource === 'separate', nm2 = separateModel ? [m.home, m.away] : (d.names || []), displaySwap = separateModel ? false : d.sw; h += '<div class="note" style="white-space:normal"><b>\ud83e\uddee \u0645\u062f\u0644 \u062e\u0648\u062f\u0645 (\u06f7\u06f5\u066a) + PrimaTips (\u06f2\u06f5\u066a)</b><br>\u06af\u0644 \u0645\u0648\u0631\u062f \u0627\u0646\u062a\u0638\u0627\u0631: ' + esc(nm2[displaySwap ? 1 : 0] || m.home) + ' <b class="gold">' + fc(displaySwap ? mi.la : mi.lh) + '</b> - <b class="gold">' + fc(displaySwap ? mi.lh : mi.la) + '</b> ' + esc(nm2[displaySwap ? 0 : 1] || m.away) + '<br><span class="mut">\u0648\u0631\u0648\u062f\u06cc: ' + fa(mi.n0) + ' + ' + fa(mi.n1) + ' \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631; \u0645\u06cc\u0632\u0628\u0627\u0646: ' + fa(mi.v0 || 0) + ' \u0628\u0627\u0632\u06cc \u062e\u0627\u0646\u06af\u06cc\u060c \u0645\u0647\u0645\u0627\u0646: ' + fa(mi.v1 || 0) + ' \u0628\u0627\u0632\u06cc \u062e\u0627\u0631\u062c \u0627\u0632 \u062e\u0627\u0646\u0647 (\u0648\u0632\u0646 \u06a9\u0627\u0647\u0634\u06cc\u060c \u0642\u062f\u0631\u062a \u062d\u0631\u06cc\u0641 \u0627\u0632 \u062c\u062f\u0648\u0644)' + (mi.tb ? '\u060c \u062c\u062f\u0648\u0644 \u0644\u06cc\u06af' : '') + (mi.ven ? '\u060c \u0622\u0645\u0627\u0631 \u062e\u0648\u0646\u0647 \u0648 \u0628\u06cc\u0631\u0648\u0646' : '') + (mi.h2h ? '\u060c ' + fa(mi.h2h) + ' \u0631\u0648\u062f\u0631\u0631\u0648' : '') + (mi.lg ? '\u060c \u0645\u06cc\u0627\u0646\u06af\u06cc\u0646 \u06af\u0644 \u0644\u06cc\u06af' : '') + '. \u067e\u0648\u0627\u0633\u0648\u0646 \u0628\u0627 \u0627\u0635\u0644\u0627\u062d Dixon-Coles<br>\u00ab\u0646\u0647\u0627\u06cc\u06cc\u00bb = \u062a\u0631\u06a9\u06cc\u0628 \u06f7\u06f5/\u06f2\u06f5 \u06a9\u0647 \u0628\u0639\u062f \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0644\u0646\u06af\u0631 \u0634\u062f\u0647 (\u0633\u0647\u0645 \u0645\u062f\u0644 ' + fa(Math.round(shCal().w * 100)) + '\u066a). \ud83d\udc8e \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0645\u062f\u0644 \u06f5 \u062a\u0627 \u06f1\u06f5\u066a \u0628\u0627\u0644\u0627\u062a\u0631 \u0627\u0632 \u0628\u0627\u0632\u0627\u0631 \u0628\u0627\u0634\u0647</span></div>'; }
+  E.warns.forEach(function (t) { h += '<div class="warn">\u26a0\ufe0f ' + esc(t) + '</div>'; });
+  if (E.bad) h += '<div class="quick" style="margin-top:4px"><button onclick="ptRaw(\'' + m.id + '\')">' + (d.raw ? '\u21a9\ufe0f \u0628\u0631\u06af\u0631\u062f \u0628\u0647 \u062d\u0633\u0627\u0628 \u0627\u0632 \u06f1X\u06f2' : '\u2699\ufe0f \u0647\u0645\u0648\u0646 \u06f1X \u0648 X2 \u062e\u0648\u062f PrimaTips \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0628\u0634\u0647') + '</button></div>';
+  if (d.sw) h += '<div class="mut">\u062c\u0627\u06cc \u0645\u06cc\u0632\u0628\u0627\u0646 \u0648 \u0645\u0647\u0645\u0627\u0646 \u0646\u0633\u0628\u062a \u0628\u0647 PrimaTips \u0639\u0648\u0636 \u0634\u062f (\u06f1 \u0648 \u06f2\u060c 1X \u0648 X2)</div>';
+  h += '<div class="mut" style="margin-top:6px">\u0628\u0627\u0646\u06a9\u0631\u0648\u0644: ' + fc(W.coins) + ' \u0633\u06a9\u0647 | \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc: EV\u00d7\u06f1\u06f0\u06f0 \u0633\u06a9\u0647\u060c \u0646\u0635\u0641 \u0628\u0631\u0627\u06cc \u0636\u0631\u06cc\u0628 \u0628\u0627\u0644\u0627\u06cc \u06f2.\u06f7 \u0648 \u06cc\u06a9\u200c\u0686\u0647\u0627\u0631\u0645 \u0628\u0627\u0644\u0627\u06cc \u06f3.\u06f7\u060c \u0628\u0627 \u0633\u0648\u062f \u0633\u0631\u0645\u0627\u06cc\u0647 \u0628\u0627\u0644\u0627\u06cc \u06f1\u06f0\u06f0\u06f0 \u0628\u06cc\u0634\u062a\u0631 \u0645\u06cc\u0634\u0647</div>';
+  h += '<table class="tbl"><tr><th>\u0628\u0627\u0632\u0627\u0631</th>' + (d.m ? '<th>PT</th><th>\u0645\u062f\u0644</th><th>\u0646\u0647\u0627\u06cc\u06cc</th>' : '<th>PrimaTips</th><th>\u0648\u0627\u0642\u0639\u06cc</th>') + '<th>\u0636\u0631\u06cc\u0628</th><th>EV</th><th>\u0645\u0628\u0644\u063a</th></tr>';
+  rows.forEach(function (x) {
+    var ec = x.ev === null ? '-' : '<b class="ltr" style="color:' + (x.ev >= 0.05 ? 'var(--green)' : (x.ev >= 0 ? 'var(--gold)' : 'var(--red)')) + '">' + (x.ev >= 0 ? '+' : '') + x.ev.toFixed(2) + '</b>';
+    h += '<tr' + (x.v ? ' class="best"' : '') + ' onclick="mAdd(\'' + m.id + '\',\'' + x.k + '\')"><td>' + (x.v ? '\ud83d\udc8e ' : '') + (x.ag ? '\u26a0\ufe0f ' : '') + '<span class="ltr">' + x.l + '</span></td>' + (d.m ? '<td>' + (x.pt !== undefined ? pc(x.pt) : '-') + '</td><td>' + (x.md !== undefined && x.md !== null ? pc(x.md) : '-') + '</td><td><b>' + pc(x.p) + '</b></td>' : '<td><b>' + pc(x.p) + '</b></td><td class="gold">' + fo2(x.p > 0 ? 1 / x.p : 0) + '</td>') + '<td>' + (x.o ? x.o.toFixed(2) : '-') + '</td><td>' + ec + '</td><td>' + (x.st ? '<b class="gold">' + fa(x.st) + '</b>' : '-') + '</td></tr>';
+  });
+  h += '</table>';
+  if (d.m) { var far = rows.filter(function (x) { return x.md !== undefined && x.md !== null && x.q !== null && Math.abs(x.md - x.q) > 0.15; }); if (far.length) h += '<div class="warn">\u26a0\ufe0f \u0645\u062f\u0644 \u062a\u0648 \u0627\u06cc\u0646 \u0628\u0627\u0632\u0627\u0631\u0647\u0627 \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u06f1\u06f5\u066a \u0628\u0627 \u0628\u0627\u0632\u0627\u0631 \u0641\u0631\u0642 \u062f\u0627\u0631\u0647: ' + far.map(function (x) { return x.l; }).join('\u060c ') + '. \u0628\u0627\u0632\u0627\u0631 \u0645\u0639\u0645\u0648\u0644\u0627\u064b \u0627\u0637\u0644\u0627\u0639\u0627\u062a\u06cc \u062f\u0627\u0631\u0647 \u06a9\u0647 \u062a\u0648 \u0622\u0645\u0627\u0631 \u0646\u06cc\u0633\u062a (\u063a\u0627\u06cc\u0628\u200c\u0647\u0627\u060c \u0627\u0646\u06af\u06cc\u0632\u0647\u060c \u062a\u0631\u06a9\u06cc\u0628)\u060c \u067e\u0633 \u0628\u0627 \u0645\u0628\u0644\u063a \u06a9\u0645.</div>'; }
+  var w = rows.filter(function (x) { return x.o; }).sort(function (a, b) { return b.ev - a.ev; });
+  h += '<div class="note" style="white-space:normal"><b>\ud83d\udcb0 \u0627\u0631\u0632\u0634 \u0648\u0627\u0642\u0639\u06cc \u0636\u0631\u06cc\u0628\u200c\u0647\u0627</b>';
+  if (!w.length) h += '<br><span class="mut">\u0636\u0631\u0627\u06cc\u0628 \u0633\u0627\u06cc\u062a \u0631\u0648 \u0628\u0686\u0633\u0628\u0648\u0646 (\u0628\u062a \u0648\u0627\u0646\u0627) \u06cc\u0627 \u062f\u0633\u062a\u06cc \u0628\u062f\u0647 \u062a\u0627 \u0636\u0631\u06cc\u0628 \u0648\u0627\u0642\u0639\u06cc \u06a9\u0646\u0627\u0631 \u0636\u0631\u06cc\u0628 \u0633\u0627\u06cc\u062a \u0628\u06cc\u0627\u062f</span>';
+  else w.slice(0, 10).forEach(function (x) { h += '<br><span class="ltr">' + x.l + '</span>: \u0633\u0627\u06cc\u062a <b>' + x.o.toFixed(2) + '</b> | \u0648\u0627\u0642\u0639\u06cc <b class="gold">' + fo2(1 / x.p) + '</b> | \u062d\u062f\u0627\u0642\u0644 ' + fo2(1.05 / Math.max(x.pe, 0.01)) + (x.q !== null ? ' | \u0628\u0627\u0632\u0627\u0631 ' + pct(x.q) : '') + ' | ' + ptVd(x) + (x.v ? ' | \ud83d\udcb0 \u0645\u0628\u0644\u063a \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc ' + kTxt(x.kk) : ''); });
+  h += '</div>';
+  if (d.form && (d.form[0] || d.form[1])) {
+    var nm = d.names || [];
+    h += '<details class="gdd" style="margin-top:6px"><summary class="mut">\ud83d\udd0e \u0641\u0631\u0645 \u06f1\u06f2 \u0628\u0627\u0632\u06cc \u0627\u062e\u06cc\u0631 \u0627\u0632 PrimaTips</summary>' + ptForm(nm[0] || m.home, d.form[0]) + ptForm(nm[1] || m.away, d.form[1]) + '</details>';
+  }
+  h += '<div class="mut" style="line-height:1.8;margin-top:4px">\u00ab\u0648\u0627\u0642\u0639\u06cc\u00bb \u0636\u0631\u06cc\u0628 \u0645\u0646\u0635\u0641\u0627\u0646\u0647 \u0627\u0632 \u062f\u0631\u0635\u062f PrimaTips\u0647. \u00ab\u062d\u062f\u0627\u0642\u0644\u00bb \u06a9\u0645\u062a\u0631\u06cc\u0646 \u0636\u0631\u06cc\u0628\u06cc\u0647 \u06a9\u0647 EV \u0631\u0648 \u0628\u0647 \u06f0.\u06f0\u06f5+ \u0645\u06cc\u200c\u0631\u0633\u0648\u0646\u0647. \u0633\u062a\u0627\u0631\u0647 (*) \u06cc\u0639\u0646\u06cc \u0627\u0632 \u06f1X\u06f2 \u062d\u0633\u0627\u0628 \u0634\u062f\u0647. \u0631\u0648\u06cc \u0647\u0631 \u0633\u0637\u0631 \u0628\u0632\u0646\u06cc \u0645\u06cc\u0631\u0647 \u062a\u0648 \u0628\u0644\u06cc\u0637 \u0648 \u00ab\ud83c\udfaf \u0627\u062d\u062a\u0645\u0627\u0644 \u0645\u0646\u00bb \u0627\u0632 PrimaTips \u067e\u0631 \u0645\u06cc\u0634\u0647.</div>';
+  return h + '</div>';
+}
+/* ---------- phone notifications: goals + bet results, also when the app is closed (update 31) ---------- */
+var BGTX = { g: '\u26bd \u06af\u0644! ', gv: '\ud83d\udeab \u06af\u0644 \u0645\u0631\u062f\u0648\u062f \u0634\u062f (VAR)\u060c \u0646\u062a\u06cc\u062c\u0647 \u0627\u0644\u0627\u0646: ', tk: '\ud83c\udfab ', mix: '\u0645\u06cc\u06a9\u0633 {n} \u067e\u0627\u06cc\u0647', one: '\u062a\u06a9\u06cc', coin: '\u0633\u06a9\u0647', nw: '\u0641\u0639\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0631\u06cc \u2705', nl: '\u0641\u0639\u0644\u0627\u064b \u0645\u06cc\u200c\u0628\u0627\u0632\u06cc \u274c', nv: '\u0641\u0639\u0644\u0627\u064b \u0628\u0631\u06af\u0634\u062a \u067e\u0648\u0644 \u21a9\ufe0f',
+  rw: '\ud83c\udf89 \u0634\u0631\u0637\u062a \u0628\u0631\u062f \u0634\u062f! {x} \u0633\u06a9\u0647 \u06af\u0631\u0641\u062a\u06cc', rl: '\u274c \u0634\u0631\u0637\u062a \u0628\u0627\u062e\u062a \u0634\u062f ({x} \u0633\u06a9\u0647)', rv: '\u21a9\ufe0f \u0634\u0631\u0637 \u0628\u0627\u0637\u0644 \u0634\u062f\u060c {x} \u0633\u06a9\u0647 \u0628\u0631\u06af\u0634\u062a', st: '\u0645\u0628\u0644\u063a', od: '\u0636\u0631\u06cc\u0628', pp: '\u0645\u0639\u0648\u0642',
+  mw: '\u2705', ml: '\u274c', mv: '\u21a9\ufe0f', mp: '\u23f3', ch: '\u06af\u0644\u200c\u0647\u0627 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0634\u0631\u0637\u200c\u0647\u0627' };
+function bgOn() { return !ld('bgoff', 0); }
+function nfmt(n) { return String(Math.round(n * 100) / 100); }
+function bgNote(id, title, text) { if (!bgOn()) return; try { if (window.Android && Android.notif) Android.notif(String(id), title, text); } catch (e) {} }
+function betKind(b) { return b.sel.length > 1 ? BGTX.mix.replace('{n}', b.sel.length) : BGTX.one; }
+function bgClean(o, days) { var now = Date.now(); Object.keys(o).forEach(function (k) { var v = o[k], t = typeof v == 'number' ? v : (v && v.t) || 0; if (now - t > days * 86400000) delete o[k]; }); }
+function bgImport() {
+  var S = ld('bgs', {}), ch = false;
+  BETS.forEach(function (b) {
+    if (b.st != 'p') return;
+    b.sel.forEach(function (x) {
+      var s = S[x.id], L = LIVE[x.id]; if (x.res != 'p' || !s || s.st == 'pre') return;
+      if (L && L.st == 'post') return;
+      if (L && (s.t || 0) <= (L.t || 0)) return;
+      if (s.pp) { LIVE[x.id] = { hs: 0, as: 0, st: 'post', pp: 1, clk: '', t: s.t }; ch = true; return; }
+      { LIVE[x.id] = { hs: s.hs, as: s.as, st: s.st, clk: s.st == 'post' ? 'FT' : (s.el || ''), t: s.t, eid: L ? L.eid : '', sw: L ? L.sw : 0 }; ch = true; }
+    });
+  });
+  return ch;
+}
+function goalCheck() {
+  var S = ld('bgs', {}), ch = false, now = Date.now(), by = {};
+  BETS.forEach(function (b) { if (b.st == 'p') b.sel.forEach(function (x) { if (x.res == 'p') (by[x.id] = by[x.id] || []).push({ b: b, x: x }); }); });
+  Object.keys(by).forEach(function (id) {
+    var L = LIVE[id]; if (!L || L.pp || L.st == 'pre') return;
+    var s = S[id], ot = s ? s.hs + s.as : 0, nt = L.hs + L.as, lst = L.st == 'x' ? 'in' : L.st;
+    /* update 34: a final result is never overwritten, and only newer data counts (a VAR call can take a goal back) */
+    if (s && (s.st == 'post' || (s.t || 0) > (L.t || 0))) return;
+    var diff = !s || s.hs != L.hs || s.as != L.as;
+    if (s && !diff && s.st == lst) { if (s.el != (L.clk || '')) { s.el = L.clk || ''; s.t = L.t || now; ch = true; } return; }
+    if (L.st != 'post' && diff && (nt > ot || s) && now - (L.t || now) < 30 * 60000) {
+      var x0 = by[id][0].x, ls = [], var0 = !!s && nt <= ot;
+      by[id].forEach(function (o) { var r = resX(o.x.pick, L.hs, L.as); ls.push(BGTX.tk + pl(o.x) + ' @' + o.x.odd.toFixed(2) + ' | ' + betKind(o.b) + ' | ' + nfmt(o.b.stake) + ' ' + BGTX.coin + ' | ' + BGTX['n' + r]); });
+      bgNote(var0 ? 'v' + id + '_' + L.hs + '_' + L.as : 'g' + id + '_' + nt, (var0 ? BGTX.gv : BGTX.g) + x0.home + ' ' + L.hs + ' - ' + L.as + ' ' + x0.away + (L.clk ? ' (' + L.clk + ')' : ''), ls.join('\n'));
+    }
+    S[id] = { hs: L.hs, as: L.as, st: lst, el: L.clk || '', t: L.t || now }; ch = true;
+  });
+  if (ch) { bgClean(S, 5); sv('bgs', S); }
+}
+function betNote(b) {
+  var N = ld('bgn', {}); if (N[b.id]) return;
+  N[b.id] = Date.now(); bgClean(N, 10); sv('bgn', N);
+  var t = b.st == 'w' ? BGTX.rw.replace('{x}', nfmt(b.win)) : (b.st == 'l' ? BGTX.rl.replace('{x}', nfmt(b.stake)) : BGTX.rv.replace('{x}', nfmt(b.win)));
+  var ls = [(PR.l.length > 1 ? '[' + pn() + '] ' : '') + betKind(b) + ' | ' + BGTX.st + ' ' + nfmt(b.stake) + ' | ' + BGTX.od + ' ' + nfmt(b.odd)];
+  b.sel.forEach(function (x) { ls.push((BGTX['m' + x.res] || '') + ' ' + x.home + ' ' + (x.score || '-') + ' ' + x.away + ' | ' + pl(x) + ' @' + x.odd.toFixed(2)); });
+  bgNote('b' + b.id, t, ls.join('\n'));
+}
+function afIdOf(x) {
+  if (/^af\d+$/.test(x.id)) return { id: +x.id.slice(2), sw: 0 };
+  var c = ld('af_' + dk(new Date(x.time).getTime()), null), hit = null;
+  if (c && c.d) c.d.forEach(function (m) { if (!hit && sameM(m, x)) hit = { id: +String(m.id).slice(2), sw: (sim1(m.home, x.away) + sim1(m.away, x.home) > sim1(m.home, x.home) + sim1(m.away, x.away)) ? 1 : 0 }; });
+  return hit || { id: 0, sw: 0 };
+}
+function bgSync() {
+  var now = Date.now(), legs = {}, bets = [], multi = PR.l.length > 1;
+  try {
+    PR.l.forEach(function (p) {
+      var bs = p.id == PR.cur ? BETS : ld(pk2(p.id, 'bets'), []);
+      bs.forEach(function (b) {
+        if (b.st != 'p') return;
+        var bl = [];
+        b.sel.forEach(function (x) {
+          var k = new Date(x.time).getTime();
+          bl.push({ i: x.id, h: x.home, a: x.away, pk: x.pick, pl: pl(x), o: x.odd, r: x.res, sc: x.score || '' });
+          if (x.res != 'p' || now - k > 84 * 3600000 || legs[x.id]) return;
+          var L = LIVE[x.id] || {}, af = afKey() ? afIdOf(x) : { id: 0, sw: 0 }, d1 = ymd(k), d2 = ymd(k - 5 * 3600000);
+          legs[x.id] = { i: x.id, h: x.home, a: x.away, t: k, af: af.id, afs: af.sw, es: esl(x.lg) || 'all', d: d1, d2: d2 == d1 ? '' : d2, eid: L.eid || '', sw: L.sw ? 1 : 0 };
+        });
+        bets.push({ id: b.id, pf: multi ? pn(p.id) : '', s: b.stake, o: b.odd, l: bl });
+      });
+    });
+  } catch (e) {}
+  sv('bgw', { v: 1, off: bgOn() ? 0 : 1, ak: afKey(), es: ESPN_API, af: AF_API, res: AF_RES, fl: AF_FLOOR, legs: Object.keys(legs).map(function (k) { return legs[k]; }), bets: bets, tx: BGTX });
+  try { if (window.Android && Android.bgKick) Android.bgKick(); } catch (e) {}
+}
+function bgBox() {
+  var q = afQuota(), iv = afIv();
+  return '<div class="box"><b>\ud83d\udcf3 \u0646\u0648\u062a\u06cc\u0641 \u06af\u0644 \u0648 \u0646\u062a\u06cc\u062c\u0647 \u0634\u0631\u0637</b><div class="mut" style="line-height:1.9">\u0648\u0642\u062a\u06cc \u062a\u0648 \u0628\u0627\u0632\u06cc\u200c\u0627\u06cc \u06a9\u0647 \u0631\u0648\u0634 \u0634\u0631\u0637 \u0628\u0633\u062a\u06cc \u06af\u0644 \u0628\u0634\u0647\u060c \u0646\u0648\u062a\u06cc\u0641 \u0645\u06cc\u0627\u062f \u0648 \u0632\u06cc\u0631\u0634 \u0634\u0631\u0637\u062a \u0646\u0648\u0634\u062a\u0647 \u0645\u06cc\u0634\u0647 (\u0648 \u0627\u06cc\u0646\u06a9\u0647 \u0627\u0644\u0627\u0646 \u062f\u0627\u0631\u06cc \u0645\u06cc\u200c\u0628\u0631\u06cc \u06cc\u0627 \u0645\u06cc\u200c\u0628\u0627\u0632\u06cc). \u0648\u0642\u062a\u06cc \u0634\u0631\u0637 \u0628\u0631\u062f \u06cc\u0627 \u0628\u0627\u062e\u062a \u0628\u0634\u0647 \u0647\u0645 \u0628\u0627 \u0646\u062a\u06cc\u062c\u0647\u060c \u0646\u0648\u0639 \u0634\u0631\u0637 \u0648 \u0645\u0628\u0644\u063a \u062e\u0628\u0631\u062a \u0645\u06cc\u200c\u06a9\u0646\u0647. \u0627\u067e \u0628\u0633\u062a\u0647 \u0647\u0645 \u0628\u0627\u0634\u0647 \u06a9\u0627\u0631 \u0645\u06cc\u200c\u06a9\u0646\u0647.<br>' +
+    '\u0645\u0646\u0628\u0639: ESPN (\u0631\u0627\u06cc\u06af\u0627\u0646\u060c \u0647\u0631 \u06f5 \u062f\u0642\u06cc\u0642\u0647) \u0648 \u0628\u0631\u0627\u06cc \u0628\u0642\u06cc\u0647 API-Football ' + (afKey() ? (iv ? '(\u0647\u0631 ' + afMin() + ' \u062f\u0642\u06cc\u0642\u0647 \u0648 \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u0628\u0627\u0632\u06cc \u0632\u0646\u062f\u0647 \u062f\u0627\u0631\u06cc' + (q !== null ? '\u060c ' + fa(q) + ' \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0627\u0645\u0631\u0648\u0632 \u0645\u0648\u0646\u062f\u0647' : '') + ')' : '(\u23f8 \u0633\u0647\u0645\u06cc\u0647 \u0627\u0645\u0631\u0648\u0632 \u062a\u0645\u0648\u0645 \u0634\u062f\u0647)') : '(\u06a9\u0644\u06cc\u062f \u0646\u062f\u0627\u0631\u06cc)') + '</div>' +
+    '<div class="quick" style="margin-top:6px"><button onclick="bgTog()">' + (bgOn() ? '\ud83d\udd15 \u062e\u0627\u0645\u0648\u0634 \u06a9\u0646' : '\ud83d\udd14 \u0631\u0648\u0634\u0646 \u06a9\u0646') + '</button><button onclick="bgTest()">\ud83e\uddea \u0646\u0648\u062a\u06cc\u0641 \u0622\u0632\u0645\u0627\u06cc\u0634\u06cc</button><button onclick="bgBat()">\ud83d\udd0b \u0628\u0627\u062a\u0631\u06cc</button></div>' +
+    '<div class="mut" style="margin-top:6px;line-height:1.8">\u0627\u06af\u0647 \u0646\u0648\u062a\u06cc\u0641\u200c\u0647\u0627 \u062f\u06cc\u0631 \u0645\u06cc\u0627\u0646: \u062f\u06a9\u0645\u0647 \u00ab\u0628\u0627\u062a\u0631\u06cc\u00bb \u0631\u0648 \u0628\u0632\u0646\u060c \u00ab\u0641\u0648\u062a\u0628\u0627\u0644 \u0628\u062a\u00bb \u0631\u0648 \u067e\u06cc\u062f\u0627 \u06a9\u0646 \u0648 \u0628\u0630\u0627\u0631\u0634 \u0631\u0648\u06cc Unrestricted \u06cc\u0627 \u00ab\u0628\u062f\u0648\u0646 \u0645\u062d\u062f\u0648\u062f\u06cc\u062a\u00bb.</div></div>';
+}
+function bgTog() { sv('bgoff', bgOn() ? 1 : 0); bgSync(); renderSet(); toast(bgOn() ? '\ud83d\udd14 \u0646\u0648\u062a\u06cc\u0641\u200c\u0647\u0627 \u0631\u0648\u0634\u0646 \u0634\u062f' : '\ud83d\udd15 \u0646\u0648\u062a\u06cc\u0641\u200c\u0647\u0627 \u062e\u0627\u0645\u0648\u0634 \u0634\u062f'); }
+function bgTest() {
+  try { Android.notif('test', BGTX.g + '\u062a\u06cc\u0645 \u0627\u0644\u0641 1 - 0 \u062a\u06cc\u0645 \u0628 (35)', BGTX.tk + '\u0628\u0631\u062f \u062a\u06cc\u0645 \u0627\u0644\u0641 @1.85 | ' + BGTX.one + ' | 50 ' + BGTX.coin + ' | ' + BGTX.nw); toast('\u0646\u0648\u062a\u06cc\u0641 \u0641\u0631\u0633\u062a\u0627\u062f\u0647 \u0634\u062f\u060c \u0628\u0627\u0644\u0627\u06cc \u0635\u0641\u062d\u0647 \u06af\u0648\u0634\u06cc \u0631\u0648 \u0628\u0628\u06cc\u0646'); }
+  catch (e) { toast('\u0627\u06cc\u0646 \u0646\u0633\u062e\u0647 \u0647\u0646\u0648\u0632 \u0646\u0648\u062a\u06cc\u0641 \u0646\u062f\u0627\u0631\u0647'); }
+}
+function bgBat() { try { Android.battery(); } catch (e) { toast('\u0628\u0627\u0632 \u0646\u0634\u062f'); } }
+renderBal(); updateCnt(); syncRem();
+setTimeout(function () { if (bgImport()) afterLive(); else bgSync(); }, 1500);
+setTimeout(function () { liveTick(false); }, 2500);
+setInterval(function () { if (pageOn('matches') || pageOn('bets')) liveTick(false); if (pageOn('matches') && (reg == 'browse' || reg == 'day')) liveCounts(); }, 60000);
+loadSports(function () { renderLeagues(); if (reg == 'day' || reg == 'af') pickReg(reg); else loadOdds(false); });
+setTimeout(function () { checkUpdate(false); }, 1200);
+</script>
+</body>
+</html>
+EOF_X
+sed -i "s/__BUILD__/$GITHUB_RUN_NUMBER/g" build.gradle src/main/assets/index.html
+sed -i "s#__REPO__#$GITHUB_REPOSITORY#g" src/main/assets/index.html
+
